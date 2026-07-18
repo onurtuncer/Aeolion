@@ -1,0 +1,11 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "aeolion",
+  "version-string": "0.1.0",
+  "description": "Vortex-lattice / potential-flow aerodynamics toolkit",
+  "builtin-baseline": "00d899c410b31467733472fc3a83a25729046b13",
+  "dependencies": [
+    "openblas",
+    "lapack-reference"
+  ]
+}
