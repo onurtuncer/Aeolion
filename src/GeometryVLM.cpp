@@ -1,7 +1,7 @@
-// GeometryVlm.cpp — aircraft-from-CAD (STL) VLM driver
+// GeometryVLM.cpp — aircraft-from-CAD (STL) VLM driver
 //
 // Build (from the repo root):
-//   g++ -std=c++17 -O2 -Iinclude -o geometry_vlm src/GeometryVlm.cpp \
+//   g++ -std=c++20 -O2 -Iinclude -o geometry_vlm src/GeometryVLM.cpp \
 //       -llapack -lblas
 // (or use the top-level CMakeLists.txt, which wires up the LAPACK/OpenBLAS
 // backend for you)
@@ -43,7 +43,7 @@
 // (e.g. slender-body source/doublet line) layered on top of this.
 //
 // --- Viscous drag (see DragEstimate.h) ---
-// Vlm::Solve() only gives INDUCED drag (CDi) -- a potential-flow method
+// VLM::Solve() only gives INDUCED drag (CDi) -- a potential-flow method
 // has no viscosity. Add --drag-component flags to get a component-buildup
 // CD0 estimate, reported alongside a Total CD = CDi + CD0:
 //
@@ -69,11 +69,10 @@
 // allowance), --mach <M> (compressibility correction to skin friction),
 // --mu <Pa*s> (air dynamic viscosity, default sea-level ISA).
 
-#include "Aeolion/Vlm.h"
+#include "Aeolion/VLM.h"
 #include "Aeolion/Mesh.h"
 #include "Aeolion/MeshSlice.h"
 #include "Aeolion/DragEstimate.h"
-#include "Aeolion/VizExport.h"
 #include <iostream>
 #include <fstream>
 #include <iomanip>
@@ -84,7 +83,7 @@
 #include <cmath>
 
 using namespace Aeolion;
-using namespace Aeolion::Vlm;
+using namespace Aeolion::VLM;
 using MeshIO::PartMesh;
 
 static int AxisFromChar(char c) {
@@ -187,7 +186,6 @@ int main(int argc, char** argv) {
     double miscDragFraction = 0.03;
     double mach = 0.0;
     double airMu = 1.789e-5;
-    std::string jsonPath;
 
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
@@ -211,12 +209,11 @@ int main(int argc, char** argv) {
         else if (a == "--misc-drag") miscDragFraction = std::stod(next());
         else if (a == "--mach") mach = std::stod(next());
         else if (a == "--mu") airMu = std::stod(next());
-        else if (a == "--json") jsonPath = next();
         else if (a == "--surface") specs.push_back(ParseSurfaceSpec(next()));
         else if (a == "--fuselage") fuselageFile = next();
         else if (a == "--csv") csvPath = next();
         else if (a == "--help" || a == "-h") {
-            std::cout << "See header comment in GeometryVlm.cpp for full usage.\n";
+            std::cout << "See header comment in GeometryVLM.cpp for full usage.\n";
             return 0;
         } else {
             std::cerr << "Unknown argument: " << a << "\n";
@@ -357,12 +354,6 @@ int main(int argc, char** argv) {
         csv << s.Surface << "," << s.y << "," << s.gamma << "," << s.LiftPerSpan << "," << s.cl_local << "\n";
     }
     std::cout << "\nSpanwise loading (all surfaces) written to " << csvPath << "\n";
-
-    if (!jsonPath.empty()) {
-        std::ofstream jf(jsonPath);
-        jf << VizExport::PanelsToJson(allPanels, res, Vinf, rho);
-        std::cout << "Panel geometry + scalars written to " << jsonPath << " (for the WebGL viewer)\n";
-    }
 
     if (!dragSpecs.empty()) {
         DragEstimate::AirProperties air; air.rho = rho; air.mu = airMu;

@@ -13,15 +13,19 @@ Follow the naming conventions used by TheCherno's **Hazel** game engine.
 | Static members | `s_` + PascalCase | `s_Instance` |
 | Globals | `g_` + PascalCase | `g_Context` |
 | Locals / parameters | camelCase | `controlPoint`, `vertexCount` |
-| Constants / enum values | PascalCase | `Pi`, `Failed` |
+| Constants / enum values | PascalCase | `Failed` |
 | Macros | `AE_`-prefixed SCREAMING_CASE | `AE_ASSERT`, `AE_CORE_ASSERT` |
-| Namespace | PascalCase | `Aeolion` |
+| Namespace | PascalCase, `::` form | `namespace Aeolion::VLM {` |
 
-The whole codebase follows this convention. Headers live under
-`include/Aeolion/` in a single `Aeolion` namespace with per-module nested
-namespaces (`Aeolion::Vlm`, `Aeolion::Airfoil`, `Aeolion::Bemt`,
-`Aeolion::BoundaryLayer`, `Aeolion::DragEstimate`, `Aeolion::MeshIO`,
-`Aeolion::MeshSlice`, `Aeolion::VizExport`). Established aerodynamics/math
-notation is preserved verbatim (`CL`, `CDi`, `Cm`, `alphaDeg`, `Vinf`,
-`gamma`, `rho`, `Vec3.x/y/z`, and the `StabilityDerivatives` symbols);
-only English-word identifiers are PascalCased.
+The whole codebase (C++20) follows this convention. Headers live under
+`include/Aeolion/`: the math primitive in `Math/` (`Aeolion::Math`), the
+plain data structs one-per-file under `Types/`, and the modules
+(`VLM.h`, `Mesh.h`, `MeshSlice.h`, `DragEstimate.h`, `Bemt.h`). Namespaces
+are written with the `::` form — `Aeolion::VLM`, `Aeolion::Bemt`,
+`Aeolion::DragEstimate`, `Aeolion::MeshIO`, `Aeolion::MeshSlice` — never the
+nested-brace form. The solver is 3D-only.
+
+Established aerodynamics/math notation is preserved verbatim (`CL`, `CDi`,
+`Cm`, `alphaDeg`, `Vinf`, `gamma`, `rho`, `Vec3.x/y/z`, and the
+`StabilityDerivatives` symbols); only English-word identifiers are
+PascalCased. Use `std::numbers::pi` for π — do not define a local `Pi`.

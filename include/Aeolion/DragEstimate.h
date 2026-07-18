@@ -4,10 +4,10 @@
 // buildup method (see e.g. Raymer, "Aircraft Design: A Conceptual
 // Approach", ch. 12; or Hoerner, "Fluid-Dynamic Drag"). This is NOT
 // something a vortex lattice method can give you -- VLM is a potential-flow
-// (inviscid) method, so Vlm::SolveResult::CDi is induced drag only. Total
+// (inviscid) method, so VLM::SolveResult::CDi is induced drag only. Total
 // drag is:
 //
-//     CD_total = CDi (from Vlm::Solve)  +  CD0 (from this file)
+//     CD_total = CDi (from VLM::Solve)  +  CD0 (from this file)
 //
 // CD0 is a mid-fidelity CONCEPTUAL-DESIGN-LEVEL estimate, not a substitute
 // for wind-tunnel or CFD data -- typical accuracy is +/-10-20% for a
@@ -32,21 +32,23 @@
 //            antennas etc. (2-6% is a common conceptual-design allowance;
 //            0 if you'd rather account for these yourself)
 //
-// No external dependencies beyond the standard library and Vlm.h (only
-// used for Vec3/Cross, to compute wetted area from a triangle mesh).
+// No external dependencies beyond the standard library, Aeolion/Math
+// (Vec3/Cross) and Aeolion/Mesh (PartMesh, to compute wetted area from a
+// triangle mesh).
 
 #pragma once
 #include <cmath>
 #include <vector>
 #include <string>
 #include <algorithm>
-#include "Aeolion/Vlm.h"
+#include <numbers>
+#include "Aeolion/Math/Vec3.h"
 #include "Aeolion/Mesh.h"
 
-namespace Aeolion { namespace DragEstimate {
+namespace Aeolion::DragEstimate {
 
-using Vlm::Vec3;
-using Vlm::Cross;
+using VLM::Vec3;
+using VLM::Cross;
 
 struct AirProperties {
     double rho = 1.225;      // [kg/m^3] -- sea-level ISA by default
@@ -94,7 +96,7 @@ inline double CfMixed(double Re, double laminarFraction, double mach = 0.0) {
 inline double FormFactorAirfoil(double thicknessRatio, double xcMaxThickness, double sweepDeg) {
     double tc = thicknessRatio;
     double xm = std::max(xcMaxThickness, 1e-3);
-    double sweep = sweepDeg * Vlm::Pi / 180.0;
+    double sweep = sweepDeg * std::numbers::pi / 180.0;
     double base = 1.0 + (0.6 / xm) * tc + 100.0 * std::pow(tc, 4);
     return base * std::pow(std::cos(sweep), 0.28);
 }
@@ -170,4 +172,4 @@ inline BuildupResult EstimateCD0(const std::vector<ComponentSpec>& specs, double
     return res;
 }
 
-}} // namespace Aeolion::DragEstimate
+} // namespace Aeolion::DragEstimate

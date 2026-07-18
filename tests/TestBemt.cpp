@@ -9,6 +9,7 @@
 //     forward-flight points where the prop is actually absorbing power.
 //   - every station must converge.
 #include "Aeolion/Bemt.h"
+#include <numbers>
 #include <iostream>
 #include <cmath>
 
@@ -43,7 +44,7 @@ int main() {
     CHECK(hover.Thrust > 0, "hover thrust should be positive for this blade pitch schedule");
     CHECK(hover.Power > 0, "hover power should be positive (prop absorbing shaft power)");
 
-    double A = Bemt::Pi * geom.Radius * geom.Radius;
+    double A = std::numbers::pi * geom.Radius * geom.Radius;
     double idealPower = hover.Thrust * std::sqrt(hover.Thrust / (2 * rho * A));
     double FOM = idealPower / hover.Power;
     std::cout << "Figure of Merit = " << FOM << "\n";

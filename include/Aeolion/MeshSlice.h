@@ -2,7 +2,7 @@
 //
 // Converts a triangulated CAD/mesh lifting surface (wing, horizontal tail,
 // vertical tail -- read from STL, or from STEP via the step2mesh
-// converter) into a Vlm::Panel lattice, by:
+// converter) into a VLM::Panel lattice, by:
 //
 //   1. Slicing the mesh with a series of planes perpendicular to the
 //      surface's dominant span axis.
@@ -19,7 +19,7 @@
 //      actual geometry rather than re-derived analytically.
 //   4. Building one horseshoe-vortex panel per pair of adjacent stations,
 //      exactly like the parametric BuildWing() path, so the rest of
-//      Vlm.h (influence matrix, solve, near-field forces) is untouched.
+//      VLM.h (influence matrix, solve, near-field forces) is untouched.
 //
 // IMPORTANT ASSUMPTIONS (read before trusting results on a new geometry):
 //   - The component is a single, simply-connected, watertight-ish thin
@@ -40,12 +40,14 @@
 #include <algorithm>
 #include <stdexcept>
 #include <sstream>
-#include "Aeolion/Vlm.h"
+#include <numbers>
+#include "Aeolion/Math/Vec3.h"
+#include "Aeolion/Types/Panel.h"
 #include "Aeolion/Mesh.h"
 
-namespace Aeolion { namespace MeshSlice {
+namespace Aeolion::MeshSlice {
 
-using Vlm::Vec3;
+using VLM::Vec3;
 using MeshIO::PartMesh;
 
 inline double AxisComponent(const Vec3& v, int axis) {
@@ -161,7 +163,7 @@ inline StationCut SliceStation(const PartMesh& part, const SurfaceMeshParams& sp
 }
 
 // Build the full panel lattice for one lifting-surface mesh.
-inline std::vector<Vlm::Panel> MeshToPanels(const PartMesh& part, const SurfaceMeshParams& sp) {
+inline std::vector<VLM::Panel> MeshToPanels(const PartMesh& part, const SurfaceMeshParams& sp) {
     Vec3 lo, hi;
     part.Bbox(lo, hi);
     double sMin = AxisComponent(lo, sp.SpanAxis);
@@ -177,7 +179,7 @@ inline std::vector<Vlm::Panel> MeshToPanels(const PartMesh& part, const SurfaceM
     for (int i = 0; i <= N; ++i) {
         double u = (double)i / N; // 0..1
         if (sp.CosineSpacing) {
-            double theta = u * Vlm::Pi;
+            double theta = u * std::numbers::pi;
             double uc = 0.5 * (1.0 - std::cos(theta)); // clusters near both ends
             stationCoord[i] = s0 + uc * (s1 - s0);
         } else {
@@ -198,13 +200,13 @@ inline std::vector<Vlm::Panel> MeshToPanels(const PartMesh& part, const SurfaceM
         }
     }
 
-    std::vector<Vlm::Panel> panels;
+    std::vector<VLM::Panel> panels;
     panels.reserve(N);
     for (int i = 0; i < N; ++i) {
         const StationCut& c0 = cuts[i];
         const StationCut& c1 = cuts[i + 1];
 
-        Vlm::Panel p;
+        VLM::Panel p;
         p.A = c0.QuarterChordPt;
         p.B = c1.QuarterChordPt;
         p.ControlPoint = (c0.ThreeQuarterChordPt + c1.ThreeQuarterChordPt) * 0.5;
@@ -214,8 +216,8 @@ inline std::vector<Vlm::Panel> MeshToPanels(const PartMesh& part, const SurfaceM
         Vec3 chordTan = (chordTan0 + chordTan1).Normalized();
         Vec3 spanTan = (p.B - p.A).Normalized();
 
-        Vec3 n = Vlm::Cross(spanTan, chordTan).Normalized();
-        if (Vlm::Dot(n, sp.ReferenceUp) < 0.0) n = -n;
+        Vec3 n = VLM::Cross(spanTan, chordTan).Normalized();
+        if (VLM::Dot(n, sp.ReferenceUp) < 0.0) n = -n;
         p.Normal = n;
 
         p.TrailDirA = Vec3(1, 0, 0);
@@ -229,4 +231,4 @@ inline std::vector<Vlm::Panel> MeshToPanels(const PartMesh& part, const SurfaceM
     return panels;
 }
 
-}} // namespace Aeolion::MeshSlice
+} // namespace Aeolion::MeshSlice

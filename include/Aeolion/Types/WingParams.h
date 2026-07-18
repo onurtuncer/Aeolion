@@ -1,0 +1,20 @@
+// Types/WingParams.h
+//
+// Parametric single-wing planform description consumed by BuildWing().
+#pragma once
+
+namespace Aeolion::VLM {
+
+struct WingParams {
+    double Span = 2.0;            // full span, tip-to-tip [m]
+    double RootChord = 0.3;       // [m]
+    double TipChord = 0.3;        // [m]
+    double SweepQuarterChordDeg = 0.0; // sweep of the quarter-chord line
+    double DihedralDeg = 0.0;
+    double TwistTipDeg = 0.0;     // linear washout: root=0, tip=TwistTipDeg (negative = washout)
+    int NPanelsSemiSpan = 15;     // panels per semi-span (total panels = 2x this)
+    bool CosineSpacing = true;    // cluster panels near tips
+    double TrailLength = 0.0;     // 0 => auto (50x span)
+};
+
+} // namespace Aeolion::VLM

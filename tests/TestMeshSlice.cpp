@@ -1,17 +1,17 @@
 // TestMeshSlice.cpp -- validates the mesh-slicing pipeline
 // (MeshSlice.h: slice a triangle-mesh wing, extract camber line, build
-// VLM panels) by comparing against the parametric Vlm::BuildWing() path
+// VLM panels) by comparing against the parametric VLM::BuildWing() path
 // for the SAME planform, which was independently validated in
-// TestVlmCore.cpp. Agreement here confirms the slicing/camber-extraction
+// TestVLMCore.cpp. Agreement here confirms the slicing/camber-extraction
 // geometry is correct, not just that the solver itself is correct.
-#include "Aeolion/Vlm.h"
+#include "Aeolion/VLM.h"
 #include "Aeolion/MeshSlice.h"
 #include "fixtures/SyntheticWing.h"
 #include <iostream>
 #include <cmath>
 
 using namespace Aeolion;
-using namespace Aeolion::Vlm;
+using namespace Aeolion::VLM;
 
 static int failures = 0;
 #define CHECK(cond, msg) do { if (!(cond)) { std::cerr << "FAIL: " << msg << "\n"; ++failures; } } while (0)

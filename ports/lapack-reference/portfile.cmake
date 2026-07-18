@@ -12,6 +12,15 @@ include(vcpkg_find_fortran)
 SET(VCPKG_POLICY_EMPTY_INCLUDE_FOLDER enabled)
 set(VCPKG_POLICY_ALLOW_OBSOLETE_MSVCRT enabled)
 
+# Aeolion overlay: build this port Release-only. The debug half doubles the
+# already-long reference-LAPACK Fortran compile and, on Windows, intermittently
+# trips a bundled-mingw gfortran process-spawn flake ("cannot execute
+# f951.exe"). We only link the Release aeolion binaries against LAPACK/LAPACKE.
+# Scoping this here (rather than in a triplet) keeps every other port's ABI
+# unchanged, so openblas still restores from the binary cache instead of
+# rebuilding.
+set(VCPKG_BUILD_TYPE release)
+
 vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO  "Reference-LAPACK/lapack"

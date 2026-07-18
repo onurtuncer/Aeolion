@@ -1,4 +1,4 @@
-// TestVlmCore.cpp -- validates Vlm.h's core solver against known
+// TestVLMCore.cpp -- validates VLM.h's core solver against known
 // closed-form aerodynamic theory:
 //   - CL for a rectangular unswept/untwisted wing should track the
 //     lifting-line-corrected thin-wing formula CL = 2*pi*alpha/(1+2/AR)
@@ -7,11 +7,12 @@
 //     as AR increases is the real check).
 //   - Oswald efficiency for that same wing should sit close to 1.0.
 //   - CL/CDi should converge monotonically as panel count increases.
-#include "Aeolion/Vlm.h"
+#include "Aeolion/VLM.h"
+#include <numbers>
 #include <iostream>
 #include <cmath>
 
-using namespace Aeolion::Vlm;
+using namespace Aeolion::VLM;
 
 static int failures = 0;
 #define CHECK(cond, msg) do { if (!(cond)) { std::cerr << "FAIL: " << msg << "\n"; ++failures; } } while (0)
@@ -29,8 +30,8 @@ int main() {
         FreestreamConditions fc; fc.Vinf = 30.0; fc.alphaDeg = 4.0; fc.rho = 1.225;
         SolveResult res = Solve(w, fc);
         double AR = w.Span * w.Span / res.ReferenceArea;
-        double alphaRad = fc.alphaDeg * Pi / 180.0;
-        double CL_theory = 2 * Pi * alphaRad / (1.0 + 2.0 / AR);
+        double alphaRad = fc.alphaDeg * std::numbers::pi / 180.0;
+        double CL_theory = 2 * std::numbers::pi * alphaRad / (1.0 + 2.0 / AR);
         double relErr = std::fabs(res.CL - CL_theory) / CL_theory;
 
         std::cout << "AR=" << AR << "  CL=" << res.CL << "  CL_theory=" << CL_theory
@@ -38,7 +39,7 @@ int main() {
         CHECK(relErr < 0.15, "CL vs thin-wing theory off by more than 15% at AR=" << AR);
         CHECK(res.CDi > 0, "CDi should be positive at AR=" << AR);
 
-        double e = (res.CDi > 1e-9) ? (res.CL * res.CL) / (Pi * AR * res.CDi) : 0.0;
+        double e = (res.CDi > 1e-9) ? (res.CL * res.CL) / (std::numbers::pi * AR * res.CDi) : 0.0;
         std::cout << "  Oswald e=" << e << "\n";
         CHECK(e > 0.85 && e < 1.05, "Oswald efficiency out of expected range for a plain rectangular wing, AR=" << AR);
     }
@@ -61,7 +62,7 @@ int main() {
         first = false;
     }
 
-    if (failures == 0) { std::cout << "PASS: TestVlmCore\n"; return 0; }
-    std::cerr << failures << " check(s) failed in TestVlmCore\n";
+    if (failures == 0) { std::cout << "PASS: TestVLMCore\n"; return 0; }
+    std::cerr << failures << " check(s) failed in TestVLMCore\n";
     return 1;
 }
