@@ -1,4 +1,4 @@
-// Vlm.h
+// VLM.h
 //
 // Minimal steady vortex lattice method (VLM) for a single lifting surface.
 //
@@ -20,18 +20,29 @@
 // Kutta-Joukowski to that local segment. This gives lift AND induced drag
 // directly, without a separate Trefftz-plane integration.
 //
-// The dense linear solve uses LAPACK (dgetrf/dgetrs via the Fortran ABI);
-// link against a LAPACK provider such as OpenBLAS or reference LAPACK.
+// The data model (Vec3 and the result/parameter structs) lives in
+// Aeolion/Math and Aeolion/Types; this header owns the algorithms and the
+// LAPACK-backed dense solver. The dense solve uses LAPACK (dgetrf/dgetrs
+// via the Fortran ABI); link against a LAPACK provider such as OpenBLAS.
 
 #pragma once
 #include <cmath>
 #include <vector>
-#include <array>
 #include <algorithm>
 #include <stdexcept>
 #include <string>
 #include <map>
 #include <functional>
+#include <numbers>
+
+#include "Aeolion/Math/Vec3.h"
+#include "Aeolion/Types/Panel.h"
+#include "Aeolion/Types/WingParams.h"
+#include "Aeolion/Types/FreestreamConditions.h"
+#include "Aeolion/Types/ReferenceGeometry.h"
+#include "Aeolion/Types/StationResult.h"
+#include "Aeolion/Types/SolveResult.h"
+#include "Aeolion/Types/StabilityDerivatives.h"
 
 // The dense solve calls LAPACK's double-precision general LU routines
 // directly through their Fortran ABI (dgetrf_ / dgetrs_). We bind these
@@ -47,48 +58,7 @@ extern "C" {
                  double* b, const int* ldb, int* info);
 }
 
-namespace Aeolion { namespace Vlm {
-
-constexpr double Pi = 3.14159265358979323846;
-
-// ---------------------------------------------------------------- Vec3 ---
-struct Vec3 {
-    double x = 0.0, y = 0.0, z = 0.0;
-
-    Vec3() = default;
-    Vec3(double x_, double y_, double z_) : x(x_), y(y_), z(z_) {}
-
-    Vec3 operator+(const Vec3& o) const { return {x + o.x, y + o.y, z + o.z}; }
-    Vec3 operator-(const Vec3& o) const { return {x - o.x, y - o.y, z - o.z}; }
-    Vec3 operator*(double s) const { return {x * s, y * s, z * s}; }
-    Vec3 operator-() const { return {-x, -y, -z}; }
-
-    double Norm() const { return std::sqrt(x * x + y * y + z * z); }
-
-    Vec3 Normalized() const {
-        double n = Norm();
-        if (n < 1e-14) return {0, 0, 0};
-        return {x / n, y / n, z / n};
-    }
-};
-
-inline double Dot(const Vec3& a, const Vec3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
-
-inline Vec3 Cross(const Vec3& a, const Vec3& b) {
-    return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
-}
-
-inline Vec3 RotateAboutX(const Vec3& v, double angleRad) {
-    double c = std::cos(angleRad), s = std::sin(angleRad);
-    return {v.x, c * v.y - s * v.z, s * v.y + c * v.z};
-}
-
-// Rotate about a local spanwise axis (approximated as global y) — used to
-// apply geometric twist to the panel normal vector.
-inline Vec3 RotateAboutY(const Vec3& v, double angleRad) {
-    double c = std::cos(angleRad), s = std::sin(angleRad);
-    return {c * v.x + s * v.z, v.y, -s * v.x + c * v.z};
-}
+namespace Aeolion::VLM {
 
 // --------------------------------------------- finite vortex segment -----
 // Biot-Savart induced velocity at point P from a straight vortex filament
@@ -110,33 +80,9 @@ inline Vec3 SegmentVelocity(const Vec3& P, const Vec3& P1, const Vec3& P2, doubl
         return {0, 0, 0};   // point on (or essentially on) the filament -> no contribution
     }
 
-    double K = gamma / (4.0 * Pi * cmag2) * (Dot(r0, r1) / r1n - Dot(r0, r2) / r2n);
+    double K = gamma / (4.0 * std::numbers::pi * cmag2) * (Dot(r0, r1) / r1n - Dot(r0, r2) / r2n);
     return c * K;
 }
-
-// ------------------------------------------------------------- Panel -----
-struct Panel {
-    Vec3 A, B;              // bound vortex endpoints (quarter-chord), A.y < B.y
-    Vec3 ControlPoint;      // three-quarter-chord, mid-span
-    Vec3 Normal;            // unit outward normal at control point (includes twist+dihedral)
-    Vec3 TrailDirA, TrailDirB; // unit direction of trailing legs from A and from B (downstream)
-    double Area = 0.0;      // panel planform area (for Cl-per-station bookkeeping)
-    double SpanwiseWidth = 0.0;
-    std::string Surface;    // which lifting surface this panel belongs to (e.g. "wing", "htail")
-};
-
-// ------------------------------------------------------- Wing geometry ---
-struct WingParams {
-    double Span = 2.0;            // full span, tip-to-tip [m]
-    double RootChord = 0.3;       // [m]
-    double TipChord = 0.3;        // [m]
-    double SweepQuarterChordDeg = 0.0; // sweep of the quarter-chord line
-    double DihedralDeg = 0.0;
-    double TwistTipDeg = 0.0;     // linear washout: root=0, tip=TwistTipDeg (negative = washout)
-    int NPanelsSemiSpan = 15;     // panels per semi-span (total panels = 2x this)
-    bool CosineSpacing = true;    // cluster panels near tips
-    double TrailLength = 0.0;     // 0 => auto (50x span)
-};
 
 inline double ChordAt(const WingParams& w, double yAbs) {
     double eta = yAbs / (w.Span / 2.0);
@@ -157,22 +103,22 @@ inline std::vector<Panel> BuildWing(const WingParams& w) {
         double u = -1.0 + 2.0 * i / N; // -1..1
         if (w.CosineSpacing) {
             // cosine clustering toward tips: theta in [0,pi], y = -cos(theta)
-            double theta = (u + 1.0) * 0.5 * Pi; // 0..pi
+            double theta = (u + 1.0) * 0.5 * std::numbers::pi; // 0..pi
             yStations[i] = -halfSpan * std::cos(theta);
         } else {
             yStations[i] = halfSpan * u;
         }
     }
 
-    double sweep = w.SweepQuarterChordDeg * Pi / 180.0;
-    double dihedral = w.DihedralDeg * Pi / 180.0;
+    double sweep = w.SweepQuarterChordDeg * std::numbers::pi / 180.0;
+    double dihedral = w.DihedralDeg * std::numbers::pi / 180.0;
     double trail = (w.TrailLength > 0.0) ? w.TrailLength : 50.0 * w.Span;
 
     auto qcX = [&](double y) { return std::fabs(y) * std::tan(sweep); };
     auto zOf = [&](double y) { return std::fabs(y) * std::tan(dihedral); };
     auto twistOf = [&](double y) {
         double eta = std::fabs(y) / halfSpan;
-        return (w.TwistTipDeg * Pi / 180.0) * eta;
+        return (w.TwistTipDeg * std::numbers::pi / 180.0) * eta;
     };
 
     std::vector<Panel> panels;
@@ -258,7 +204,7 @@ inline Vec3 HorseshoeVelocityNoBound(const Vec3& P, const Panel& pj, double gamm
 // each solve by dgetrs: condition-aware pivoting, vectorized BLAS-level
 // kernels, and a real INFO-based singularity report. Link against any
 // LAPACK provider (OpenBLAS, reference LAPACK, ...), e.g.
-//   g++ -std=c++17 -O2 -o geometry_vlm GeometryVlm.cpp -llapack -lblas
+//   g++ -std=c++20 -O2 -o geometry_vlm GeometryVLM.cpp -llapack -lblas
 //
 // LAPACK is column-major; our matrices are row-major std::vector<vector>.
 // Storing a row-major NxN buffer hands LAPACK the transpose A^T, so we
@@ -321,55 +267,6 @@ inline std::vector<double> SolveLinear(const std::vector<std::vector<double>>& A
     return LuSolve(LuFactorize(A), b);
 }
 
-// --------------------------------------------------------- Solver I/O ----
-struct FreestreamConditions {
-    double Vinf = 20.0;      // [m/s]
-    double alphaDeg = 5.0;   // angle of attack [deg]
-    double betaDeg = 0.0;    // sideslip [deg] -- positive beta: relative wind has a +y (right) component
-    double rho = 1.225;      // [kg/m^3]
-    double p = 0.0;          // body roll  rate about x (aft axis)  [rad/s]
-    double q = 0.0;          // body pitch rate about y (right axis) [rad/s]
-    double r = 0.0;          // body yaw   rate about z (up axis)    [rad/s]
-    Vec3 RefPoint = Vec3(0, 0, 0); // moment reference point AND rotation center (e.g. CG)
-};
-
-// Normalization constants for force/moment coefficients. A generic panel
-// list carries no planform metadata of its own, so these must be supplied
-// by the caller (the WingParams convenience overload fills them in
-// automatically for a single parametric wing).
-struct ReferenceGeometry {
-    double Area = 0.0;   // S, wing reference area [m^2]
-    double Chord = 0.0;  // reference chord (mean aerodynamic chord) -- normalizes Cm [m]
-    double Span = 0.0;   // reference span -- normalizes Croll, Cn [m]
-};
-
-struct StationResult {
-    double y = 0.0;
-    double gamma = 0.0;
-    double LiftPerSpan = 0.0; // dL/dy  [N/m]
-    double cl_local = 0.0;    // local (sectional) lift coefficient
-    std::string Surface;
-    int PanelIndex = -1;      // index into the original (unsorted) panel/gamma array
-};
-
-struct SolveResult {
-    std::vector<double> gamma;
-    std::vector<StationResult> Stations;
-    double CL = 0.0;
-    double CDi = 0.0;   // INDUCED drag only -- VLM is a potential-flow method and cannot predict
-                        // viscous/profile drag. Total CD = CDi + your own CD0 estimate.
-    double CY = 0.0;
-    double Croll = 0.0; // rolling moment coefficient about RefPoint (positive: right wingtip up)
-    double Cm = 0.0;    // pitching moment coefficient about RefPoint (positive: nose up)
-    double Cn = 0.0;    // yawing moment coefficient about RefPoint (positive: nose right, about +z)
-    double L = 0.0, Di = 0.0, Y = 0.0;
-    double Mx = 0.0, My = 0.0, Mz = 0.0; // moments about RefPoint [N*m], same axis convention as Croll/Cm/Cn
-    double ReferenceArea = 0.0, ReferenceChord = 0.0, ReferenceSpan = 0.0;
-    std::map<std::string, double> LiftBySurface;  // [N], per source surface tag
-    std::map<std::string, double> DragBySurface;  // [N]
-    std::map<std::string, double> AreaBySurface;  // [m^2]
-};
-
 // A geometry-only factorization: the influence matrix depends solely on
 // panel positions/normals, never on alpha/beta/rates/externalField, so
 // this is what you build ONCE and reuse across many flight conditions
@@ -409,8 +306,8 @@ inline SolveResult SolveWithSystem(const PreparedSystem& sys, const FreestreamCo
     int N = static_cast<int>(panels.size());
     double trail = sys.TrailLength;
 
-    double alpha = fc.alphaDeg * Pi / 180.0;
-    double beta = fc.betaDeg * Pi / 180.0;
+    double alpha = fc.alphaDeg * std::numbers::pi / 180.0;
+    double beta = fc.betaDeg * std::numbers::pi / 180.0;
     Vec3 Vinf(fc.Vinf * std::cos(alpha) * std::cos(beta),
               fc.Vinf * std::sin(beta),
               fc.Vinf * std::sin(alpha) * std::cos(beta));
@@ -538,31 +435,6 @@ inline SolveResult Solve(const WingParams& wp, const FreestreamConditions& fc) {
     return Solve(panels, fc, ref, trail);
 }
 
-// ------------------------------------------------- Stability derivatives -
-// Central-difference stability & control derivatives about a baseline
-// flight condition. Angular derivatives (CL_alpha, CY_beta, ...) are per
-// RADIAN. Rate derivatives are provided two ways:
-//   - "dimensional": d(coefficient) / d(rate in rad/s)
-//   - "_nd"         : the conventional nondimensional stability-derivative
-//                      form, e.g. Cm_q_nd = dCm / d(q*cbar/(2*Vinf)), which
-//                      is what you'll want for a 6-DOF sim or a DAVE-ML
-//                      style derivative table.
-// NOTE: CDi derivatives reflect INDUCED drag only (see SolveResult::CDi).
-struct StabilityDerivatives {
-    double CL0 = 0, CDi0 = 0, CY0 = 0, Cm0 = 0, Croll0 = 0, Cn0 = 0;
-
-    double CL_alpha = 0, CDi_alpha = 0, Cm_alpha = 0;      // per rad
-    double CY_beta = 0, Croll_beta = 0, Cn_beta = 0;       // per rad
-
-    double CL_q = 0, CDi_q = 0, Cm_q = 0;                  // per rad/s
-    double CY_p = 0, Croll_p = 0, Cn_p = 0;                // per rad/s
-    double CY_r = 0, Croll_r = 0, Cn_r = 0;                // per rad/s
-
-    double CL_q_nd = 0, Cm_q_nd = 0;                       // x cbar/(2V)
-    double Croll_p_nd = 0, Cn_p_nd = 0;                    // x b/(2V)
-    double Croll_r_nd = 0, Cn_r_nd = 0;                    // x b/(2V)
-};
-
 inline StabilityDerivatives ComputeDerivatives(const std::vector<Panel>& panels,
                                                 const FreestreamConditions& base,
                                                 const ReferenceGeometry& ref,
@@ -579,7 +451,7 @@ inline StabilityDerivatives ComputeDerivatives(const std::vector<Panel>& panels,
     SolveResult s0 = SolveWithSystem(sys, base, ref);
     d.CL0 = s0.CL; d.CDi0 = s0.CDi; d.CY0 = s0.CY; d.Cm0 = s0.Cm; d.Croll0 = s0.Croll; d.Cn0 = s0.Cn;
 
-    double dA = dAlphaDeg * Pi / 180.0;
+    double dA = dAlphaDeg * std::numbers::pi / 180.0;
     {
         FreestreamConditions fp = base; fp.alphaDeg = base.alphaDeg + dAlphaDeg;
         FreestreamConditions fm = base; fm.alphaDeg = base.alphaDeg - dAlphaDeg;
@@ -589,7 +461,7 @@ inline StabilityDerivatives ComputeDerivatives(const std::vector<Panel>& panels,
         d.CDi_alpha = (rp.CDi - rm.CDi) / (2 * dA);
         d.Cm_alpha = (rp.Cm - rm.Cm) / (2 * dA);
     }
-    double dB = dBetaDeg * Pi / 180.0;
+    double dB = dBetaDeg * std::numbers::pi / 180.0;
     {
         FreestreamConditions fp = base; fp.betaDeg = base.betaDeg + dBetaDeg;
         FreestreamConditions fm = base; fm.betaDeg = base.betaDeg - dBetaDeg;
@@ -645,4 +517,4 @@ inline StabilityDerivatives ComputeDerivatives(const std::vector<Panel>& panels,
     return d;
 }
 
-}} // namespace Aeolion::Vlm
+} // namespace Aeolion::VLM

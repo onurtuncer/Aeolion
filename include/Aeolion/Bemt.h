@@ -1,7 +1,7 @@
 // Bemt.h
 //
 // Blade Element Momentum Theory (BEMT) for a propeller, plus a slipstream
-// velocity field meant to be fed into Vlm.h's Solve() externalField hook
+// velocity field meant to be fed into VLM.h's Solve() externalField hook
 // so downstream control vanes see the actual propwash (axial acceleration
 // + swirl) instead of a uniform freestream.
 //
@@ -18,7 +18,7 @@
 //   phi = atan2(Uax, Ut)             (inflow angle)
 //   alpha = twist(r) - phi           (blade element angle of attack)
 //   cl, cd from the airfoil polar (analytic default, or a lookup table --
-//     see Polar -- you can feed it real data from AirfoilPolar.cpp)
+//     see Polar -- fill TableAlphaDeg/TableCl/TableCd with real section data)
 //   Blade-element thrust/torque (per unit radius, summed over N blades)
 //     dT/dr = 0.5*rho*Urel^2*N*chord*Cn
 //     dQ/dr = 0.5*rho*Urel^2*N*chord*Ct*r
@@ -35,30 +35,30 @@
 // here because it also gives you the RADIAL DISTRIBUTION of slipstream
 // velocity that a downstream vane actually sees, not just total thrust.
 //
-// No external dependencies beyond the standard library and Vlm.h (for
-// Vec3/Cross, used by the slipstream field function).
+// No external dependencies beyond the standard library and Aeolion/Math
+// (Vec3/Cross, used by the slipstream field function).
 
 #pragma once
 #include <cmath>
 #include <vector>
 #include <algorithm>
 #include <stdexcept>
-#include "Aeolion/Vlm.h"
+#include <numbers>
+#include "Aeolion/Math/Vec3.h"
 
-namespace Aeolion { namespace Bemt {
+namespace Aeolion::Bemt {
 
-using Vlm::Vec3;
-using Vlm::Cross;
-using Vlm::Dot;
-constexpr double Pi = Vlm::Pi;
+using VLM::Vec3;
+using VLM::Cross;
+using VLM::Dot;
 
 // ---------------------------------------------------------- Airfoil polar
 // Analytic default (smooth-saturating lift curve + parabolic drag polar)
-// or an optional table lookup (e.g. from AirfoilPolar.cpp's polar.csv) --
+// or an optional table lookup (e.g. from measured or CFD section data) --
 // set UseTable=true and fill TableAlphaDeg/TableCl/TableCd (sorted by
 // alpha) to use real section data instead.
 struct Polar {
-    double cl_alpha = 2.0 * Pi; // per rad, thin-airfoil default
+    double cl_alpha = 2.0 * std::numbers::pi; // per rad, thin-airfoil default
     double alpha0Deg = 0.0;     // zero-lift angle
     double clMax = 1.2;
     double cd0 = 0.02;
@@ -79,7 +79,7 @@ inline void EvalPolar(const Polar& p, double alphaDeg, double& cl, double& cd) {
         cd = p.TableCd[i] + t * (p.TableCd[i + 1] - p.TableCd[i]);
         return;
     }
-    double alpha = (alphaDeg - p.alpha0Deg) * Pi / 180.0;
+    double alpha = (alphaDeg - p.alpha0Deg) * std::numbers::pi / 180.0;
     // smooth saturation toward +-clMax instead of a hard clip -- keeps the
     // BEMT fixed-point iteration well behaved near stall rather than
     // handing it a kink.
@@ -133,8 +133,8 @@ inline double TipHubLoss(const PropGeometry& g, double rIn, double phi) {
     double fTip = (g.NBlades / 2.0) * (g.Radius - r) / (r * sinPhi);
     double fHub = (g.NBlades / 2.0) * (r - g.HubRadius) / (r * sinPhi);
     fTip = std::max(fTip, 0.0); fHub = std::max(fHub, 0.0);
-    double Ftip = (2.0 / Pi) * std::acos(std::clamp(std::exp(-fTip), -1.0, 1.0));
-    double Fhub = (2.0 / Pi) * std::acos(std::clamp(std::exp(-fHub), -1.0, 1.0));
+    double Ftip = (2.0 / std::numbers::pi) * std::acos(std::clamp(std::exp(-fTip), -1.0, 1.0));
+    double Fhub = (2.0 / std::numbers::pi) * std::acos(std::clamp(std::exp(-fHub), -1.0, 1.0));
     return std::clamp(Ftip * Fhub, 1e-3, 1.0);
 }
 
@@ -143,7 +143,7 @@ inline Result Solve(const PropGeometry& geom, const Polar& polar, double rpm, do
     Result res;
     res.Geom = geom;
     res.rpm = rpm;
-    res.omega = rpm * 2.0 * Pi / 60.0;
+    res.omega = rpm * 2.0 * std::numbers::pi / 60.0;
     double omega = res.omega;
 
     for (const auto& st : geom.Stations) {
@@ -156,7 +156,7 @@ inline Result Solve(const PropGeometry& geom, const Polar& polar, double rpm, do
             double Uax = Vinf + vi;
             double Ut = omega * r - wi;
             double phi = std::atan2(Uax, Ut);
-            double alphaDeg = st.TwistDeg - phi * 180.0 / Pi;
+            double alphaDeg = st.TwistDeg - phi * 180.0 / std::numbers::pi;
 
             double cl, cd;
             EvalPolar(polar, alphaDeg, cl, cd);
@@ -173,9 +173,9 @@ inline Result Solve(const PropGeometry& geom, const Polar& polar, double rpm, do
 
             // Momentum-theory dT/dr, dQ/dr, solved for vi_new/wi_new by
             // equating to the blade-element values above:
-            double denomT = 4.0 * Pi * r * rho * std::max(Uax, 1e-4) * F;
+            double denomT = 4.0 * std::numbers::pi * r * rho * std::max(Uax, 1e-4) * F;
             double viNew = std::clamp(dTdr_be / std::max(denomT, 1e-9), -0.5 * std::fabs(omega) * geom.Radius, 3.0 * std::fabs(omega) * geom.Radius);
-            double denomQ = 4.0 * Pi * r * r * rho * std::max(Uax, 1e-4) * F;
+            double denomQ = 4.0 * std::numbers::pi * r * r * rho * std::max(Uax, 1e-4) * F;
             double wiNew = std::clamp(dQdr_be / std::max(denomQ, 1e-9), -0.5 * std::fabs(omega) * r, 0.5 * std::fabs(omega) * r);
 
             double dv = viNew - vi, dw = wiNew - wi;
@@ -192,14 +192,14 @@ inline Result Solve(const PropGeometry& geom, const Polar& polar, double rpm, do
 
         double Uax = Vinf + vi, Ut = omega * r - wi;
         double phi = std::atan2(Uax, Ut);
-        double alphaDeg = st.TwistDeg - phi * 180.0 / Pi;
+        double alphaDeg = st.TwistDeg - phi * 180.0 / std::numbers::pi;
         double cl, cd; EvalPolar(polar, alphaDeg, cl, cd);
         double Cn = cl * std::cos(phi) - cd * std::sin(phi);
         double Ct = cl * std::sin(phi) + cd * std::cos(phi);
         double Urel2 = Uax * Uax + Ut * Ut;
 
         StationResult sr;
-        sr.r = r; sr.vi = vi; sr.wi = wi; sr.phiDeg = phi * 180.0 / Pi; sr.alphaDeg = alphaDeg;
+        sr.r = r; sr.vi = vi; sr.wi = wi; sr.phiDeg = phi * 180.0 / std::numbers::pi; sr.alphaDeg = alphaDeg;
         sr.cl = cl; sr.cd = cd;
         sr.dT_dr = 0.5 * rho * Urel2 * geom.NBlades * st.Chord * Cn;
         sr.dQ_dr = 0.5 * rho * Urel2 * geom.NBlades * st.Chord * Ct * r;
@@ -217,7 +217,7 @@ inline Result Solve(const PropGeometry& geom, const Polar& polar, double rpm, do
 }
 
 // --------------------------------------------------------- Slipstream field
-// Meant to be passed as Vlm::Solve()'s externalField callback: returns the
+// Meant to be passed as VLM::Solve()'s externalField callback: returns the
 // INDUCED velocity perturbation (axial + swirl) at a global point P, to be
 // added on top of the vane surface's own freestream. Assumes the prop axis
 // is aligned with AxisDir (unit vector) through HubCenter, thrust directed
@@ -275,4 +275,4 @@ struct SlipstreamField {
     }
 };
 
-}} // namespace Aeolion::Bemt
+} // namespace Aeolion::Bemt

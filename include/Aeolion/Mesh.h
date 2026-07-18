@@ -21,11 +21,11 @@
 #include <limits>
 #include <cstring>
 #include <cstdint>
-#include "Aeolion/Vlm.h"
+#include "Aeolion/Math/Vec3.h"
 
-namespace Aeolion { namespace MeshIO {
+namespace Aeolion::MeshIO {
 
-using Vlm::Vec3;
+using VLM::Vec3;
 
 struct Triangle {
     Vec3 v0, v1, v2;
@@ -174,4 +174,4 @@ inline void WriteStlBinary(const std::string& path, const PartMesh& part) {
     }
 }
 
-}} // namespace Aeolion::MeshIO
+} // namespace Aeolion::MeshIO

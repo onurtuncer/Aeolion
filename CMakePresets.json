@@ -25,7 +25,7 @@
       "displayName": "Windows x64 (MSVC + vcpkg)",
       "inherits": "vcpkg",
       "cacheVariables": {
-        "VCPKG_TARGET_TRIPLET": "x64-windows-release"
+        "VCPKG_TARGET_TRIPLET": "x64-windows"
       },
       "condition": {
         "type": "equals",

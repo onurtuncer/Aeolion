@@ -1,11 +1,11 @@
 // TestSolverBackend.cpp -- sanity check for the LAPACK/OpenBLAS dense
 // linear-algebra backend: run a representative solve plus a derivatives
 // sweep and confirm the results are finite and physically sane.
-#include "Aeolion/Vlm.h"
+#include "Aeolion/VLM.h"
 #include <iostream>
 #include <iomanip>
 
-using namespace Aeolion::Vlm;
+using namespace Aeolion::VLM;
 
 int main() {
     WingParams wp;
