@@ -1,4 +1,4 @@
-// Bemt.h
+// BEMT.h
 //
 // Blade Element Momentum Theory (BEMT) for a propeller, plus a slipstream
 // velocity field meant to be fed into VLM.h's Solve() externalField hook
@@ -45,12 +45,55 @@
 #include <stdexcept>
 #include <numbers>
 #include "Aeolion/Math/Vec3.h"
+#include "Aeolion/Math/Constants.h"
 
-namespace Aeolion::Bemt {
+namespace Aeolion::BEMT {
 
 using VLM::Vec3;
 using VLM::Cross;
 using VLM::Dot;
+using Math::Half;
+using Math::Two;
+using Math::Tiny;
+using Math::DegToRad;
+using Math::RadToDeg;
+using Math::SecondsPerMinute;
+using Math::UnitClampLo;
+using Math::UnitClampHi;
+
+// --- polar defaults -------------------------------------------------------
+inline constexpr double ThinAirfoilClAlpha = Two * std::numbers::pi; // per rad
+inline constexpr double DefaultClMax = 1.2;
+inline constexpr double DefaultCd0   = 0.02;
+inline constexpr double DefaultKCd   = 0.02;   // cd = cd0 + kCd*cl^2
+
+// --- solver defaults ------------------------------------------------------
+inline constexpr double SeaLevelDensity   = 1.225; // kg/m^3, ISA
+inline constexpr int    DefaultMaxIter    = 3000;
+inline constexpr double DefaultTolerance  = 1e-7;
+inline constexpr double DefaultRelaxation = 0.25;
+
+// --- momentum-theory / annular-streamtube constants -----------------------
+inline constexpr double MomentumDiskFactor = 4.0; // 4*pi*r*rho*Uax*vi*F (thrust); 4*pi*r^3... (torque)
+
+// --- Prandtl tip/hub loss -------------------------------------------------
+inline constexpr double EndpointClampFraction = 1e-4; // clamp radius this fraction of span inboard of hub/tip
+inline constexpr double MinSinPhi             = 1e-4; // floor on |sin(phi)| in the loss denominator
+inline constexpr double MinLossFactor         = 1e-3; // floor so the momentum solve never divides by ~0
+
+// --- fixed-point iteration guards & seeds ---------------------------------
+inline constexpr double SmallVelocity        = 1e-4; // floor on axial velocity in the momentum denominator
+inline constexpr double SmallDenominator     = 1e-9; // floor before dividing by the momentum denominator
+inline constexpr double AxialInductionSeed   = 0.05; // seed vi ~ this * |omega|*R + floor
+inline constexpr double AxialInductionFloor  = 0.1;
+inline constexpr double SwirlInductionSeed   = 0.01; // seed wi ~ this * |omega|*r
+inline constexpr double MinInductionFactor   = -0.5; // clamp vi/wi lower bound (times |omega|*length)
+inline constexpr double MaxAxialInductionFactor = 3.0; // clamp vi upper bound (times |omega|*R)
+inline constexpr double MaxSwirlInductionFactor = 0.5; // clamp |wi| (times |omega|*r)
+
+// --- slipstream field -----------------------------------------------------
+inline constexpr double SlipstreamRadialEps  = 1e-6; // on-axis guard
+inline constexpr double FarWakeDiametersAuto = Two;  // auto development length = this * radius
 
 // ---------------------------------------------------------- Airfoil polar
 // Analytic default (smooth-saturating lift curve + parabolic drag polar)
@@ -58,11 +101,11 @@ using VLM::Dot;
 // set UseTable=true and fill TableAlphaDeg/TableCl/TableCd (sorted by
 // alpha) to use real section data instead.
 struct Polar {
-    double cl_alpha = 2.0 * std::numbers::pi; // per rad, thin-airfoil default
+    double cl_alpha = ThinAirfoilClAlpha; // per rad, thin-airfoil default
     double alpha0Deg = 0.0;     // zero-lift angle
-    double clMax = 1.2;
-    double cd0 = 0.02;
-    double kCd = 0.02;          // cd = cd0 + kCd*cl^2
+    double clMax = DefaultClMax;
+    double cd0 = DefaultCd0;
+    double kCd = DefaultKCd;
 
     bool UseTable = false;
     std::vector<double> TableAlphaDeg, TableCl, TableCd;
@@ -74,12 +117,12 @@ inline void EvalPolar(const Polar& p, double alphaDeg, double& cl, double& cd) {
         double a = std::clamp(alphaDeg, A.front(), A.back());
         size_t i = 0;
         while (i + 1 < A.size() && A[i + 1] < a) ++i;
-        double t = (A[i + 1] - A[i] > 1e-9) ? (a - A[i]) / (A[i + 1] - A[i]) : 0.0;
+        double t = (A[i + 1] - A[i] > Tiny) ? (a - A[i]) / (A[i + 1] - A[i]) : 0.0;
         cl = p.TableCl[i] + t * (p.TableCl[i + 1] - p.TableCl[i]);
         cd = p.TableCd[i] + t * (p.TableCd[i + 1] - p.TableCd[i]);
         return;
     }
-    double alpha = (alphaDeg - p.alpha0Deg) * std::numbers::pi / 180.0;
+    double alpha = DegToRad(alphaDeg - p.alpha0Deg);
     // smooth saturation toward +-clMax instead of a hard clip -- keeps the
     // BEMT fixed-point iteration well behaved near stall rather than
     // handing it a kink.
@@ -126,37 +169,38 @@ inline double TipHubLoss(const PropGeometry& g, double rIn, double phi) {
     // up the iteration. Clamp the radius used here slightly inboard of
     // the true endpoints so F stays small-but-finite instead of exactly
     // zero; the blade geometry itself (chord/twist/actual r) is untouched.
-    double span = std::max(g.Radius - g.HubRadius, 1e-9);
-    double r = std::clamp(rIn, g.HubRadius + 1e-4 * span, g.Radius - 1e-4 * span);
+    double span = std::max(g.Radius - g.HubRadius, Tiny);
+    double r = std::clamp(rIn, g.HubRadius + EndpointClampFraction * span, g.Radius - EndpointClampFraction * span);
 
-    double sinPhi = std::max(std::fabs(std::sin(phi)), 1e-4);
-    double fTip = (g.NBlades / 2.0) * (g.Radius - r) / (r * sinPhi);
-    double fHub = (g.NBlades / 2.0) * (r - g.HubRadius) / (r * sinPhi);
+    double sinPhi = std::max(std::fabs(std::sin(phi)), MinSinPhi);
+    double fTip = (g.NBlades * Half) * (g.Radius - r) / (r * sinPhi);
+    double fHub = (g.NBlades * Half) * (r - g.HubRadius) / (r * sinPhi);
     fTip = std::max(fTip, 0.0); fHub = std::max(fHub, 0.0);
-    double Ftip = (2.0 / std::numbers::pi) * std::acos(std::clamp(std::exp(-fTip), -1.0, 1.0));
-    double Fhub = (2.0 / std::numbers::pi) * std::acos(std::clamp(std::exp(-fHub), -1.0, 1.0));
-    return std::clamp(Ftip * Fhub, 1e-3, 1.0);
+    double Ftip = (Two / std::numbers::pi) * std::acos(std::clamp(std::exp(-fTip), UnitClampLo, UnitClampHi));
+    double Fhub = (Two / std::numbers::pi) * std::acos(std::clamp(std::exp(-fHub), UnitClampLo, UnitClampHi));
+    return std::clamp(Ftip * Fhub, MinLossFactor, UnitClampHi);
 }
 
 inline Result Solve(const PropGeometry& geom, const Polar& polar, double rpm, double Vinf,
-                     double rho = 1.225, int maxIter = 3000, double tol = 1e-7, double relax = 0.25) {
+                     double rho = SeaLevelDensity, int maxIter = DefaultMaxIter,
+                     double tol = DefaultTolerance, double relax = DefaultRelaxation) {
     Result res;
     res.Geom = geom;
     res.rpm = rpm;
-    res.omega = rpm * 2.0 * std::numbers::pi / 60.0;
+    res.omega = rpm * Two * std::numbers::pi / SecondsPerMinute;
     double omega = res.omega;
 
     for (const auto& st : geom.Stations) {
         double r = st.r;
-        double vi = 0.05 * std::fabs(omega) * geom.Radius + 0.1; // seed guesses, refined by iteration
-        double wi = 0.01 * std::fabs(omega) * r;
+        double vi = AxialInductionSeed * std::fabs(omega) * geom.Radius + AxialInductionFloor; // seed, refined by iteration
+        double wi = SwirlInductionSeed * std::fabs(omega) * r;
         bool ok = false;
 
         for (int iter = 0; iter < maxIter; ++iter) {
             double Uax = Vinf + vi;
             double Ut = omega * r - wi;
             double phi = std::atan2(Uax, Ut);
-            double alphaDeg = st.TwistDeg - phi * 180.0 / std::numbers::pi;
+            double alphaDeg = st.TwistDeg - RadToDeg(phi);
 
             double cl, cd;
             EvalPolar(polar, alphaDeg, cl, cd);
@@ -168,15 +212,19 @@ inline Result Solve(const PropGeometry& geom, const Polar& polar, double rpm, do
             double F = TipHubLoss(geom, r, phi);
 
             // Blade-element dT/dr, dQ/dr:
-            double dTdr_be = 0.5 * rho * Urel2 * geom.NBlades * st.Chord * Cn;
-            double dQdr_be = 0.5 * rho * Urel2 * geom.NBlades * st.Chord * Ct * r;
+            double dTdr_be = Half * rho * Urel2 * geom.NBlades * st.Chord * Cn;
+            double dQdr_be = Half * rho * Urel2 * geom.NBlades * st.Chord * Ct * r;
 
             // Momentum-theory dT/dr, dQ/dr, solved for vi_new/wi_new by
             // equating to the blade-element values above:
-            double denomT = 4.0 * std::numbers::pi * r * rho * std::max(Uax, 1e-4) * F;
-            double viNew = std::clamp(dTdr_be / std::max(denomT, 1e-9), -0.5 * std::fabs(omega) * geom.Radius, 3.0 * std::fabs(omega) * geom.Radius);
-            double denomQ = 4.0 * std::numbers::pi * r * r * rho * std::max(Uax, 1e-4) * F;
-            double wiNew = std::clamp(dQdr_be / std::max(denomQ, 1e-9), -0.5 * std::fabs(omega) * r, 0.5 * std::fabs(omega) * r);
+            double denomT = MomentumDiskFactor * std::numbers::pi * r * rho * std::max(Uax, SmallVelocity) * F;
+            double viNew = std::clamp(dTdr_be / std::max(denomT, SmallDenominator),
+                                      MinInductionFactor * std::fabs(omega) * geom.Radius,
+                                      MaxAxialInductionFactor * std::fabs(omega) * geom.Radius);
+            double denomQ = MomentumDiskFactor * std::numbers::pi * r * r * rho * std::max(Uax, SmallVelocity) * F;
+            double wiNew = std::clamp(dQdr_be / std::max(denomQ, SmallDenominator),
+                                      -MaxSwirlInductionFactor * std::fabs(omega) * r,
+                                      MaxSwirlInductionFactor * std::fabs(omega) * r);
 
             double dv = viNew - vi, dw = wiNew - wi;
             vi += relax * dv;
@@ -192,25 +240,25 @@ inline Result Solve(const PropGeometry& geom, const Polar& polar, double rpm, do
 
         double Uax = Vinf + vi, Ut = omega * r - wi;
         double phi = std::atan2(Uax, Ut);
-        double alphaDeg = st.TwistDeg - phi * 180.0 / std::numbers::pi;
+        double alphaDeg = st.TwistDeg - RadToDeg(phi);
         double cl, cd; EvalPolar(polar, alphaDeg, cl, cd);
         double Cn = cl * std::cos(phi) - cd * std::sin(phi);
         double Ct = cl * std::sin(phi) + cd * std::cos(phi);
         double Urel2 = Uax * Uax + Ut * Ut;
 
         StationResult sr;
-        sr.r = r; sr.vi = vi; sr.wi = wi; sr.phiDeg = phi * 180.0 / std::numbers::pi; sr.alphaDeg = alphaDeg;
+        sr.r = r; sr.vi = vi; sr.wi = wi; sr.phiDeg = RadToDeg(phi); sr.alphaDeg = alphaDeg;
         sr.cl = cl; sr.cd = cd;
-        sr.dT_dr = 0.5 * rho * Urel2 * geom.NBlades * st.Chord * Cn;
-        sr.dQ_dr = 0.5 * rho * Urel2 * geom.NBlades * st.Chord * Ct * r;
+        sr.dT_dr = Half * rho * Urel2 * geom.NBlades * st.Chord * Cn;
+        sr.dQ_dr = Half * rho * Urel2 * geom.NBlades * st.Chord * Ct * r;
         res.Stations.push_back(sr);
     }
 
     // Integrate thrust/torque (trapezoidal over r).
     for (size_t i = 0; i + 1 < res.Stations.size(); ++i) {
         double dr = res.Stations[i + 1].r - res.Stations[i].r;
-        res.Thrust += 0.5 * (res.Stations[i].dT_dr + res.Stations[i + 1].dT_dr) * dr;
-        res.Torque += 0.5 * (res.Stations[i].dQ_dr + res.Stations[i + 1].dQ_dr) * dr;
+        res.Thrust += Half * (res.Stations[i].dT_dr + res.Stations[i + 1].dT_dr) * dr;
+        res.Torque += Half * (res.Stations[i].dQ_dr + res.Stations[i + 1].dQ_dr) * dr;
     }
     res.Power = res.Torque * std::fabs(omega);
     return res;
@@ -234,7 +282,7 @@ inline Result Solve(const PropGeometry& geom, const Polar& polar, double rpm, do
 // viscous mixing will erode it further downstream than this model
 // accounts for, so don't trust this far aft of the disk.
 struct SlipstreamField {
-    Result BemtResult;
+    Result BEMTResult;
     Vec3 HubCenter{0, 0, 0};
     Vec3 AxisDir{1, 0, 0}; // unit vector, thrust direction
     double DevelopmentLength = -1.0; // <0 => auto (1 prop diameter)
@@ -244,35 +292,35 @@ struct SlipstreamField {
         double x = Dot(rel, AxisDir);
         Vec3 radial = rel - AxisDir * x;
         double r = radial.Norm();
-        if (x < 0.0 || r < 1e-6 || BemtResult.Stations.empty()) return Vec3(0, 0, 0);
+        if (x < 0.0 || r < SlipstreamRadialEps || BEMTResult.Stations.empty()) return Vec3(0, 0, 0);
 
-        double R = BemtResult.Geom.Radius, rHub = BemtResult.Geom.HubRadius;
+        double R = BEMTResult.Geom.Radius, rHub = BEMTResult.Geom.HubRadius;
         if (r > R) return Vec3(0, 0, 0); // no slipstream contraction modeled -- outside disk tip = no effect
 
         // interpolate vi(r), wi(r) from BEMT stations
-        const auto& st = BemtResult.Stations;
+        const auto& st = BEMTResult.Stations;
         double rc = std::clamp(r, rHub, R);
         size_t i = 0;
         while (i + 1 < st.size() && st[i + 1].r < rc) ++i;
         double vi, wi;
         if (i + 1 < st.size()) {
-            double t = (st[i + 1].r - st[i].r > 1e-9) ? (rc - st[i].r) / (st[i + 1].r - st[i].r) : 0.0;
+            double t = (st[i + 1].r - st[i].r > Tiny) ? (rc - st[i].r) / (st[i + 1].r - st[i].r) : 0.0;
             vi = st[i].vi + t * (st[i + 1].vi - st[i].vi);
             wi = st[i].wi + t * (st[i + 1].wi - st[i].wi);
         } else {
             vi = st.back().vi; wi = st.back().wi;
         }
 
-        double devLen = (DevelopmentLength > 0.0) ? DevelopmentLength : 2.0 * R;
+        double devLen = (DevelopmentLength > 0.0) ? DevelopmentLength : FarWakeDiametersAuto * R;
         double dev = std::clamp(x / devLen, 0.0, 1.0); // 0 at disk -> 1 by devLen downstream
         double viEff = vi * (1.0 + dev); // ramps disk value -> ~2x far-wake value
         double wiEff = wi;               // swirl modeled as roughly constant downstream (see note above)
 
         Vec3 rhat = radial * (1.0 / r);
-        Vec3 that = Cross(AxisDir, rhat) * (double)BemtResult.Geom.RotationSign;
+        Vec3 that = Cross(AxisDir, rhat) * (double)BEMTResult.Geom.RotationSign;
 
         return AxisDir * viEff + that * wiEff;
     }
 };
 
-} // namespace Aeolion::Bemt
+} // namespace Aeolion::BEMT

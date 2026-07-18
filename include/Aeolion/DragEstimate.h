@@ -32,9 +32,8 @@
 //            antennas etc. (2-6% is a common conceptual-design allowance;
 //            0 if you'd rather account for these yourself)
 //
-// No external dependencies beyond the standard library, Aeolion/Math
-// (Vec3/Cross) and Aeolion/Mesh (PartMesh, to compute wetted area from a
-// triangle mesh).
+// No external dependencies beyond the standard library. Wetted areas are
+// supplied by the caller (ComponentSpec::Swet).
 
 #pragma once
 #include <cmath>
@@ -42,17 +41,52 @@
 #include <string>
 #include <algorithm>
 #include <numbers>
-#include "Aeolion/Math/Vec3.h"
-#include "Aeolion/Mesh.h"
+#include "Aeolion/Math/Constants.h"
 
 namespace Aeolion::DragEstimate {
 
-using VLM::Vec3;
-using VLM::Cross;
+using Math::Tiny;
+using Math::DegToRad;
+
+// --- air (sea-level ISA) --------------------------------------------------
+inline constexpr double SeaLevelDensity   = 1.225;    // kg/m^3
+inline constexpr double SeaLevelViscosity = 1.789e-5; // Pa*s
+inline constexpr double MinReynolds       = 1.0;      // below this, Cf is treated as zero
+
+// --- Prandtl-Schlichting turbulent skin friction --------------------------
+inline constexpr double SchlichtingCoeff  = 0.455;
+inline constexpr double SchlichtingLogExp = 2.58;
+
+// --- Frankl-Voishel compressibility correction ----------------------------
+inline constexpr double CompressMachThreshold = 1e-6;
+inline constexpr double CompressCoeff         = 0.144;
+inline constexpr double CompressExp           = 0.65;
+
+// --- Blasius laminar skin friction ----------------------------------------
+inline constexpr double BlasiusCoeff = 1.328;
+
+// --- airfoil-like form factor (thickness + sweep) -------------------------
+inline constexpr double FormThicknessFloor  = 1e-3;
+inline constexpr double FormThicknessCoeff  = 0.6;
+inline constexpr double FormThickness4Coeff = 100.0;
+inline constexpr int    FormThicknessPower  = 4;
+inline constexpr double FormSweepExp        = 0.28;
+
+// --- body-like form factor (fineness ratio) -------------------------------
+inline constexpr double BodyFinenessFloor = 1e-3;
+inline constexpr double BodyCubeCoeff     = 60.0;
+inline constexpr double BodyLinearDivisor = 400.0;
+
+// --- component-spec defaults ----------------------------------------------
+inline constexpr double DefaultThicknessRatio  = 0.12;
+inline constexpr double DefaultMaxThicknessLoc = 0.3;
+inline constexpr double DefaultFineness        = 6.0;
+inline constexpr double IsolatedInterference   = 1.0;
+inline constexpr double DefaultMiscFraction    = 0.03;
 
 struct AirProperties {
-    double rho = 1.225;      // [kg/m^3] -- sea-level ISA by default
-    double mu = 1.789e-5;    // [Pa*s]   -- sea-level ISA dynamic viscosity
+    double rho = SeaLevelDensity;   // [kg/m^3] -- sea-level ISA by default
+    double mu = SeaLevelViscosity;  // [Pa*s]   -- sea-level ISA dynamic viscosity
 };
 
 inline double ReynoldsNumber(double Vinf, double charLength, const AirProperties& air) {
@@ -62,16 +96,16 @@ inline double ReynoldsNumber(double Vinf, double charLength, const AirProperties
 // Turbulent flat-plate skin friction, Prandtl-Schlichting correlation, with
 // an optional Frankl-Voishel compressibility correction.
 inline double CfTurbulent(double Re, double mach = 0.0) {
-    if (Re < 1.0) return 0.0;
-    double cf = 0.455 / std::pow(std::log10(Re), 2.58);
-    if (mach > 1e-6) cf /= std::pow(1.0 + 0.144 * mach * mach, 0.65);
+    if (Re < MinReynolds) return 0.0;
+    double cf = SchlichtingCoeff / std::pow(std::log10(Re), SchlichtingLogExp);
+    if (mach > CompressMachThreshold) cf /= std::pow(1.0 + CompressCoeff * mach * mach, CompressExp);
     return cf;
 }
 
 // Laminar flat-plate skin friction (Blasius).
 inline double CfLaminar(double Re) {
-    if (Re < 1.0) return 0.0;
-    return 1.328 / std::sqrt(Re);
+    if (Re < MinReynolds) return 0.0;
+    return BlasiusCoeff / std::sqrt(Re);
 }
 
 // Simple engineering blend between laminar and turbulent Cf, weighted by
@@ -95,29 +129,17 @@ inline double CfMixed(double Re, double laminarFraction, double mach = 0.0) {
 // the max-thickness line (quarter-chord sweep is a fine approximation).
 inline double FormFactorAirfoil(double thicknessRatio, double xcMaxThickness, double sweepDeg) {
     double tc = thicknessRatio;
-    double xm = std::max(xcMaxThickness, 1e-3);
-    double sweep = sweepDeg * std::numbers::pi / 180.0;
-    double base = 1.0 + (0.6 / xm) * tc + 100.0 * std::pow(tc, 4);
-    return base * std::pow(std::cos(sweep), 0.28);
+    double xm = std::max(xcMaxThickness, FormThicknessFloor);
+    double sweep = DegToRad(sweepDeg);
+    double base = 1.0 + (FormThicknessCoeff / xm) * tc + FormThickness4Coeff * std::pow(tc, FormThicknessPower);
+    return base * std::pow(std::cos(sweep), FormSweepExp);
 }
 
 // Body-like (fuselage, pod, boom) form factor from fineness ratio
 // f = length / equivalent_diameter.
 inline double FormFactorBody(double fineness) {
-    double f = std::max(fineness, 1e-3);
-    return 1.0 + 60.0 / (f * f * f) + f / 400.0;
-}
-
-// Sum of triangle areas -- for a thin-shell surface mesh (upper+lower skin)
-// this IS the wetted area directly, no factor-of-2 needed since both skins
-// are already separate triangles in the mesh.
-inline double WettedArea(const MeshIO::PartMesh& part) {
-    double A = 0.0;
-    for (const auto& t : part.Tris) {
-        Vec3 e1 = t.v1 - t.v0, e2 = t.v2 - t.v0;
-        A += 0.5 * Cross(e1, e2).Norm();
-    }
-    return A;
+    double f = std::max(fineness, BodyFinenessFloor);
+    return 1.0 + BodyCubeCoeff / (f * f * f) + f / BodyLinearDivisor;
 }
 
 struct ComponentSpec {
@@ -125,11 +147,11 @@ struct ComponentSpec {
     double Swet = 0.0;           // wetted area [m^2]
     double CharLength = 0.0;     // Reynolds-number reference length [m] (chord, or fuselage length)
     bool IsBody = false;         // true: use FormFactorBody (needs fineness); false: FormFactorAirfoil (needs thickness/sweep)
-    double ThicknessRatio = 0.12;
-    double xcMaxThickness = 0.3;
+    double ThicknessRatio = DefaultThicknessRatio;
+    double xcMaxThickness = DefaultMaxThicknessLoc;
     double SweepDeg = 0.0;
-    double Fineness = 6.0;
-    double Q = 1.0;              // interference factor (1.0 = isolated; 1.03-1.08 typical for a wing/tail-fuselage junction)
+    double Fineness = DefaultFineness;
+    double Q = IsolatedInterference; // interference factor (1.0 = isolated; 1.03-1.08 typical for a wing/tail-fuselage junction)
     double LaminarFraction = 0.0;
 };
 
@@ -148,7 +170,7 @@ inline ComponentResult EstimateComponent(const ComponentSpec& c, double Vinf, do
     r.FF = c.IsBody ? FormFactorBody(c.Fineness) : FormFactorAirfoil(c.ThicknessRatio, c.xcMaxThickness, c.SweepDeg);
     r.Q = c.Q;
     r.Swet = c.Swet;
-    r.CD0_contribution = (Sref > 1e-9) ? (r.Cf * r.FF * r.Q * r.Swet / Sref) : 0.0;
+    r.CD0_contribution = (Sref > Tiny) ? (r.Cf * r.FF * r.Q * r.Swet / Sref) : 0.0;
     return r;
 }
 
@@ -160,7 +182,7 @@ struct BuildupResult {
 };
 
 inline BuildupResult EstimateCD0(const std::vector<ComponentSpec>& specs, double Vinf, double Sref,
-                                  const AirProperties& air, double miscFraction = 0.03, double mach = 0.0) {
+                                  const AirProperties& air, double miscFraction = DefaultMiscFraction, double mach = 0.0) {
     BuildupResult res;
     res.MiscFraction = miscFraction;
     for (const auto& c : specs) {

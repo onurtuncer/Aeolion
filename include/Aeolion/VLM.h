@@ -36,6 +36,7 @@
 #include <numbers>
 
 #include "Aeolion/Math/Vec3.h"
+#include "Aeolion/Math/Constants.h"
 #include "Aeolion/Types/Panel.h"
 #include "Aeolion/Types/WingParams.h"
 #include "Aeolion/Types/FreestreamConditions.h"
@@ -60,12 +61,30 @@ extern "C" {
 
 namespace Aeolion::VLM {
 
+using Math::Half;
+using Math::Two;
+using Math::DegToRad;
+using Math::RadToDeg;
+
+// --- tuning / tolerance constants (no bare literals in the algorithms) ----
+inline constexpr double VortexCoreCutoff    = 1e-8;   // cross-product^2 cutoff regularizing a filament's own singularity
+inline constexpr double FilamentEndpointEps = 1e-10;  // "point is on the filament endpoint" guard
+inline constexpr double InvFourPi           = 1.0 / (4.0 * std::numbers::pi); // Biot-Savart kernel coefficient
+inline constexpr int    SemiSpanCount       = 2;      // a full span is two semi-spans
+inline constexpr double DefaultTrailSpanFactor = 50.0; // auto trailing-leg length = this * span
+inline constexpr double DenormFloor         = 1e-300; // keeps the matrix-scale normalization finite
+inline constexpr double CoeffDenomEps       = 1e-12;  // guard before dividing by dynamic-pressure * area
+inline constexpr double GeometryEps         = 1e-9;   // "practically zero" length/area guard
+inline constexpr double UnitFallbackLength  = 1.0;    // reference length used when none is derivable
+inline constexpr double DefaultAlphaStepDeg = 0.5;    // central-difference step, angle of attack
+inline constexpr double DefaultBetaStepDeg  = 0.5;    // central-difference step, sideslip
+inline constexpr double DefaultRateStepFraction = 0.002; // central-difference rate step, as a fraction of Vinf/length
+
 // --------------------------------------------- finite vortex segment -----
 // Biot-Savart induced velocity at point P from a straight vortex filament
 // running P1 -> P2 with circulation strength gamma. A small viscous-core
-// cutoff (rc) regularizes the singularity on the filament itself.
+// cutoff regularizes the singularity on the filament itself.
 inline Vec3 SegmentVelocity(const Vec3& P, const Vec3& P1, const Vec3& P2, double gamma) {
-    const double rc = 1e-8;   // core radius, relative-scale-independent cutoff on cross product
     Vec3 r1 = P - P1;
     Vec3 r2 = P - P2;
     Vec3 r0 = P2 - P1;
@@ -76,16 +95,16 @@ inline Vec3 SegmentVelocity(const Vec3& P, const Vec3& P1, const Vec3& P2, doubl
     double r1n = r1.Norm();
     double r2n = r2.Norm();
 
-    if (cmag2 < rc || r1n < 1e-10 || r2n < 1e-10) {
+    if (cmag2 < VortexCoreCutoff || r1n < FilamentEndpointEps || r2n < FilamentEndpointEps) {
         return {0, 0, 0};   // point on (or essentially on) the filament -> no contribution
     }
 
-    double K = gamma / (4.0 * std::numbers::pi * cmag2) * (Dot(r0, r1) / r1n - Dot(r0, r2) / r2n);
+    double K = gamma * InvFourPi / cmag2 * (Dot(r0, r1) / r1n - Dot(r0, r2) / r2n);
     return c * K;
 }
 
 inline double ChordAt(const WingParams& w, double yAbs) {
-    double eta = yAbs / (w.Span / 2.0);
+    double eta = yAbs / (w.Span * Half);
     return w.RootChord + (w.TipChord - w.RootChord) * eta;
 }
 
@@ -95,30 +114,30 @@ inline double ChordAt(const WingParams& w, double yAbs) {
 inline std::vector<Panel> BuildWing(const WingParams& w) {
     if (w.NPanelsSemiSpan < 1) throw std::invalid_argument("NPanelsSemiSpan must be >= 1");
 
-    int N = 2 * w.NPanelsSemiSpan;
+    int N = SemiSpanCount * w.NPanelsSemiSpan;
     std::vector<double> yStations(N + 1);
-    double halfSpan = w.Span / 2.0;
+    double halfSpan = w.Span * Half;
 
     for (int i = 0; i <= N; ++i) {
-        double u = -1.0 + 2.0 * i / N; // -1..1
+        double u = -1.0 + Two * i / N; // -1..1
         if (w.CosineSpacing) {
             // cosine clustering toward tips: theta in [0,pi], y = -cos(theta)
-            double theta = (u + 1.0) * 0.5 * std::numbers::pi; // 0..pi
+            double theta = (u + 1.0) * Half * std::numbers::pi; // 0..pi
             yStations[i] = -halfSpan * std::cos(theta);
         } else {
             yStations[i] = halfSpan * u;
         }
     }
 
-    double sweep = w.SweepQuarterChordDeg * std::numbers::pi / 180.0;
-    double dihedral = w.DihedralDeg * std::numbers::pi / 180.0;
-    double trail = (w.TrailLength > 0.0) ? w.TrailLength : 50.0 * w.Span;
+    double sweep = DegToRad(w.SweepQuarterChordDeg);
+    double dihedral = DegToRad(w.DihedralDeg);
+    double trail = (w.TrailLength > 0.0) ? w.TrailLength : DefaultTrailSpanFactor * w.Span;
 
     auto qcX = [&](double y) { return std::fabs(y) * std::tan(sweep); };
     auto zOf = [&](double y) { return std::fabs(y) * std::tan(dihedral); };
     auto twistOf = [&](double y) {
         double eta = std::fabs(y) / halfSpan;
-        return (w.TwistTipDeg * std::numbers::pi / 180.0) * eta;
+        return DegToRad(w.TwistTipDeg) * eta;
     };
 
     std::vector<Panel> panels;
@@ -135,7 +154,7 @@ inline std::vector<Panel> BuildWing(const WingParams& w) {
         Vec3 A(qcX(yA), yA, zOf(yA));
         Vec3 B(qcX(yB), yB, zOf(yB));
 
-        double yc = 0.5 * (yA + yB);
+        double yc = Half * (yA + yB);
         double cc = ChordAt(w, std::fabs(yc));
         double eps = twistOf(yc);
 
@@ -145,7 +164,7 @@ inline std::vector<Panel> BuildWing(const WingParams& w) {
         // the boundary-condition normal. This keeps the panel geometry
         // itself consistent with what a real (or mesh-derived) twisted
         // wing looks like, not just a small-angle linearization.
-        Vec3 qcToCp = RotateAboutY(Vec3(0.5 * cc, 0, 0), eps);
+        Vec3 qcToCp = RotateAboutY(Vec3(Half * cc, 0, 0), eps);
         Vec3 cp = Vec3(qcX(yc), yc, zOf(yc)) + qcToCp;
 
         Vec3 n(0, 0, 1);
@@ -160,7 +179,7 @@ inline std::vector<Panel> BuildWing(const WingParams& w) {
         p.TrailDirA = Vec3(1, 0, 0);
         p.TrailDirB = Vec3(1, 0, 0);
         p.SpanwiseWidth = yB - yA;
-        p.Area = 0.5 * (cA + cB) * p.SpanwiseWidth;
+        p.Area = Half * (cA + cB) * p.SpanwiseWidth;
         panels.push_back(p);
 
         (void)trail;
@@ -204,7 +223,7 @@ inline Vec3 HorseshoeVelocityNoBound(const Vec3& P, const Panel& pj, double gamm
 // each solve by dgetrs: condition-aware pivoting, vectorized BLAS-level
 // kernels, and a real INFO-based singularity report. Link against any
 // LAPACK provider (OpenBLAS, reference LAPACK, ...), e.g.
-//   g++ -std=c++20 -O2 -o geometry_vlm GeometryVLM.cpp -llapack -lblas
+//   g++ -std=c++20 -O2 -Iinclude -o vlm_demo src/main.cpp -llapack -lblas
 //
 // LAPACK is column-major; our matrices are row-major std::vector<vector>.
 // Storing a row-major NxN buffer hands LAPACK the transpose A^T, so we
@@ -235,7 +254,7 @@ inline LUFactorization LuFactorize(const std::vector<std::vector<double>>& A) {
 
     double scale = 0.0;
     for (double v : f.Flat) scale = std::max(scale, std::fabs(v));
-    scale = std::max(scale, 1e-300);
+    scale = std::max(scale, DenormFloor);
 
     f.Ipiv.resize(n);
     int info = 0;
@@ -306,8 +325,8 @@ inline SolveResult SolveWithSystem(const PreparedSystem& sys, const FreestreamCo
     int N = static_cast<int>(panels.size());
     double trail = sys.TrailLength;
 
-    double alpha = fc.alphaDeg * std::numbers::pi / 180.0;
-    double beta = fc.betaDeg * std::numbers::pi / 180.0;
+    double alpha = DegToRad(fc.alphaDeg);
+    double beta = DegToRad(fc.betaDeg);
     Vec3 Vinf(fc.Vinf * std::cos(alpha) * std::cos(beta),
               fc.Vinf * std::sin(beta),
               fc.Vinf * std::sin(alpha) * std::cos(beta));
@@ -340,11 +359,11 @@ inline SolveResult SolveWithSystem(const PreparedSystem& sys, const FreestreamCo
     for (auto& p : panels) S += p.Area;
     if (ref.Area > 0.0) S = ref.Area; // caller override (e.g. wing-only area for a multi-surface aircraft)
     res.ReferenceArea = S;
-    res.ReferenceChord = (ref.Chord > 0.0) ? ref.Chord : (S > 0.0 ? S / std::max(1e-9, 2.0) : 1.0);
-    res.ReferenceSpan = (ref.Span > 0.0) ? ref.Span : 1.0;
+    res.ReferenceChord = (ref.Chord > 0.0) ? ref.Chord : (S > 0.0 ? S / std::max(GeometryEps, Two) : UnitFallbackLength);
+    res.ReferenceSpan = (ref.Span > 0.0) ? ref.Span : UnitFallbackLength;
 
     for (int i = 0; i < N; ++i) {
-        Vec3 mid = (panels[i].A + panels[i].B) * 0.5;
+        Vec3 mid = (panels[i].A + panels[i].B) * Half;
         Vec3 vind(0, 0, 0);
         for (int j = 0; j < N; ++j) {
             if (j == i) {
@@ -363,9 +382,9 @@ inline SolveResult SolveWithSystem(const PreparedSystem& sys, const FreestreamCo
         sr.y = mid.y;
         sr.gamma = gamma[i];
         sr.LiftPerSpan = Dot(F, liftDir) / panels[i].SpanwiseWidth;
-        double qLocal = 0.5 * rho * fc.Vinf * fc.Vinf;
+        double qLocal = Half * rho * fc.Vinf * fc.Vinf;
         double localChord = panels[i].Area / panels[i].SpanwiseWidth;
-        sr.cl_local = (qLocal > 1e-12 && localChord > 1e-12) ? sr.LiftPerSpan / (qLocal * localChord) : 0.0;
+        sr.cl_local = (qLocal > CoeffDenomEps && localChord > CoeffDenomEps) ? sr.LiftPerSpan / (qLocal * localChord) : 0.0;
         sr.Surface = panels[i].Surface;
         sr.PanelIndex = i;
         res.Stations[i] = sr;
@@ -381,13 +400,13 @@ inline SolveResult SolveWithSystem(const PreparedSystem& sys, const FreestreamCo
     res.Y = Dot(totalForce, sideDir);
     res.Mx = totalMoment.x; res.My = totalMoment.y; res.Mz = totalMoment.z;
 
-    double q = 0.5 * rho * fc.Vinf * fc.Vinf;
-    res.CL = (q * S > 1e-12) ? res.L / (q * S) : 0.0;
-    res.CDi = (q * S > 1e-12) ? res.Di / (q * S) : 0.0;
-    res.CY = (q * S > 1e-12) ? res.Y / (q * S) : 0.0;
-    res.Croll = (q * S * res.ReferenceSpan > 1e-12) ? res.Mx / (q * S * res.ReferenceSpan) : 0.0;
-    res.Cm = (q * S * res.ReferenceChord > 1e-12) ? res.My / (q * S * res.ReferenceChord) : 0.0;
-    res.Cn = (q * S * res.ReferenceSpan > 1e-12) ? res.Mz / (q * S * res.ReferenceSpan) : 0.0;
+    double q = Half * rho * fc.Vinf * fc.Vinf;
+    res.CL = (q * S > CoeffDenomEps) ? res.L / (q * S) : 0.0;
+    res.CDi = (q * S > CoeffDenomEps) ? res.Di / (q * S) : 0.0;
+    res.CY = (q * S > CoeffDenomEps) ? res.Y / (q * S) : 0.0;
+    res.Croll = (q * S * res.ReferenceSpan > CoeffDenomEps) ? res.Mx / (q * S * res.ReferenceSpan) : 0.0;
+    res.Cm = (q * S * res.ReferenceChord > CoeffDenomEps) ? res.My / (q * S * res.ReferenceChord) : 0.0;
+    res.Cn = (q * S * res.ReferenceSpan > CoeffDenomEps) ? res.Mz / (q * S * res.ReferenceSpan) : 0.0;
 
     std::sort(res.Stations.begin(), res.Stations.end(),
               [](const StationResult& a, const StationResult& b) { return a.y < b.y; });
@@ -402,7 +421,7 @@ inline SolveResult SolveWithSystem(const PreparedSystem& sys, const FreestreamCo
 // externalField: optional background velocity PERTURBATION as a function
 // of position, added on top of the freestream+rotation kinematic velocity
 // at every panel. This is how you inject something like a propeller's
-// slipstream (see Bemt.h), ground effect, or a gust field into an
+// slipstream (see BEMT.h), ground effect, or a gust field into an
 // otherwise-ordinary lifting-surface solve -- the field only needs to
 // return the extra velocity it contributes, not the total.
 //
@@ -439,9 +458,9 @@ inline StabilityDerivatives ComputeDerivatives(const std::vector<Panel>& panels,
                                                 const FreestreamConditions& base,
                                                 const ReferenceGeometry& ref,
                                                 double trailLength,
-                                                double dAlphaDeg = 0.5,
-                                                double dBetaDeg = 0.5,
-                                                double rateStepFrac = 0.002) {
+                                                double dAlphaDeg = DefaultAlphaStepDeg,
+                                                double dBetaDeg = DefaultBetaStepDeg,
+                                                double rateStepFrac = DefaultRateStepFraction) {
     StabilityDerivatives d;
     // Factorize the influence matrix ONCE -- it depends only on panel
     // geometry, never on alpha/beta/rates -- and reuse it for all 11
@@ -451,29 +470,29 @@ inline StabilityDerivatives ComputeDerivatives(const std::vector<Panel>& panels,
     SolveResult s0 = SolveWithSystem(sys, base, ref);
     d.CL0 = s0.CL; d.CDi0 = s0.CDi; d.CY0 = s0.CY; d.Cm0 = s0.Cm; d.Croll0 = s0.Croll; d.Cn0 = s0.Cn;
 
-    double dA = dAlphaDeg * std::numbers::pi / 180.0;
+    double dA = DegToRad(dAlphaDeg);
     {
         FreestreamConditions fp = base; fp.alphaDeg = base.alphaDeg + dAlphaDeg;
         FreestreamConditions fm = base; fm.alphaDeg = base.alphaDeg - dAlphaDeg;
         SolveResult rp = SolveWithSystem(sys, fp, ref);
         SolveResult rm = SolveWithSystem(sys, fm, ref);
-        d.CL_alpha = (rp.CL - rm.CL) / (2 * dA);
-        d.CDi_alpha = (rp.CDi - rm.CDi) / (2 * dA);
-        d.Cm_alpha = (rp.Cm - rm.Cm) / (2 * dA);
+        d.CL_alpha = (rp.CL - rm.CL) / (Two * dA);
+        d.CDi_alpha = (rp.CDi - rm.CDi) / (Two * dA);
+        d.Cm_alpha = (rp.Cm - rm.Cm) / (Two * dA);
     }
-    double dB = dBetaDeg * std::numbers::pi / 180.0;
+    double dB = DegToRad(dBetaDeg);
     {
         FreestreamConditions fp = base; fp.betaDeg = base.betaDeg + dBetaDeg;
         FreestreamConditions fm = base; fm.betaDeg = base.betaDeg - dBetaDeg;
         SolveResult rp = SolveWithSystem(sys, fp, ref);
         SolveResult rm = SolveWithSystem(sys, fm, ref);
-        d.CY_beta = (rp.CY - rm.CY) / (2 * dB);
-        d.Croll_beta = (rp.Croll - rm.Croll) / (2 * dB);
-        d.Cn_beta = (rp.Cn - rm.Cn) / (2 * dB);
+        d.CY_beta = (rp.CY - rm.CY) / (Two * dB);
+        d.Croll_beta = (rp.Croll - rm.Croll) / (Two * dB);
+        d.Cn_beta = (rp.Cn - rm.Cn) / (Two * dB);
     }
 
-    double cbar = (ref.Chord > 0.0) ? ref.Chord : 1.0;
-    double b = (ref.Span > 0.0) ? ref.Span : 1.0;
+    double cbar = (ref.Chord > 0.0) ? ref.Chord : UnitFallbackLength;
+    double b = (ref.Span > 0.0) ? ref.Span : UnitFallbackLength;
 
     double dq = rateStepFrac * base.Vinf / cbar;
     {
@@ -481,11 +500,11 @@ inline StabilityDerivatives ComputeDerivatives(const std::vector<Panel>& panels,
         FreestreamConditions fm = base; fm.q = base.q - dq;
         SolveResult rp = SolveWithSystem(sys, fp, ref);
         SolveResult rm = SolveWithSystem(sys, fm, ref);
-        d.CL_q = (rp.CL - rm.CL) / (2 * dq);
-        d.CDi_q = (rp.CDi - rm.CDi) / (2 * dq);
-        d.Cm_q = (rp.Cm - rm.Cm) / (2 * dq);
-        d.CL_q_nd = d.CL_q * (cbar / (2 * base.Vinf));
-        d.Cm_q_nd = d.Cm_q * (cbar / (2 * base.Vinf));
+        d.CL_q = (rp.CL - rm.CL) / (Two * dq);
+        d.CDi_q = (rp.CDi - rm.CDi) / (Two * dq);
+        d.Cm_q = (rp.Cm - rm.Cm) / (Two * dq);
+        d.CL_q_nd = d.CL_q * (cbar / (Two * base.Vinf));
+        d.Cm_q_nd = d.Cm_q * (cbar / (Two * base.Vinf));
     }
 
     double dp = rateStepFrac * base.Vinf / b;
@@ -494,11 +513,11 @@ inline StabilityDerivatives ComputeDerivatives(const std::vector<Panel>& panels,
         FreestreamConditions fm = base; fm.p = base.p - dp;
         SolveResult rp = SolveWithSystem(sys, fp, ref);
         SolveResult rm = SolveWithSystem(sys, fm, ref);
-        d.CY_p = (rp.CY - rm.CY) / (2 * dp);
-        d.Croll_p = (rp.Croll - rm.Croll) / (2 * dp);
-        d.Cn_p = (rp.Cn - rm.Cn) / (2 * dp);
-        d.Croll_p_nd = d.Croll_p * (b / (2 * base.Vinf));
-        d.Cn_p_nd = d.Cn_p * (b / (2 * base.Vinf));
+        d.CY_p = (rp.CY - rm.CY) / (Two * dp);
+        d.Croll_p = (rp.Croll - rm.Croll) / (Two * dp);
+        d.Cn_p = (rp.Cn - rm.Cn) / (Two * dp);
+        d.Croll_p_nd = d.Croll_p * (b / (Two * base.Vinf));
+        d.Cn_p_nd = d.Cn_p * (b / (Two * base.Vinf));
     }
 
     double dr = rateStepFrac * base.Vinf / b;
@@ -507,11 +526,11 @@ inline StabilityDerivatives ComputeDerivatives(const std::vector<Panel>& panels,
         FreestreamConditions fm = base; fm.r = base.r - dr;
         SolveResult rp = SolveWithSystem(sys, fp, ref);
         SolveResult rm = SolveWithSystem(sys, fm, ref);
-        d.CY_r = (rp.CY - rm.CY) / (2 * dr);
-        d.Croll_r = (rp.Croll - rm.Croll) / (2 * dr);
-        d.Cn_r = (rp.Cn - rm.Cn) / (2 * dr);
-        d.Croll_r_nd = d.Croll_r * (b / (2 * base.Vinf));
-        d.Cn_r_nd = d.Cn_r * (b / (2 * base.Vinf));
+        d.CY_r = (rp.CY - rm.CY) / (Two * dr);
+        d.Croll_r = (rp.Croll - rm.Croll) / (Two * dr);
+        d.Cn_r = (rp.Cn - rm.Cn) / (Two * dr);
+        d.Croll_r_nd = d.Croll_r * (b / (Two * base.Vinf));
+        d.Cn_r_nd = d.Cn_r * (b / (Two * base.Vinf));
     }
 
     return d;
