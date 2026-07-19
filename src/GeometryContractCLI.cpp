@@ -1,26 +1,26 @@
 #include "Aeolion/GeometryContract.h"
 #include "Aeolion/VLM.h"
-#include <iomanip>
-#include <iostream>
+#include <print>
 
 int main(int argc, char** argv) {
     if (argc != 2) {
-        std::cerr << "usage: aeolion_geometry <aeolion_geometry.json>\n";
+        std::println(stderr, "usage: aeolion_geometry <aeolion_geometry.json>");
         return 2;
     }
     try {
         const auto geometry = Aeolion::Geometry::Load(argv[1]);
         Aeolion::VLM::FreestreamConditions conditions;
         const auto result = Aeolion::VLM::Solve(geometry.Wing, conditions);
-        std::cout << std::setprecision(10)
-                  << "surface=" << geometry.SurfaceName << "\n"
-                  << "airfoil=" << geometry.Airfoil << "\n"
-                  << "panels=" << result.gamma.size() << "\n"
-                  << "reference_area_m2=" << result.ReferenceArea << "\n"
-                  << "CL=" << result.CL << "\n"
-                  << "CDi=" << result.CDi << "\n";
+        std::print("surface={}\n"
+                   "airfoil={}\n"
+                   "panels={}\n"
+                   "reference_area_m2={:.10g}\n"
+                   "CL={:.10g}\n"
+                   "CDi={:.10g}\n",
+                   geometry.SurfaceName, geometry.Airfoil, result.gamma.size(),
+                   result.ReferenceArea, result.CL, result.CDi);
     } catch (const std::exception& error) {
-        std::cerr << "geometry error: " << error.what() << "\n";
+        std::println(stderr, "geometry error: {}", error.what());
         return 1;
     }
 }

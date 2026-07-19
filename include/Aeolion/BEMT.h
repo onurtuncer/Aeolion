@@ -160,7 +160,7 @@ struct Result {
     bool Converged = true;
 };
 
-inline double TipHubLoss(const PropGeometry& g, double rIn, double phi) {
+[[nodiscard]] inline double TipHubLoss(const PropGeometry& g, double rIn, double phi) {
     // The Prandtl loss factor is *designed* to go to exactly zero right at
     // the tip and hub -- correct for the physical loading, but a singular
     // denominator for the momentum-theory induced-velocity solve, which
@@ -181,7 +181,7 @@ inline double TipHubLoss(const PropGeometry& g, double rIn, double phi) {
     return std::clamp(Ftip * Fhub, MinLossFactor, UnitClampHi);
 }
 
-inline Result Solve(const PropGeometry& geom, const Polar& polar, double rpm, double Vinf,
+[[nodiscard]] inline Result Solve(const PropGeometry& geom, const Polar& polar, double rpm, double Vinf,
                      double rho = SeaLevelDensity, int maxIter = DefaultMaxIter,
                      double tol = DefaultTolerance, double relax = DefaultRelaxation) {
     Result res;
@@ -287,7 +287,7 @@ struct SlipstreamField {
     Vec3 AxisDir{1, 0, 0}; // unit vector, thrust direction
     double DevelopmentLength = -1.0; // <0 => auto (1 prop diameter)
 
-    Vec3 operator()(const Vec3& P) const {
+    [[nodiscard]] Vec3 operator()(const Vec3& P) const {
         Vec3 rel = P - HubCenter;
         double x = Dot(rel, AxisDir);
         Vec3 radial = rel - AxisDir * x;

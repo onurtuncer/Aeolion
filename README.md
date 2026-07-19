@@ -48,7 +48,7 @@ cmake/                build modules (CompilerWarnings, LapackBackend) + vcpkg tr
 
 ## Building
 
-Requires a **C++20** compiler and a LAPACK provider (OpenBLAS, reference
+Requires a **C++23** compiler and a LAPACK provider (OpenBLAS, reference
 LAPACK, MKL, Accelerate, ...). The dense solve calls LAPACK's dgetrf/dgetrs
 through their Fortran ABI directly — no LAPACKE C header needed.
 
@@ -73,7 +73,7 @@ Without CMake, the parametric demo builds directly (the JSON contract CLI
 also needs nlohmann/json on the include path):
 
 ```
-g++ -std=c++20 -O2 -Iinclude -o vlm_demo src/main.cpp -llapack -lblas
+g++ -std=c++23 -O2 -Iinclude -o vlm_demo src/main.cpp -llapack -lblas
 ```
 
 ## Quick usage
