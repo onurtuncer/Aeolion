@@ -28,6 +28,8 @@ aeolion_enable_warnings(aeolion)
 
 include(LapackBackend)
 aeolion_link_lapack(aeolion)
+find_package(nlohmann_json CONFIG REQUIRED)
+target_link_libraries(aeolion INTERFACE nlohmann_json::nlohmann_json)
 
 # ---------------------------------------------------- executables & tests --
 add_subdirectory(src)

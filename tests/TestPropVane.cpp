@@ -1,11 +1,11 @@
-// TestPropVane.cpp -- integration test tying Bemt.h's slipstream field
+// TestPropVane.cpp -- integration test tying BEMT.h's slipstream field
 // into VLM.h's externalField hook: a deflected vane sitting behind a
 // running propeller, at essentially zero airspeed (hover), should produce
 // real side force / yaw moment purely from the propwash -- while the same
 // vane with no propwash present produces ~nothing. This is the literal
 // physical mechanism that gives a thrust-vectoring-vane aircraft hover
 // control authority, so it's worth a standing regression check.
-#include "Aeolion/Bemt.h"
+#include "Aeolion/BEMT.h"
 #include "Aeolion/VLM.h"
 #include <numbers>
 #include <iostream>
@@ -18,7 +18,7 @@ static int failures = 0;
 #define CHECK(cond, msg) do { if (!(cond)) { std::cerr << "FAIL: " << msg << "\n"; ++failures; } } while (0)
 
 int main() {
-    Bemt::PropGeometry geom;
+    BEMT::PropGeometry geom;
     geom.NBlades = 2; geom.Radius = 0.15; geom.HubRadius = 0.02;
     geom.RotationSign = 1;
     int N = 12;
@@ -27,7 +27,7 @@ int main() {
         double eta = r / geom.Radius;
         geom.Stations.push_back({r, 0.025 * (1 - 0.3 * eta), 30.0 - 20.0 * eta});
     }
-    Bemt::Polar polar;
+    BEMT::Polar polar;
     double rho = 1.225, rpm = 6000.0;
 
     WingParams vaneParams;
@@ -43,7 +43,7 @@ int main() {
         p.Surface = "vane";
         vanePanels.push_back(p);
     }
-    double defRad = 15.0 * std::numbers::pi / 180.0;
+    double defRad = DegToRad(15.0);
     for (auto& p : vanePanels) {
         Vec3 n = p.Normal;
         double c = std::cos(defRad), s = std::sin(defRad);
@@ -62,12 +62,12 @@ int main() {
     std::cout << "no propwash: Y=" << noProp.Y << " N\n";
     CHECK(std::fabs(noProp.Y) < 1e-3, "vane with no propwash and no airspeed should produce ~zero force");
 
-    auto bemtRes = Bemt::Solve(geom, polar, rpm, 0.0, rho);
+    auto bemtRes = BEMT::Solve(geom, polar, rpm, 0.0, rho);
     CHECK(bemtRes.Converged, "propeller solve should converge");
     CHECK(bemtRes.Thrust > 0, "propeller should produce positive thrust in hover");
 
-    Bemt::SlipstreamField field;
-    field.BemtResult = bemtRes;
+    BEMT::SlipstreamField field;
+    field.BEMTResult = bemtRes;
     field.HubCenter = Vec3(0, 0, 0);
     field.AxisDir = Vec3(1, 0, 0);
     field.DevelopmentLength = 0.15;

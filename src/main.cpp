@@ -5,10 +5,10 @@
 // Run:
 //   ./vlm_demo
 //
-// Edit the WingParams / FreestreamConditions below (or wire up argv) to
-// study your own planform.
+// Edit the demo constants below (or wire up argv) to study your own planform.
 
 #include "Aeolion/VLM.h"
+#include "Aeolion/Math/Constants.h"
 #include <numbers>
 #include <iostream>
 #include <fstream>
@@ -16,21 +16,40 @@
 
 using namespace Aeolion;
 
+namespace {
+// --- demo wing planform ---------------------------------------------------
+constexpr double DemoSpan                 = 2.0;   // m, tip-to-tip
+constexpr double DemoRootChord            = 0.30;  // m
+constexpr double DemoTipChord             = 0.15;  // m (taper ratio 0.5)
+constexpr double DemoSweepQuarterChordDeg = 10.0;
+constexpr double DemoDihedralDeg          = 3.0;
+constexpr double DemoTwistTipDeg          = -3.0;  // 3 deg washout at tip
+constexpr int    DemoPanelsSemiSpan       = 20;
+
+// --- demo flight condition ------------------------------------------------
+constexpr double DemoVinf       = 20.0;  // m/s
+constexpr double DemoAlphaDeg   = 5.0;
+constexpr double DemoAirDensity = 1.225; // kg/m^3
+
+// thin-wing lift-slope theory: CL = 2*pi*alpha / (1 + 2/AR)
+constexpr double LiftingLineArCorrection = Math::Two; // the "2" in 1 + 2/AR
+}
+
 int main() {
     VLM::WingParams wing;
-    wing.Span = 2.0;
-    wing.RootChord = 0.30;
-    wing.TipChord = 0.15;          // taper ratio 0.5
-    wing.SweepQuarterChordDeg = 10.0;
-    wing.DihedralDeg = 3.0;
-    wing.TwistTipDeg = -3.0;       // 3 deg washout at tip
-    wing.NPanelsSemiSpan = 20;
+    wing.Span = DemoSpan;
+    wing.RootChord = DemoRootChord;
+    wing.TipChord = DemoTipChord;
+    wing.SweepQuarterChordDeg = DemoSweepQuarterChordDeg;
+    wing.DihedralDeg = DemoDihedralDeg;
+    wing.TwistTipDeg = DemoTwistTipDeg;
+    wing.NPanelsSemiSpan = DemoPanelsSemiSpan;
     wing.CosineSpacing = true;
 
     VLM::FreestreamConditions fc;
-    fc.Vinf = 20.0;   // m/s
-    fc.alphaDeg = 5.0;
-    fc.rho = 1.225;
+    fc.Vinf = DemoVinf;
+    fc.alphaDeg = DemoAlphaDeg;
+    fc.rho = DemoAirDensity;
 
     VLM::SolveResult res = VLM::Solve(wing, fc);
 
@@ -44,12 +63,12 @@ int main() {
     std::cout << "CL                 : " << res.CL << "\n";
     std::cout << "CDi (induced)      : " << res.CDi << "\n";
     std::cout << "CY (side)          : " << res.CY << "\n";
-    std::cout << "L/D (induced only) : " << (res.CDi > 1e-9 ? res.CL / res.CDi : 0.0) << "\n";
+    std::cout << "L/D (induced only) : " << (res.CDi > VLM::GeometryEps ? res.CL / res.CDi : 0.0) << "\n";
 
     // Sanity check against linear thin-wing theory for an unswept,
     // untwisted flat wing: CL ~= 2*pi*alpha / (1 + 2/AR)  [alpha in rad]
-    double alphaRad = fc.alphaDeg * std::numbers::pi / 180.0;
-    double CL_flat_theory = 2.0 * std::numbers::pi * alphaRad / (1.0 + 2.0 / AR);
+    double alphaRad = Math::DegToRad(fc.alphaDeg);
+    double CL_flat_theory = Math::Two * std::numbers::pi * alphaRad / (1.0 + LiftingLineArCorrection / AR);
     std::cout << "-----------------------------------------\n";
     std::cout << "Flat-wing thin-airfoil-theory CL estimate (unswept/untwisted\n"
                  "reference, not directly comparable to the swept/twisted case\n"
@@ -72,8 +91,8 @@ int main() {
     for (auto& p : panels) p.Surface = "wing";
     VLM::ReferenceGeometry ref;
     ref.Area = res.ReferenceArea; ref.Span = wing.Span; ref.Chord = res.ReferenceArea / wing.Span;
-    double trail = 50.0 * wing.Span;
-    fc.RefPoint = VLM::Vec3(ref.Chord * 0.25, 0, 0);
+    double trail = VLM::DefaultTrailSpanFactor * wing.Span;
+    fc.RefPoint = VLM::Vec3(ref.Chord * Math::QuarterChord, 0, 0);
     VLM::StabilityDerivatives d = VLM::ComputeDerivatives(panels, fc, ref, trail);
 
     std::cout << std::setprecision(4);

@@ -30,8 +30,8 @@ int main() {
         FreestreamConditions fc; fc.Vinf = 30.0; fc.alphaDeg = 4.0; fc.rho = 1.225;
         SolveResult res = Solve(w, fc);
         double AR = w.Span * w.Span / res.ReferenceArea;
-        double alphaRad = fc.alphaDeg * std::numbers::pi / 180.0;
-        double CL_theory = 2 * std::numbers::pi * alphaRad / (1.0 + 2.0 / AR);
+        double alphaRad = DegToRad(fc.alphaDeg);
+        double CL_theory = Two * std::numbers::pi * alphaRad / (1.0 + Two / AR);
         double relErr = std::fabs(res.CL - CL_theory) / CL_theory;
 
         std::cout << "AR=" << AR << "  CL=" << res.CL << "  CL_theory=" << CL_theory
