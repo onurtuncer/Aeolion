@@ -4,5 +4,5 @@
 add_executable(vlm_demo main.cpp)
 target_link_libraries(vlm_demo PRIVATE aeolion)
 
-add_executable(geometry_vlm GeometryVLM.cpp)
-target_link_libraries(geometry_vlm PRIVATE aeolion)
+add_executable(aeolion_geometry GeometryContractCLI.cpp)
+target_link_libraries(aeolion_geometry PRIVATE aeolion)
