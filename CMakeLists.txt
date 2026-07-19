@@ -13,6 +13,7 @@ endif()
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
 option(AEOLION_BUILD_TESTS "Build the test suite" ON)
+option(AEOLION_BUILD_VIEWER "Build the OpenGL viewer application" ON)
 option(AEOLION_WARNINGS "Build with warnings enabled" ON)
 
 # ---------------------------------------------------------------- library --
@@ -33,6 +34,10 @@ target_link_libraries(aeolion INTERFACE nlohmann_json::nlohmann_json)
 
 # ---------------------------------------------------- executables & tests --
 add_subdirectory(src)
+
+if(AEOLION_BUILD_VIEWER)
+    add_subdirectory(viewer)
+endif()
 
 if(AEOLION_BUILD_TESTS)
     enable_testing()

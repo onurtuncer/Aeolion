@@ -7,6 +7,16 @@
   "dependencies": [
     "openblas",
     "lapack-reference",
-    "nlohmann-json"
+    "nlohmann-json",
+    "glfw3",
+    "glad",
+    "glm",
+    {
+      "name": "imgui",
+      "features": [
+        "glfw-binding",
+        "opengl3-binding"
+      ]
+    }
   ]
 }
