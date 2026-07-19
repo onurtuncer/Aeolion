@@ -28,7 +28,9 @@ include/Aeolion/     header-only library (this is the actual toolkit)
   BEMT.h               propeller BEMT (hover-safe: solves for induced
                         velocities directly, not induction factors) +
                         slipstream field for downstream control vanes
-  GeometryContract.h   parse/load the JSON geometry contract into WingParams
+  HandoffContract.h    strict parser for the aeolion_geometry.json handoff
+                        (planform stations, CST airfoil sections, control
+                        surfaces, mesh topology, BEMT blade geometry)
 
 src/                  driver programs (link against the aeolion library)
   main.cpp               parametric single-wing demo (vlm_demo)
@@ -41,7 +43,8 @@ tests/                 regression suite, wired into ctest
   TestPropVane.cpp              propwash -> vane control authority
                                  integration test
   TestSolverBackend.cpp         LAPACK dense-solve sanity check
-  TestGeometryContract.cpp      JSON geometry-contract parsing
+  TestHandoffContract.cpp       JSON handoff parsing, contract invariants,
+                                 surface binding, trapezoid reduction
 
 cmake/                build modules (CompilerWarnings, LapackBackend) + vcpkg triplets
 ```

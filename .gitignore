@@ -15,3 +15,6 @@ vcpkg_installed/
 !vcpkg-configuration.json
 !CMakePresets.json
 !ports/**/vcpkg.json
+
+# ...and the JSON handoff documents the contract tests parse
+!tests/Data/*.json

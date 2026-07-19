@@ -20,7 +20,7 @@ Follow the naming conventions used by TheCherno's **Hazel** game engine.
 The whole codebase (C++23) follows this convention. Headers live under
 `include/Aeolion/`: the math primitive in `Math/` (`Aeolion::Math`), the
 plain data structs one-per-file under `Types/`, and the modules
-(`VLM.h`, `DragEstimate.h`, `BEMT.h`, `GeometryContract.h`). Namespaces
+(`VLM.h`, `DragEstimate.h`, `BEMT.h`, `HandoffContract.h`). Namespaces
 are written with the `::` form — `Aeolion::VLM`, `Aeolion::BEMT`,
 `Aeolion::DragEstimate`, `Aeolion::Geometry` — never the nested-brace form.
 The solver is 3D-only; geometry is loaded from a JSON contract (no STL/mesh).
