@@ -89,13 +89,13 @@ struct AirProperties {
     double mu = SeaLevelViscosity;  // [Pa*s]   -- sea-level ISA dynamic viscosity
 };
 
-inline double ReynoldsNumber(double Vinf, double charLength, const AirProperties& air) {
+[[nodiscard]] inline double ReynoldsNumber(double Vinf, double charLength, const AirProperties& air) {
     return air.rho * Vinf * charLength / air.mu;
 }
 
 // Turbulent flat-plate skin friction, Prandtl-Schlichting correlation, with
 // an optional Frankl-Voishel compressibility correction.
-inline double CfTurbulent(double Re, double mach = 0.0) {
+[[nodiscard]] inline double CfTurbulent(double Re, double mach = 0.0) {
     if (Re < MinReynolds) return 0.0;
     double cf = SchlichtingCoeff / std::pow(std::log10(Re), SchlichtingLogExp);
     if (mach > CompressMachThreshold) cf /= std::pow(1.0 + CompressCoeff * mach * mach, CompressExp);
@@ -103,7 +103,7 @@ inline double CfTurbulent(double Re, double mach = 0.0) {
 }
 
 // Laminar flat-plate skin friction (Blasius).
-inline double CfLaminar(double Re) {
+[[nodiscard]] inline double CfLaminar(double Re) {
     if (Re < MinReynolds) return 0.0;
     return BlasiusCoeff / std::sqrt(Re);
 }
@@ -116,7 +116,7 @@ inline double CfLaminar(double Re) {
 // the ideal transition point due to roughness, insects, rivets, etc.
 // Genuinely smooth/glider-polished laminar-flow airfoils might justify
 // 0.3-0.5; a rough or heavily-riveted metal surface should use 0.
-inline double CfMixed(double Re, double laminarFraction, double mach = 0.0) {
+[[nodiscard]] inline double CfMixed(double Re, double laminarFraction, double mach = 0.0) {
     laminarFraction = std::clamp(laminarFraction, 0.0, 1.0);
     if (laminarFraction <= 0.0) return CfTurbulent(Re, mach);
     return laminarFraction * CfLaminar(Re) + (1.0 - laminarFraction) * CfTurbulent(Re, mach);
@@ -127,7 +127,7 @@ inline double CfMixed(double Re, double laminarFraction, double mach = 0.0) {
 // chordwise location of maximum thickness (~0.3 for most conventional
 // airfoils, ~0.4-0.5 for laminar-flow sections); sweepDeg is the sweep of
 // the max-thickness line (quarter-chord sweep is a fine approximation).
-inline double FormFactorAirfoil(double thicknessRatio, double xcMaxThickness, double sweepDeg) {
+[[nodiscard]] inline double FormFactorAirfoil(double thicknessRatio, double xcMaxThickness, double sweepDeg) {
     double tc = thicknessRatio;
     double xm = std::max(xcMaxThickness, FormThicknessFloor);
     double sweep = DegToRad(sweepDeg);
@@ -137,7 +137,7 @@ inline double FormFactorAirfoil(double thicknessRatio, double xcMaxThickness, do
 
 // Body-like (fuselage, pod, boom) form factor from fineness ratio
 // f = length / equivalent_diameter.
-inline double FormFactorBody(double fineness) {
+[[nodiscard]] inline double FormFactorBody(double fineness) {
     double f = std::max(fineness, BodyFinenessFloor);
     return 1.0 + BodyCubeCoeff / (f * f * f) + f / BodyLinearDivisor;
 }
@@ -161,7 +161,7 @@ struct ComponentResult {
     double CD0_contribution = 0.0; // already divided by Sref
 };
 
-inline ComponentResult EstimateComponent(const ComponentSpec& c, double Vinf, double Sref,
+[[nodiscard]] inline ComponentResult EstimateComponent(const ComponentSpec& c, double Vinf, double Sref,
                                           const AirProperties& air, double mach = 0.0) {
     ComponentResult r;
     r.Name = c.Name;
@@ -181,7 +181,7 @@ struct BuildupResult {
     double CD0 = 0.0;         // CD0_clean * (1 + MiscFraction) -- use this one
 };
 
-inline BuildupResult EstimateCD0(const std::vector<ComponentSpec>& specs, double Vinf, double Sref,
+[[nodiscard]] inline BuildupResult EstimateCD0(const std::vector<ComponentSpec>& specs, double Vinf, double Sref,
                                   const AirProperties& air, double miscFraction = DefaultMiscFraction, double mach = 0.0) {
     BuildupResult res;
     res.MiscFraction = miscFraction;

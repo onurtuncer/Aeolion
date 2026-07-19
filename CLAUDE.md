@@ -17,7 +17,7 @@ Follow the naming conventions used by TheCherno's **Hazel** game engine.
 | Macros | `AE_`-prefixed SCREAMING_CASE | `AE_ASSERT`, `AE_CORE_ASSERT` |
 | Namespace | PascalCase, `::` form | `namespace Aeolion::VLM {` |
 
-The whole codebase (C++20) follows this convention. Headers live under
+The whole codebase (C++23) follows this convention. Headers live under
 `include/Aeolion/`: the math primitive in `Math/` (`Aeolion::Math`), the
 plain data structs one-per-file under `Types/`, and the modules
 (`VLM.h`, `DragEstimate.h`, `BEMT.h`, `GeometryContract.h`). Namespaces

@@ -18,7 +18,7 @@ struct Contract {
     std::string SurfaceName = "wing";
 };
 
-inline Contract Parse(const nlohmann::json& root) {
+[[nodiscard]] inline Contract Parse(const nlohmann::json& root) {
     if (root.at("schema_version").get<int>() != CurrentSchemaVersion)
         throw std::invalid_argument("unsupported Aeolion geometry schema_version");
     if (root.at("units").at("length") != "m" || root.at("units").at("angle") != "deg")
@@ -49,7 +49,7 @@ inline Contract Parse(const nlohmann::json& root) {
     return result;
 }
 
-inline Contract Load(const std::string& path) {
+[[nodiscard]] inline Contract Load(const std::string& path) {
     std::ifstream input(path);
     if (!input) throw std::runtime_error("cannot open geometry contract: " + path);
     nlohmann::json root;

@@ -34,6 +34,8 @@
 #include <map>
 #include <functional>
 #include <numbers>
+#include <ranges>
+#include <mdspan>
 
 #include "Aeolion/Math/Vec3.h"
 #include "Aeolion/Math/Constants.h"
@@ -84,7 +86,7 @@ inline constexpr double DefaultRateStepFraction = 0.002; // central-difference r
 // Biot-Savart induced velocity at point P from a straight vortex filament
 // running P1 -> P2 with circulation strength gamma. A small viscous-core
 // cutoff regularizes the singularity on the filament itself.
-inline Vec3 SegmentVelocity(const Vec3& P, const Vec3& P1, const Vec3& P2, double gamma) {
+[[nodiscard]] inline Vec3 SegmentVelocity(const Vec3& P, const Vec3& P1, const Vec3& P2, double gamma) {
     Vec3 r1 = P - P1;
     Vec3 r2 = P - P2;
     Vec3 r0 = P2 - P1;
@@ -103,7 +105,7 @@ inline Vec3 SegmentVelocity(const Vec3& P, const Vec3& P1, const Vec3& P2, doubl
     return c * K;
 }
 
-inline double ChordAt(const WingParams& w, double yAbs) {
+[[nodiscard]] inline double ChordAt(const WingParams& w, double yAbs) {
     double eta = yAbs / (w.Span * Half);
     return w.RootChord + (w.TipChord - w.RootChord) * eta;
 }
@@ -111,7 +113,7 @@ inline double ChordAt(const WingParams& w, double yAbs) {
 // Builds the panel lattice for a single trapezoidal, linearly-twisted,
 // swept, dihedral wing. Trailing legs are aligned with the global +x axis
 // (standard small-to-moderate AoA simplification).
-inline std::vector<Panel> BuildWing(const WingParams& w) {
+[[nodiscard]] inline std::vector<Panel> BuildWing(const WingParams& w) {
     if (w.NPanelsSemiSpan < 1) throw std::invalid_argument("NPanelsSemiSpan must be >= 1");
 
     int N = SemiSpanCount * w.NPanelsSemiSpan;
@@ -131,7 +133,6 @@ inline std::vector<Panel> BuildWing(const WingParams& w) {
 
     double sweep = DegToRad(w.SweepQuarterChordDeg);
     double dihedral = DegToRad(w.DihedralDeg);
-    double trail = (w.TrailLength > 0.0) ? w.TrailLength : DefaultTrailSpanFactor * w.Span;
 
     auto qcX = [&](double y) { return std::fabs(y) * std::tan(sweep); };
     auto zOf = [&](double y) { return std::fabs(y) * std::tan(dihedral); };
@@ -181,15 +182,13 @@ inline std::vector<Panel> BuildWing(const WingParams& w) {
         p.SpanwiseWidth = yB - yA;
         p.Area = Half * (cA + cB) * p.SpanwiseWidth;
         panels.push_back(p);
-
-        (void)trail;
     }
     return panels;
 }
 
 // Full horseshoe induced velocity (unit gamma) at point P for panel j,
 // using far-downstream points computed on the fly with `trail`.
-inline Vec3 HorseshoeVelocity(const Vec3& P, const Panel& pj, double gamma, double trail) {
+[[nodiscard]] inline Vec3 HorseshoeVelocity(const Vec3& P, const Panel& pj, double gamma, double trail) {
     Vec3 A_inf = pj.A + pj.TrailDirA * trail;
     Vec3 B_inf = pj.B + pj.TrailDirB * trail;
     Vec3 v(0, 0, 0);
@@ -202,7 +201,7 @@ inline Vec3 HorseshoeVelocity(const Vec3& P, const Panel& pj, double gamma, doub
 // Same but skipping the bound segment (used for near-field self-induced
 // velocity at a panel's own bound-vortex midpoint, where the bound segment
 // itself would be singular).
-inline Vec3 HorseshoeVelocityNoBound(const Vec3& P, const Panel& pj, double gamma, double trail) {
+[[nodiscard]] inline Vec3 HorseshoeVelocityNoBound(const Vec3& P, const Panel& pj, double gamma, double trail) {
     Vec3 A_inf = pj.A + pj.TrailDirA * trail;
     Vec3 B_inf = pj.B + pj.TrailDirB * trail;
     Vec3 v(0, 0, 0);
@@ -223,16 +222,26 @@ inline Vec3 HorseshoeVelocityNoBound(const Vec3& P, const Panel& pj, double gamm
 // each solve by dgetrs: condition-aware pivoting, vectorized BLAS-level
 // kernels, and a real INFO-based singularity report. Link against any
 // LAPACK provider (OpenBLAS, reference LAPACK, ...), e.g.
-//   g++ -std=c++20 -O2 -Iinclude -o vlm_demo src/main.cpp -llapack -lblas
+//   g++ -std=c++23 -O2 -Iinclude -o vlm_demo src/main.cpp -llapack -lblas
 //
-// LAPACK is column-major; our matrices are row-major std::vector<vector>.
-// Storing a row-major NxN buffer hands LAPACK the transpose A^T, so we
-// factorize A^T and then ask dgetrs to solve op(A^T) x = b with op = 'T',
-// i.e. A x = b -- no explicit transpose needed on either side.
+// The influence matrix is a single contiguous, row-major NxN buffer viewed
+// through a 2D std::mdspan (DenseMatrixView) -- one allocation with good
+// cache locality, no vector-of-vectors indirection.
+//
+// LAPACK is column-major; a row-major NxN buffer IS the transpose A^T in
+// column-major terms, so we factorize A^T and then ask dgetrs to solve
+// op(A^T) x = b with op = 'T', i.e. A x = b -- no explicit transpose needed
+// on either side. The default mdspan layout (layout_right) is exactly this
+// row-major order.
 //
 // Nothing above this point in the file (PreparedSystem, SolveWithSystem,
 // ComputeDerivatives) needs to know how the solve is implemented -- it only
 // uses the LUFactorization / LuFactorize / LuSolve API below.
+
+// Non-owning 2D views over a caller-owned contiguous buffer. Storage is a
+// plain std::vector<double>; the mdspan just re-interprets it as a matrix.
+using DenseMatrixView      = std::mdspan<double, std::dextents<std::size_t, 2>>;
+using ConstDenseMatrixView = std::mdspan<const double, std::dextents<std::size_t, 2>>;
 
 struct LUFactorization {
     int N = 0;
@@ -243,17 +252,17 @@ struct LUFactorization {
     int SingularAtIndex = 0; // dgetrf's INFO: >0 means U(info,info) is exactly zero -- 0 = fully nonsingular
 };
 
-inline LUFactorization LuFactorize(const std::vector<std::vector<double>>& A) {
-    int n = static_cast<int>(A.size());
+[[nodiscard]] inline LUFactorization LuFactorize(ConstDenseMatrixView A) {
+    int n = static_cast<int>(A.extent(0));
     LUFactorization f;
     f.N = n;
     f.Flat.resize((size_t)n * n);
     for (int i = 0; i < n; ++i)
         for (int j = 0; j < n; ++j)
-            f.Flat[(size_t)i * n + j] = A[i][j];
+            f.Flat[(size_t)i * n + j] = A[i, j];
 
-    double scale = 0.0;
-    for (double v : f.Flat) scale = std::max(scale, std::fabs(v));
+    double scale = std::ranges::fold_left(f.Flat, 0.0,
+        [](double acc, double v) { return std::max(acc, std::fabs(v)); });
     scale = std::max(scale, DenormFloor);
 
     f.Ipiv.resize(n);
@@ -269,7 +278,7 @@ inline LUFactorization LuFactorize(const std::vector<std::vector<double>>& A) {
     return f;
 }
 
-inline std::vector<double> LuSolve(const LUFactorization& f, const std::vector<double>& b) {
+[[nodiscard]] inline std::vector<double> LuSolve(const LUFactorization& f, const std::vector<double>& b) {
     std::vector<double> x = b; // dgetrs solves in place
     if (f.N == 0) return x;
     const char trans = 'T'; // Flat holds A^T column-major, so 'T' solves A x = b
@@ -282,7 +291,7 @@ inline std::vector<double> LuSolve(const LUFactorization& f, const std::vector<d
 
 // Convenience one-shot wrapper (factorize + solve a single RHS) -- kept for
 // call sites that only ever need one solve against a given matrix.
-inline std::vector<double> SolveLinear(const std::vector<std::vector<double>>& A, const std::vector<double>& b) {
+[[nodiscard]] inline std::vector<double> SolveLinear(ConstDenseMatrixView A, const std::vector<double>& b) {
     return LuSolve(LuFactorize(A), b);
 }
 
@@ -296,14 +305,15 @@ struct PreparedSystem {
     LUFactorization Factorization;
 };
 
-inline PreparedSystem Prepare(const std::vector<Panel>& panels, double trailLength) {
+[[nodiscard]] inline PreparedSystem Prepare(const std::vector<Panel>& panels, double trailLength) {
     int N = static_cast<int>(panels.size());
-    std::vector<std::vector<double>> Amat(N, std::vector<double>(N, 0.0));
+    std::vector<double> aStorage(static_cast<std::size_t>(N) * N, 0.0);
+    DenseMatrixView Amat(aStorage.data(), N, N);
     for (int i = 0; i < N; ++i) {
         const Vec3& cp = panels[i].ControlPoint;
         for (int j = 0; j < N; ++j) {
             Vec3 v = HorseshoeVelocity(cp, panels[j], 1.0, trailLength);
-            Amat[i][j] = Dot(v, panels[i].Normal);
+            Amat[i, j] = Dot(v, panels[i].Normal);
         }
     }
     PreparedSystem sys;
@@ -318,7 +328,7 @@ inline PreparedSystem Prepare(const std::vector<Panel>& panels, double trailLeng
 // expensive part (matrix assembly + factorization) already happened in
 // Prepare(). This is the function to call in a loop over many conditions
 // against the same geometry.
-inline SolveResult SolveWithSystem(const PreparedSystem& sys, const FreestreamConditions& fc,
+[[nodiscard]] inline SolveResult SolveWithSystem(const PreparedSystem& sys, const FreestreamConditions& fc,
                                     const ReferenceGeometry& ref,
                                     const std::function<Vec3(const Vec3&)>& externalField = nullptr) {
     const std::vector<Panel>& panels = sys.Panels;
@@ -408,8 +418,7 @@ inline SolveResult SolveWithSystem(const PreparedSystem& sys, const FreestreamCo
     res.Cm = (q * S * res.ReferenceChord > CoeffDenomEps) ? res.My / (q * S * res.ReferenceChord) : 0.0;
     res.Cn = (q * S * res.ReferenceSpan > CoeffDenomEps) ? res.Mz / (q * S * res.ReferenceSpan) : 0.0;
 
-    std::sort(res.Stations.begin(), res.Stations.end(),
-              [](const StationResult& a, const StationResult& b) { return a.y < b.y; });
+    std::ranges::sort(res.Stations, {}, &StationResult::y);
 
     return res;
 }
@@ -430,7 +439,7 @@ inline SolveResult SolveWithSystem(const PreparedSystem& sys, const FreestreamCo
 // conditions (a sweep, stability derivatives, an optimization loop), call
 // Prepare() once yourself and use SolveWithSystem() directly instead --
 // see ComputeDerivatives() for exactly that pattern.
-inline SolveResult Solve(const std::vector<Panel>& panels, const FreestreamConditions& fc,
+[[nodiscard]] inline SolveResult Solve(const std::vector<Panel>& panels, const FreestreamConditions& fc,
                           const ReferenceGeometry& ref, double trailLength,
                           const std::function<Vec3(const Vec3&)>& externalField = nullptr) {
     PreparedSystem sys = Prepare(panels, trailLength);
@@ -441,7 +450,7 @@ inline SolveResult Solve(const std::vector<Panel>& panels, const FreestreamCondi
 // is the original single-surface entry point). Reference chord defaults to
 // the mean geometric chord (S/span); moment reference point comes from
 // fc.RefPoint (default: origin -- set fc.RefPoint to your CG).
-inline SolveResult Solve(const WingParams& wp, const FreestreamConditions& fc) {
+[[nodiscard]] inline SolveResult Solve(const WingParams& wp, const FreestreamConditions& fc) {
     std::vector<Panel> panels = BuildWing(wp);
     for (auto& p : panels) p.Surface = "wing";
     double trail = (wp.TrailLength > 0.0) ? wp.TrailLength : 50.0 * wp.Span;
@@ -454,7 +463,7 @@ inline SolveResult Solve(const WingParams& wp, const FreestreamConditions& fc) {
     return Solve(panels, fc, ref, trail);
 }
 
-inline StabilityDerivatives ComputeDerivatives(const std::vector<Panel>& panels,
+[[nodiscard]] inline StabilityDerivatives ComputeDerivatives(const std::vector<Panel>& panels,
                                                 const FreestreamConditions& base,
                                                 const ReferenceGeometry& ref,
                                                 double trailLength,

@@ -19,34 +19,34 @@ struct Vec3 {
     Vec3() = default;
     Vec3(double x_, double y_, double z_) : x(x_), y(y_), z(z_) {}
 
-    Vec3 operator+(const Vec3& o) const { return {x + o.x, y + o.y, z + o.z}; }
-    Vec3 operator-(const Vec3& o) const { return {x - o.x, y - o.y, z - o.z}; }
-    Vec3 operator*(double s) const { return {x * s, y * s, z * s}; }
-    Vec3 operator-() const { return {-x, -y, -z}; }
+    [[nodiscard]] Vec3 operator+(const Vec3& o) const { return {x + o.x, y + o.y, z + o.z}; }
+    [[nodiscard]] Vec3 operator-(const Vec3& o) const { return {x - o.x, y - o.y, z - o.z}; }
+    [[nodiscard]] Vec3 operator*(double s) const { return {x * s, y * s, z * s}; }
+    [[nodiscard]] Vec3 operator-() const { return {-x, -y, -z}; }
 
-    double Norm() const { return std::sqrt(x * x + y * y + z * z); }
+    [[nodiscard]] double Norm() const { return std::sqrt(x * x + y * y + z * z); }
 
-    Vec3 Normalized() const {
+    [[nodiscard]] Vec3 Normalized() const {
         double n = Norm();
         if (n < 1e-14) return {0, 0, 0};
         return {x / n, y / n, z / n};
     }
 };
 
-inline double Dot(const Vec3& a, const Vec3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+[[nodiscard]] inline double Dot(const Vec3& a, const Vec3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 
-inline Vec3 Cross(const Vec3& a, const Vec3& b) {
+[[nodiscard]] inline Vec3 Cross(const Vec3& a, const Vec3& b) {
     return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
 }
 
-inline Vec3 RotateAboutX(const Vec3& v, double angleRad) {
+[[nodiscard]] inline Vec3 RotateAboutX(const Vec3& v, double angleRad) {
     double c = std::cos(angleRad), s = std::sin(angleRad);
     return {v.x, c * v.y - s * v.z, s * v.y + c * v.z};
 }
 
 // Rotate about a local spanwise axis (approximated as global y) — used to
 // apply geometric twist to the panel normal vector.
-inline Vec3 RotateAboutY(const Vec3& v, double angleRad) {
+[[nodiscard]] inline Vec3 RotateAboutY(const Vec3& v, double angleRad) {
     double c = std::cos(angleRad), s = std::sin(angleRad);
     return {c * v.x + s * v.z, v.y, -s * v.x + c * v.z};
 }
