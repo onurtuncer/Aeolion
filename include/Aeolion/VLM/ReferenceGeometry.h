@@ -1,4 +1,4 @@
-// Types/ReferenceGeometry.h
+// VLM/ReferenceGeometry.h
 //
 // Normalization constants for force/moment coefficients. A generic panel
 // list carries no planform metadata of its own, so these must be supplied

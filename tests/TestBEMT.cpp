@@ -8,7 +8,7 @@
 //   - propulsive efficiency (thrust*V/power) must be <= 1.0 for all
 //     forward-flight points where the prop is actually absorbing power.
 //   - every station must converge.
-#include "Aeolion/BEMT.h"
+#include "Aeolion/BEMT/BEMT.h"
 #include <numbers>
 #include <iostream>
 #include <cmath>

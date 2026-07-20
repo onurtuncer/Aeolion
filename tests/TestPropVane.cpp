@@ -5,8 +5,8 @@
 // vane with no propwash present produces ~nothing. This is the literal
 // physical mechanism that gives a thrust-vectoring-vane aircraft hover
 // control authority, so it's worth a standing regression check.
-#include "Aeolion/BEMT.h"
-#include "Aeolion/VLM.h"
+#include "Aeolion/BEMT/BEMT.h"
+#include "Aeolion/VLM/VLM.h"
 #include <numbers>
 #include <iostream>
 #include <cmath>

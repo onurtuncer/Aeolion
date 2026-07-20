@@ -20,8 +20,8 @@ inline constexpr double ThreeQuarterChord = 0.75; // x/c of the control point
 inline constexpr double DegreesPerHalfTurn = 180.0;
 inline constexpr double SecondsPerMinute   = 60.0;
 
-constexpr double DegToRad(double deg) { return deg * std::numbers::pi / DegreesPerHalfTurn; }
-constexpr double RadToDeg(double rad) { return rad * DegreesPerHalfTurn / std::numbers::pi; }
+[[nodiscard]] constexpr double DegToRad(double deg) { return deg * std::numbers::pi / DegreesPerHalfTurn; }
+[[nodiscard]] constexpr double RadToDeg(double rad) { return rad * DegreesPerHalfTurn / std::numbers::pi; }
 
 // --- generic numerical guards ---------------------------------------------
 inline constexpr double Tiny       = 1e-9;   // "practically zero" length/area guard

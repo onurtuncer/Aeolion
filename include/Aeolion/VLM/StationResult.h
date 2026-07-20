@@ -1,4 +1,4 @@
-// Types/StationResult.h
+// VLM/StationResult.h
 //
 // Per-spanwise-station output of a solve (one entry per panel, then sorted
 // by span coordinate).

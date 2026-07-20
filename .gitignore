@@ -7,6 +7,9 @@ polar.csv
 spanwise_loading.csv
 aircraft.json
 
+# ImGui layout state written by aeolion_viewer at runtime
+imgui.ini
+
 # vcpkg
 vcpkg_installed/
 
@@ -15,3 +18,6 @@ vcpkg_installed/
 !vcpkg-configuration.json
 !CMakePresets.json
 !ports/**/vcpkg.json
+
+# ...and the JSON handoff documents the contract tests parse
+!tests/Data/*.json

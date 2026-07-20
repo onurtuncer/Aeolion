@@ -1,4 +1,4 @@
-// Types/WingParams.h
+// VLM/WingParams.h
 //
 // Parametric single-wing planform description consumed by BuildWing().
 #pragma once

@@ -17,10 +17,13 @@ Follow the naming conventions used by TheCherno's **Hazel** game engine.
 | Macros | `AE_`-prefixed SCREAMING_CASE | `AE_ASSERT`, `AE_CORE_ASSERT` |
 | Namespace | PascalCase, `::` form | `namespace Aeolion::VLM {` |
 
-The whole codebase (C++20) follows this convention. Headers live under
-`include/Aeolion/`: the math primitive in `Math/` (`Aeolion::Math`), the
-plain data structs one-per-file under `Types/`, and the modules
-(`VLM.h`, `DragEstimate.h`, `BEMT.h`, `GeometryContract.h`). Namespaces
+The whole codebase (C++23) follows this convention. Headers live under
+`include/Aeolion/`, **one folder per namespace** — `Math/`, `VLM/`,
+`BEMT/`, `Geometry/`, `DragEstimate/`. Nothing sits naked at the top of
+`include/Aeolion/`. Each folder holds its module header (`VLM/VLM.h`,
+`Geometry/HandoffContract.h`, …) alongside that module's plain data
+structs, one struct per file (`VLM/Panel.h`, `Geometry/ControlSurface.h`,
+…). A new module means a new folder, not a new top-level header. Namespaces
 are written with the `::` form — `Aeolion::VLM`, `Aeolion::BEMT`,
 `Aeolion::DragEstimate`, `Aeolion::Geometry` — never the nested-brace form.
 The solver is 3D-only; geometry is loaded from a JSON contract (no STL/mesh).

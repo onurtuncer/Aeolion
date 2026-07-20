@@ -1,18 +1,18 @@
 // main.cpp — example driver for the vortex lattice method in VLM.h
 //
 // Build:
-//   g++ -std=c++20 -O2 -Iinclude -o vlm_demo src/main.cpp
+//   g++ -std=c++23 -O2 -Iinclude -o vlm_demo src/main.cpp
 // Run:
 //   ./vlm_demo
 //
 // Edit the demo constants below (or wire up argv) to study your own planform.
 
-#include "Aeolion/VLM.h"
+#include "Aeolion/VLM/VLM.h"
 #include "Aeolion/Math/Constants.h"
 #include <numbers>
-#include <iostream>
 #include <fstream>
-#include <iomanip>
+#include <format>
+#include <print>
 
 using namespace Aeolion;
 
@@ -55,34 +55,31 @@ int main() {
 
     double AR = (wing.Span * wing.Span) / res.ReferenceArea;
 
-    std::cout << std::fixed << std::setprecision(5);
-    std::cout << "Reference area S   : " << res.ReferenceArea << " m^2\n";
-    std::cout << "Aspect ratio AR    : " << AR << "\n";
-    std::cout << "Panels (semi x2)   : " << res.gamma.size() << "\n";
-    std::cout << "-----------------------------------------\n";
-    std::cout << "CL                 : " << res.CL << "\n";
-    std::cout << "CDi (induced)      : " << res.CDi << "\n";
-    std::cout << "CY (side)          : " << res.CY << "\n";
-    std::cout << "L/D (induced only) : " << (res.CDi > VLM::GeometryEps ? res.CL / res.CDi : 0.0) << "\n";
+    std::println("Reference area S   : {:.5f} m^2", res.ReferenceArea);
+    std::println("Aspect ratio AR    : {:.5f}", AR);
+    std::println("Panels (semi x2)   : {}", res.gamma.size());
+    std::println("-----------------------------------------");
+    std::println("CL                 : {:.5f}", res.CL);
+    std::println("CDi (induced)      : {:.5f}", res.CDi);
+    std::println("CY (side)          : {:.5f}", res.CY);
+    std::println("L/D (induced only) : {:.5f}", res.CDi > VLM::GeometryEps ? res.CL / res.CDi : 0.0);
 
     // Sanity check against linear thin-wing theory for an unswept,
     // untwisted flat wing: CL ~= 2*pi*alpha / (1 + 2/AR)  [alpha in rad]
     double alphaRad = Math::DegToRad(fc.alphaDeg);
     double CL_flat_theory = Math::Two * std::numbers::pi * alphaRad / (1.0 + LiftingLineArCorrection / AR);
-    std::cout << "-----------------------------------------\n";
-    std::cout << "Flat-wing thin-airfoil-theory CL estimate (unswept/untwisted\n"
+    std::println("-----------------------------------------");
+    std::println("Flat-wing thin-airfoil-theory CL estimate (unswept/untwisted\n"
                  "reference, not directly comparable to the swept/twisted case\n"
-                 "above): " << CL_flat_theory << "\n";
+                 "above): {:.5f}", CL_flat_theory);
 
     // Write spanwise loading to CSV for plotting.
     std::ofstream csv("spanwise_loading.csv");
     csv << "y_m,gamma_m2_s,lift_per_span_N_m,cl_local\n";
-    csv << std::setprecision(8);
     for (const auto& s : res.Stations) {
-        csv << s.y << "," << s.gamma << "," << s.LiftPerSpan << "," << s.cl_local << "\n";
+        csv << std::format("{:.8g},{:.8g},{:.8g},{:.8g}\n", s.y, s.gamma, s.LiftPerSpan, s.cl_local);
     }
-    csv.close();
-    std::cout << "\nSpanwise loading written to spanwise_loading.csv\n";
+    std::println("\nSpanwise loading written to spanwise_loading.csv");
 
     // Stability derivatives about the quarter-chord of the mean aerodynamic
     // chord (a common default reference point for a wing-alone case; set
@@ -95,12 +92,11 @@ int main() {
     fc.RefPoint = VLM::Vec3(ref.Chord * Math::QuarterChord, 0, 0);
     VLM::StabilityDerivatives d = VLM::ComputeDerivatives(panels, fc, ref, trail);
 
-    std::cout << std::setprecision(4);
-    std::cout << "\n=== Stability derivatives (wing alone, about x=" << fc.RefPoint.x << ") ===\n";
-    std::cout << "CL_alpha  = " << d.CL_alpha << " /rad\n";
-    std::cout << "Cm_alpha  = " << d.Cm_alpha << " /rad  (" << (d.Cm_alpha < 0 ? "stable" : "UNSTABLE") << ")\n";
-    std::cout << "CY_beta   = " << d.CY_beta << " /rad\n";
-    std::cout << "Croll_beta= " << d.Croll_beta << " /rad\n";
+    std::println("\n=== Stability derivatives (wing alone, about x={:.4f}) ===", fc.RefPoint.x);
+    std::println("CL_alpha  = {:.4f} /rad", d.CL_alpha);
+    std::println("Cm_alpha  = {:.4f} /rad  ({})", d.Cm_alpha, d.Cm_alpha < 0 ? "stable" : "UNSTABLE");
+    std::println("CY_beta   = {:.4f} /rad", d.CY_beta);
+    std::println("Croll_beta= {:.4f} /rad", d.Croll_beta);
 
     return 0;
 }

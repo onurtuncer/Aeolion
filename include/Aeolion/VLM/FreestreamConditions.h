@@ -1,4 +1,4 @@
-// Types/FreestreamConditions.h
+// VLM/FreestreamConditions.h
 //
 // The flight condition a solve is evaluated at: freestream, attitude, body
 // rates, and the moment/rotation reference point.

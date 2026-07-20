@@ -7,7 +7,7 @@
 //     as AR increases is the real check).
 //   - Oswald efficiency for that same wing should sit close to 1.0.
 //   - CL/CDi should converge monotonically as panel count increases.
-#include "Aeolion/VLM.h"
+#include "Aeolion/VLM/VLM.h"
 #include <numbers>
 #include <iostream>
 #include <cmath>

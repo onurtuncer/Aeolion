@@ -1,4 +1,4 @@
-// Types/SolveResult.h
+// VLM/SolveResult.h
 //
 // Full result of a VLM solve: circulation distribution, per-station
 // breakdown, integrated force/moment coefficients and their dimensional
@@ -7,7 +7,7 @@
 #include <vector>
 #include <string>
 #include <map>
-#include "Aeolion/Types/StationResult.h"
+#include "Aeolion/VLM/StationResult.h"
 
 namespace Aeolion::VLM {
 
