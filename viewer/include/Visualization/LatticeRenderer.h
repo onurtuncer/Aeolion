@@ -16,6 +16,7 @@
 
 #include "Aeolion/Solver/Panel.h"
 #include "Aeolion/Solver/SolveResult.h"
+#include "Aeolion/Solver/StationResult.h"
 
 #include <glm/glm.hpp>
 

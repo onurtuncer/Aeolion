@@ -181,7 +181,10 @@ inline constexpr double DefaultRateStepFraction = 0.002; // central-difference r
         p.TrailDirA = Vec3(1, 0, 0);
         p.TrailDirB = Vec3(1, 0, 0);
         p.SpanwiseWidth = yB - yA;
-        p.Area = Half * (cA + cB) * p.SpanwiseWidth;
+        p.PlanformArea = Half * (cA + cB) * p.SpanwiseWidth;
+        // This lattice is flat, so the only thing separating the true
+        // surface from its projection is the dihedral tilt.
+        p.Area = p.PlanformArea / std::cos(dihedral);
         panels.push_back(p);
     }
     return panels;
@@ -364,10 +367,12 @@ struct PreparedSystem {
     Vec3 totalMoment(0, 0, 0);
     SolveResult res;
     res.gamma = gamma;
-    res.Stations.resize(N);
+    std::vector<double> panelLift(N, 0.0);
 
     double S = 0.0;
-    for (auto& p : panels) S += p.Area;
+    // Reference area is PLANFORM area -- the coefficient convention (see
+    // Panel::Area vs Panel::PlanformArea).
+    for (auto& p : panels) S += p.PlanformArea;
     if (ref.Area > 0.0) S = ref.Area; // caller override (e.g. wing-only area for a multi-surface aircraft)
     res.ReferenceArea = S;
     res.ReferenceChord = (ref.Chord > 0.0) ? ref.Chord : (S > 0.0 ? S / std::max(GeometryEps, Two) : UnitFallbackLength);
@@ -389,21 +394,51 @@ struct PreparedSystem {
         totalForce = totalForce + F;
         totalMoment = totalMoment + Cross(mid - fc.RefPoint, F);
 
-        StationResult sr;
-        sr.y = mid.y;
-        sr.gamma = gamma[i];
-        sr.LiftPerSpan = Dot(F, liftDir) / panels[i].SpanwiseWidth;
-        double qLocal = Half * rho * fc.Vinf * fc.Vinf;
-        double localChord = panels[i].Area / panels[i].SpanwiseWidth;
-        sr.cl_local = (qLocal > CoeffDenomEps && localChord > CoeffDenomEps) ? sr.LiftPerSpan / (qLocal * localChord) : 0.0;
-        sr.Surface = panels[i].Surface;
-        sr.PanelIndex = i;
-        res.Stations[i] = sr;
+        panelLift[i] = Dot(F, liftDir);
 
         const std::string& sname = panels[i].Surface;
         res.LiftBySurface[sname] += Dot(F, liftDir);
         res.DragBySurface[sname] += Dot(F, dragDir);
-        res.AreaBySurface[sname] += panels[i].Area;
+        res.AreaBySurface[sname] += panels[i].PlanformArea;
+    }
+
+    // --- collapse the lattice into spanwise stations ---
+    // A chordwise stack of panels sharing a StripIndex is ONE spanwise
+    // station: its circulation is the sum of the stack's horseshoe
+    // strengths, its lift the sum of theirs, and the chord that
+    // nondimensionalizes cl_local is the whole section chord (the stack's
+    // areas summed over the strip width) -- not one panel's slice of it.
+    // A negative StripIndex keeps a panel its own station, so a
+    // single-row lattice reports exactly as it did before.
+    std::map<int, std::vector<int>> strips;
+    for (int i = 0; i < N; ++i) {
+        int key = (panels[i].StripIndex >= 0) ? panels[i].StripIndex : -(i + 1);
+        strips[key].push_back(i);
+    }
+
+    double qLocal = Half * rho * fc.Vinf * fc.Vinf;
+    res.Stations.reserve(strips.size());
+    for (const auto& [key, members] : strips) {
+        const Panel& first = panels[members.front()];
+        StationResult sr;
+        sr.y = Half * (first.A.y + first.B.y);
+        sr.Surface = first.Surface;
+        sr.PanelIndex = members.front();
+
+        double lift = 0.0;
+        double area = 0.0;
+        for (int i : members) {
+            sr.gamma += gamma[i];
+            lift += panelLift[i];
+            area += panels[i].PlanformArea;
+        }
+        double width = first.SpanwiseWidth;
+        sr.LiftPerSpan = (width > GeometryEps) ? lift / width : 0.0;
+        double sectionChord = (width > GeometryEps) ? area / width : 0.0;
+        sr.cl_local = (qLocal > CoeffDenomEps && sectionChord > CoeffDenomEps)
+                          ? sr.LiftPerSpan / (qLocal * sectionChord)
+                          : 0.0;
+        res.Stations.push_back(sr);
     }
 
     res.L = Dot(totalForce, liftDir);
@@ -456,7 +491,7 @@ struct PreparedSystem {
     for (auto& p : panels) p.Surface = "wing";
     double trail = (wp.TrailLength > 0.0) ? wp.TrailLength : 50.0 * wp.Span;
     double S = 0.0;
-    for (auto& p : panels) S += p.Area;
+    for (auto& p : panels) S += p.PlanformArea;
     ReferenceGeometry ref;
     ref.Area = S;
     ref.Span = wp.Span;

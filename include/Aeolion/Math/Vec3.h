@@ -52,6 +52,16 @@ struct Vec3 {
     return {c * v.x + s * v.z, v.y, -s * v.x + c * v.z};
 }
 
+// Rodrigues rotation about an arbitrary unit axis, right-hand rule. Needed
+// where the rotation axis is data rather than a coordinate direction — a
+// control surface's hinge line, whose axis the geometry contract states
+// explicitly (see Geometry/ControlSurface.h).
+[[nodiscard]] inline Vec3 RotateAboutAxis(const Vec3& v, const Vec3& axis, double angleRad) {
+    const Vec3 k = axis.Normalized();
+    const double c = std::cos(angleRad), s = std::sin(angleRad);
+    return v * c + Cross(k, v) * s + k * (Dot(k, v) * (1.0 - c));
+}
+
 } // namespace Aeolion::Math
 
 // Re-export the math vocabulary into Aeolion::Solver (see file header).
@@ -61,4 +71,5 @@ namespace Aeolion::Solver {
     using Math::Cross;
     using Math::RotateAboutX;
     using Math::RotateAboutY;
+    using Math::RotateAboutAxis;
 } // namespace Aeolion::Solver
