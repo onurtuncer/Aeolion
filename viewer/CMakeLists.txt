@@ -1,4 +1,4 @@
-# Aeolion viewer: interactive OpenGL visualizer for the VLM solver.
+# Aeolion viewer: interactive OpenGL visualizer for the Aeolion solver.
 #
 # Hazel-style layering, trimmed to what a single-backend visualizer needs:
 #   Core/          Application, Window (GLFW + glad bootstrap)
@@ -24,7 +24,7 @@ add_executable(aeolion_viewer
     src/Visualization/LatticeRenderer.cpp
 )
 
-target_include_directories(aeolion_viewer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_include_directories(aeolion_viewer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(aeolion_viewer PRIVATE
     aeolion
     glfw

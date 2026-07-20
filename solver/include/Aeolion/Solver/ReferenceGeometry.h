@@ -1,4 +1,4 @@
-// VLM/ReferenceGeometry.h
+// Solver/ReferenceGeometry.h
 //
 // Normalization constants for force/moment coefficients. A generic panel
 // list carries no planform metadata of its own, so these must be supplied
@@ -6,7 +6,7 @@
 // automatically for a single parametric wing).
 #pragma once
 
-namespace Aeolion::VLM {
+namespace Aeolion::Solver {
 
 struct ReferenceGeometry {
     double Area = 0.0;   // S, wing reference area [m^2]
@@ -14,4 +14,4 @@ struct ReferenceGeometry {
     double Span = 0.0;   // reference span -- normalizes Croll, Cn [m]
 };
 
-} // namespace Aeolion::VLM
+} // namespace Aeolion::Solver

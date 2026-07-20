@@ -1,18 +1,18 @@
 // TestPropVane.cpp -- integration test tying BEMT.h's slipstream field
-// into VLM.h's externalField hook: a deflected vane sitting behind a
+// into Solver.h's externalField hook: a deflected vane sitting behind a
 // running propeller, at essentially zero airspeed (hover), should produce
 // real side force / yaw moment purely from the propwash -- while the same
 // vane with no propwash present produces ~nothing. This is the literal
 // physical mechanism that gives a thrust-vectoring-vane aircraft hover
 // control authority, so it's worth a standing regression check.
 #include "Aeolion/BEMT/BEMT.h"
-#include "Aeolion/VLM/VLM.h"
+#include "Aeolion/Solver/Solver.h"
 #include <numbers>
 #include <iostream>
 #include <cmath>
 
 using namespace Aeolion;
-using namespace Aeolion::VLM;
+using namespace Aeolion::Solver;
 
 static int failures = 0;
 #define CHECK(cond, msg) do { if (!(cond)) { std::cerr << "FAIL: " << msg << "\n"; ++failures; } } while (0)

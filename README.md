@@ -9,23 +9,27 @@ each stage rather than assumed correct — see "Validation" below.
 ## Layout
 
 ```
-include/Aeolion/     header-only library (this is the actual toolkit)
+solver/include/Aeolion/Solver/       the vortex lattice method core, kept as its
+                                     own top-level component (like viewer/) since
+                                     every other module builds on top of it
+                                                            (Aeolion::Solver)
+  Solver.h           3D VLM core: horseshoe vortices, LAPACK LU solve,
+                      sideslip, body rates, moments, stability
+                      derivatives, external-velocity-field hook
+  Panel.h              one horseshoe-vortex panel
+  WingParams.h         parametric single-wing planform
+  FreestreamConditions.h   flight condition (freestream, rates, ref point)
+  ReferenceGeometry.h  coefficient normalization constants
+  StationResult.h      per-spanwise-station output
+  SolveResult.h        full solve result (coeffs, forces, per-surface)
+  StabilityDerivatives.h   central-difference derivative table
+
+include/Aeolion/     header-only library (the rest of the toolkit)
                      one folder per namespace; each holds its module header
                      plus that module's plain data structs, one per file
   Math/                                                   (Aeolion::Math)
     Vec3.h             3D double vector + dot/cross/axis-rotation helpers
     Constants.h        shared numeric constants and angle conversions
-  VLM/                                                    (Aeolion::VLM)
-    VLM.h              3D VLM core: horseshoe vortices, LAPACK LU solve,
-                        sideslip, body rates, moments, stability
-                        derivatives, external-velocity-field hook
-    Panel.h              one horseshoe-vortex panel
-    WingParams.h         parametric single-wing planform
-    FreestreamConditions.h   flight condition (freestream, rates, ref point)
-    ReferenceGeometry.h  coefficient normalization constants
-    StationResult.h      per-spanwise-station output
-    SolveResult.h        full solve result (coeffs, forces, per-surface)
-    StabilityDerivatives.h   central-difference derivative table
   BEMT/                                                   (Aeolion::BEMT)
     BEMT.h             propeller BEMT (hover-safe: solves for induced
                         velocities directly, not induction factors) +
@@ -42,16 +46,16 @@ include/Aeolion/     header-only library (this is the actual toolkit)
                         + interference factor component buildup
 
 src/                  driver programs (link against the aeolion library)
-  main.cpp               parametric single-wing demo (vlm_demo)
+  main.cpp               parametric single-wing demo (solver_demo)
   GeometryContractCLI.cpp   solve a wing loaded from a JSON contract (aeolion_geometry)
 
 tests/                 regression suite, wired into ctest
-  TestVLMCore.cpp               VLM vs. thin-wing theory, Oswald efficiency
+  TestSolverCore.cpp            VLM vs. thin-wing theory, Oswald efficiency
   TestBEMT.cpp                  BEMT vs. hard physical bounds (FOM <= 1,
                                  efficiency <= 1)
   TestPropVane.cpp              propwash -> vane control authority
                                  integration test
-  TestSolverBackend.cpp         LAPACK dense-solve sanity check
+  TestDenseSolve.cpp            LAPACK dense-solve sanity check
   TestHandoffContract.cpp       JSON handoff parsing, contract invariants,
                                  surface binding, trapezoid reduction
 
@@ -85,14 +89,14 @@ Without CMake, the parametric demo builds directly (the JSON contract CLI
 also needs nlohmann/json on the include path):
 
 ```
-g++ -std=c++23 -O2 -Iinclude -o vlm_demo src/main.cpp -llapack -lblas
+g++ -std=c++23 -O2 -Iinclude -Isolver/include -o solver_demo src/main.cpp -llapack -lblas
 ```
 
 ## Quick usage
 
 ```
 # single parametric wing, prints CL/CDi/derivatives
-./vlm_demo
+./solver_demo
 
 # solve a wing loaded from a JSON geometry contract
 ./aeolion_geometry geometry.json
@@ -103,7 +107,7 @@ g++ -std=c++23 -O2 -Iinclude -o vlm_demo src/main.cpp -llapack -lblas
 Every module was checked against a closed-form or independently-known
 result before being trusted, not just eyeballed for plausibility:
 
-- **VLM core**: CL tracks thin-wing lifting-line theory within a few
+- **Solver core**: CL tracks thin-wing lifting-line theory within a few
   percent across aspect ratios 6-20; Oswald efficiency ~1.0 for a plain
   rectangular wing; panel-count convergence confirmed.
 - **BEMT**: checked against hard physical bounds, not just plausibility --
@@ -111,8 +115,8 @@ result before being trusted, not just eyeballed for plausibility:
   thermodynamic constraints). This caught two real bugs during
   development: a torque-equation exponent error and a sign-flipped
   drag term in the thrust/torque resolution.
-- **Solver**: LAPACK LU factorization (dgetrf/dgetrs), factorized once per
-  geometry and reused across right-hand sides.
+- **Dense solve**: LAPACK LU factorization (dgetrf/dgetrs), factorized once
+  per geometry and reused across right-hand sides.
 
 Bugs found and fixed along the way are left documented in the relevant
 code comments rather than scrubbed from history -- several were only

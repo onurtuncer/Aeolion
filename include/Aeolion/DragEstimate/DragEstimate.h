@@ -4,10 +4,10 @@
 // buildup method (see e.g. Raymer, "Aircraft Design: A Conceptual
 // Approach", ch. 12; or Hoerner, "Fluid-Dynamic Drag"). This is NOT
 // something a vortex lattice method can give you -- VLM is a potential-flow
-// (inviscid) method, so VLM::SolveResult::CDi is induced drag only. Total
+// (inviscid) method, so Solver::SolveResult::CDi is induced drag only. Total
 // drag is:
 //
-//     CD_total = CDi (from VLM::Solve)  +  CD0 (from this file)
+//     CD_total = CDi (from Solver::Solve)  +  CD0 (from this file)
 //
 // CD0 is a mid-fidelity CONCEPTUAL-DESIGN-LEVEL estimate, not a substitute
 // for wind-tunnel or CFD data -- typical accuracy is +/-10-20% for a

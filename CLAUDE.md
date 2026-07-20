@@ -15,16 +15,22 @@ Follow the naming conventions used by TheCherno's **Hazel** game engine.
 | Locals / parameters | camelCase | `controlPoint`, `vertexCount` |
 | Constants / enum values | PascalCase | `Failed` |
 | Macros | `AE_`-prefixed SCREAMING_CASE | `AE_ASSERT`, `AE_CORE_ASSERT` |
-| Namespace | PascalCase, `::` form | `namespace Aeolion::VLM {` |
+| Namespace | PascalCase, `::` form | `namespace Aeolion::Solver {` |
 
 The whole codebase (C++23) follows this convention. Headers live under
-`include/Aeolion/`, **one folder per namespace** — `Math/`, `VLM/`,
-`BEMT/`, `Geometry/`, `DragEstimate/`. Nothing sits naked at the top of
-`include/Aeolion/`. Each folder holds its module header (`VLM/VLM.h`,
-`Geometry/HandoffContract.h`, …) alongside that module's plain data
-structs, one struct per file (`VLM/Panel.h`, `Geometry/ControlSurface.h`,
-…). A new module means a new folder, not a new top-level header. Namespaces
-are written with the `::` form — `Aeolion::VLM`, `Aeolion::BEMT`,
+`include/Aeolion/`, **one folder per namespace** — `Math/`, `BEMT/`,
+`Geometry/`, `DragEstimate/`. Nothing sits naked at the top of
+`include/Aeolion/`. Each folder holds its module header (`Geometry/HandoffContract.h`, …)
+alongside that module's plain data structs, one struct per file
+(`Geometry/ControlSurface.h`, …). A new module means a new folder, not a
+new top-level header. The one exception is `Solver` (the vortex lattice
+method core): since every other module builds on top of it, it lives in
+its own top-level `solver/include/Aeolion/Solver/` — a sibling of
+`include/` rather than a folder inside it, mirroring how `viewer/` is
+also a top-level component with its own `include/`/`src/` split. Its
+module header is `Solver/Solver.h`, its plain data structs are
+`Solver/Panel.h`, `Solver/WingParams.h`, etc. Namespaces are written with
+the `::` form — `Aeolion::Solver`, `Aeolion::BEMT`,
 `Aeolion::DragEstimate`, `Aeolion::Geometry` — never the nested-brace form.
 The solver is 3D-only; geometry is loaded from a JSON contract (no STL/mesh).
 

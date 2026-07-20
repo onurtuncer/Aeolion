@@ -1,7 +1,7 @@
 // BEMT/BEMT.h
 //
 // Blade Element Momentum Theory (BEMT) for a propeller, plus a slipstream
-// velocity field meant to be fed into VLM.h's Solve() externalField hook
+// velocity field meant to be fed into Solver.h's Solve() externalField hook
 // so downstream control vanes see the actual propwash (axial acceleration
 // + swirl) instead of a uniform freestream.
 //
@@ -49,9 +49,9 @@
 
 namespace Aeolion::BEMT {
 
-using VLM::Vec3;
-using VLM::Cross;
-using VLM::Dot;
+using Solver::Vec3;
+using Solver::Cross;
+using Solver::Dot;
 using Math::Half;
 using Math::Two;
 using Math::Tiny;
@@ -265,7 +265,7 @@ struct Result {
 }
 
 // --------------------------------------------------------- Slipstream field
-// Meant to be passed as VLM::Solve()'s externalField callback: returns the
+// Meant to be passed as Solver::Solve()'s externalField callback: returns the
 // INDUCED velocity perturbation (axial + swirl) at a global point P, to be
 // added on top of the vane surface's own freestream. Assumes the prop axis
 // is aligned with AxisDir (unit vector) through HubCenter, thrust directed

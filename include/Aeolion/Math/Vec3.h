@@ -5,8 +5,9 @@
 // on it. Lives in namespace Aeolion::Math.
 //
 // For source-compatibility the names are also re-exported into
-// Aeolion::VLM, so existing VLM::Vec3 / VLM::Dot / VLM::Cross references
-// keep resolving -- VLM is the umbrella that these math types feed into.
+// Aeolion::Solver, so existing Solver::Vec3 / Solver::Dot / Solver::Cross
+// references keep resolving -- Solver is the umbrella that these math types
+// feed into.
 
 #pragma once
 #include <cmath>
@@ -51,13 +52,24 @@ struct Vec3 {
     return {c * v.x + s * v.z, v.y, -s * v.x + c * v.z};
 }
 
+// Rodrigues rotation about an arbitrary unit axis, right-hand rule. Needed
+// where the rotation axis is data rather than a coordinate direction — a
+// control surface's hinge line, whose axis the geometry contract states
+// explicitly (see Geometry/ControlSurface.h).
+[[nodiscard]] inline Vec3 RotateAboutAxis(const Vec3& v, const Vec3& axis, double angleRad) {
+    const Vec3 k = axis.Normalized();
+    const double c = std::cos(angleRad), s = std::sin(angleRad);
+    return v * c + Cross(k, v) * s + k * (Dot(k, v) * (1.0 - c));
+}
+
 } // namespace Aeolion::Math
 
-// Re-export the math vocabulary into Aeolion::VLM (see file header).
-namespace Aeolion::VLM {
+// Re-export the math vocabulary into Aeolion::Solver (see file header).
+namespace Aeolion::Solver {
     using Math::Vec3;
     using Math::Dot;
     using Math::Cross;
     using Math::RotateAboutX;
     using Math::RotateAboutY;
-} // namespace Aeolion::VLM
+    using Math::RotateAboutAxis;
+} // namespace Aeolion::Solver

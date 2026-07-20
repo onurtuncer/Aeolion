@@ -1,4 +1,4 @@
-// TestVLMCore.cpp -- validates VLM.h's core solver against known
+// TestSolverCore.cpp -- validates Solver.h's core solver against known
 // closed-form aerodynamic theory:
 //   - CL for a rectangular unswept/untwisted wing should track the
 //     lifting-line-corrected thin-wing formula CL = 2*pi*alpha/(1+2/AR)
@@ -7,12 +7,12 @@
 //     as AR increases is the real check).
 //   - Oswald efficiency for that same wing should sit close to 1.0.
 //   - CL/CDi should converge monotonically as panel count increases.
-#include "Aeolion/VLM/VLM.h"
+#include "Aeolion/Solver/Solver.h"
 #include <numbers>
 #include <iostream>
 #include <cmath>
 
-using namespace Aeolion::VLM;
+using namespace Aeolion::Solver;
 
 static int failures = 0;
 #define CHECK(cond, msg) do { if (!(cond)) { std::cerr << "FAIL: " << msg << "\n"; ++failures; } } while (0)
@@ -62,7 +62,7 @@ int main() {
         first = false;
     }
 
-    if (failures == 0) { std::cout << "PASS: TestVLMCore\n"; return 0; }
-    std::cerr << failures << " check(s) failed in TestVLMCore\n";
+    if (failures == 0) { std::cout << "PASS: TestSolverCore\n"; return 0; }
+    std::cerr << failures << " check(s) failed in TestSolverCore\n";
     return 1;
 }

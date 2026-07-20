@@ -96,22 +96,22 @@ void Application::FrameView() {
 }
 
 void Application::Resolve() {
-    m_Panels = VLM::BuildWing(m_Wing);
+    m_Panels = Solver::BuildWing(m_Wing);
     for (auto& panel : m_Panels) panel.Surface = "wing";
 
     double area = 0.0;
     for (const auto& panel : m_Panels) area += panel.Area;
 
-    VLM::ReferenceGeometry ref;
+    Solver::ReferenceGeometry ref;
     ref.Area = area;
     ref.Span = m_Wing.Span;
     ref.Chord = area / m_Wing.Span;
 
     double trail = (m_Wing.TrailLength > 0.0)
                        ? m_Wing.TrailLength
-                       : VLM::DefaultTrailSpanFactor * m_Wing.Span;
+                       : Solver::DefaultTrailSpanFactor * m_Wing.Span;
 
-    m_Result = VLM::Solve(m_Panels, m_Freestream, ref, trail);
+    m_Result = Solver::Solve(m_Panels, m_Freestream, ref, trail);
     m_Derivatives.reset(); // stale for the new geometry/condition; recompute on demand
 }
 
@@ -223,14 +223,14 @@ void Application::DrawUI() {
     if (ImGui::Button("Compute derivatives")) {
         double area = 0.0;
         for (const auto& panel : m_Panels) area += panel.Area;
-        VLM::ReferenceGeometry ref;
+        Solver::ReferenceGeometry ref;
         ref.Area = area;
         ref.Span = m_Wing.Span;
         ref.Chord = area / m_Wing.Span;
         double trail = (m_Wing.TrailLength > 0.0)
                            ? m_Wing.TrailLength
-                           : VLM::DefaultTrailSpanFactor * m_Wing.Span;
-        m_Derivatives = VLM::ComputeDerivatives(m_Panels, m_Freestream, ref, trail);
+                           : Solver::DefaultTrailSpanFactor * m_Wing.Span;
+        m_Derivatives = Solver::ComputeDerivatives(m_Panels, m_Freestream, ref, trail);
     }
     if (m_Derivatives) {
         if (ImGui::BeginTable("derivatives", 2, ImGuiTableFlags_SizingStretchProp)) {

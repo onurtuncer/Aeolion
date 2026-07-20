@@ -1,6 +1,6 @@
 // Visualization/LatticeRenderer.h
 //
-// Turns the solver's data model (VLM::Panel + VLM::SolveResult) into GPU
+// Turns the solver's data model (Solver::Panel + Solver::SolveResult) into GPU
 // meshes and draws them: panel quads colored by a chosen scalar field
 // through the viridis colormap, plus a line overlay (panel outlines, bound
 // vortex segments, control-point normals, reference grid, body axes).
@@ -14,8 +14,9 @@
 #include "Renderer/Shader.h"
 #include "Renderer/VertexArray.h"
 
-#include "Aeolion/VLM/Panel.h"
-#include "Aeolion/VLM/SolveResult.h"
+#include "Aeolion/Solver/Panel.h"
+#include "Aeolion/Solver/SolveResult.h"
+#include "Aeolion/Solver/StationResult.h"
 
 #include <glm/glm.hpp>
 
@@ -44,7 +45,7 @@ public:
 
     // Rebuild all vertex data from a solved lattice. `span` scales the
     // grid, axes, and normal-vector glyphs.
-    void Update(const std::vector<VLM::Panel>& panels, const VLM::SolveResult& result,
+    void Update(const std::vector<Solver::Panel>& panels, const Solver::SolveResult& result,
                 const LatticeDisplayOptions& options, double span);
 
     void Draw(const glm::mat4& viewProjection) const;

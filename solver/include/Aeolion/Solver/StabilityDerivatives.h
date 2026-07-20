@@ -1,4 +1,4 @@
-// VLM/StabilityDerivatives.h
+// Solver/StabilityDerivatives.h
 //
 // Central-difference stability & control derivatives about a baseline
 // flight condition. Angular derivatives (CL_alpha, CY_beta, ...) are per
@@ -11,7 +11,7 @@
 // NOTE: CDi derivatives reflect INDUCED drag only (see SolveResult::CDi).
 #pragma once
 
-namespace Aeolion::VLM {
+namespace Aeolion::Solver {
 
 struct StabilityDerivatives {
     double CL0 = 0, CDi0 = 0, CY0 = 0, Cm0 = 0, Croll0 = 0, Cn0 = 0;
@@ -28,4 +28,4 @@ struct StabilityDerivatives {
     double Croll_r_nd = 0, Cn_r_nd = 0;                    // x b/(2V)
 };
 
-} // namespace Aeolion::VLM
+} // namespace Aeolion::Solver
