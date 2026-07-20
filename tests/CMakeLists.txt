@@ -17,5 +17,7 @@ aeolion_add_test(TestHandoffContract)
 aeolion_add_test(TestSourcePanel)
 
 aeolion_add_test(TestPanelBuilder)
-# The only test that exercises compiled code rather than headers alone.
+aeolion_add_test(TestBodyPanels)
+# These exercise compiled code rather than headers alone.
 target_link_libraries(TestPanelBuilder PRIVATE aeolion_panelbuilder)
+target_link_libraries(TestBodyPanels PRIVATE aeolion_panelbuilder)

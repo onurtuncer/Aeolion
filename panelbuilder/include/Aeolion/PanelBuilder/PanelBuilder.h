@@ -110,6 +110,7 @@
 
 #include "Aeolion/Geometry/HandoffContract.h"
 #include "Aeolion/Lattice/Panel.h"
+#include "Aeolion/Lattice/SourcePanel.h"
 
 #include <cstddef>
 #include <utility>
@@ -132,6 +133,23 @@ inline constexpr double BreakpointMergeTolerance = 1e-9;
 // either is already a breakpoint and must not be inserted twice.
 inline constexpr double EtaInteriorMin = 0.0;
 inline constexpr double EtaInteriorMax = 1.0;
+
+// Fewest azimuthal divisions that still describe a closed surface of
+// revolution rather than a sliver.
+inline constexpr int MinBodySectors = 3;
+
+// Panels smaller than these are the degenerate ones a collapsing ring
+// produces at a pointed nose or closed tail; they carry no surface and
+// would only put near-zero rows into the influence matrix.
+inline constexpr double BodyDegenerateLength = 1e-12;
+inline constexpr double BodyDegenerateArea = 1e-18;
+
+inline constexpr double Two3rds = 2.0 / 3.0; // radial centroid of a triangle spanning the axis to the rim
+
+// Surface tags. The base is tagged apart from the rest of the body because
+// it is the face that will carry the duct efflux rather than a solid wall.
+inline constexpr const char* BodySurfaceName = "fuselage";
+inline constexpr const char* BodyBaseSurfaceName = "fuselage_base";
 
 // Fewest panels any sub-interval may receive when a section's budget is
 // split at a breakpoint.
@@ -200,6 +218,18 @@ enum class Spacing { Uniform, Cosine };
 struct LatticeOptions {
     Spacing Spanwise = Spacing::Uniform;
     Spacing Chordwise = Spacing::Uniform;
+
+    // Whether to panel the fuselage at all. A wing-only study is a
+    // legitimate thing to want, and the body roughly doubles the unknown
+    // count -- which the dense solve pays for cubically.
+    bool IncludeBody = true;
+
+    // Circumferential divisions around the body. The handoff schema states
+    // an axial station list but no azimuthal resolution, so this is the
+    // consumer's choice. The body is axisymmetric, but the FLOW around it
+    // is not once there is incidence or sideslip, which is the whole reason
+    // to resolve it circumferentially rather than treat it as rings.
+    int BodyCircumferentialPanels = 16;
 };
 
 // --- the builder ------------------------------------------------------------
@@ -216,6 +246,11 @@ public:
     LatticeBuilder& ClearDeflections();
 
     [[nodiscard]] std::vector<Solver::Panel> Build() const;
+
+    // The fuselage as source panels. Empty when the contract carries no
+    // body or LatticeOptions::IncludeBody is false, which is exactly the
+    // degenerate case the solver's blocked system reduces to.
+    [[nodiscard]] std::vector<Lattice::SourcePanel> BuildBody() const;
 
     // The spanwise panel boundaries this builder will use, in eta. Exposed
     // because "did the mesh land on the control surface edge?" is a

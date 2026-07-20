@@ -410,4 +410,144 @@ std::vector<Solver::Panel> LatticeBuilder::Build() const {
     return panels;
 }
 
+
+// --- fuselage ---------------------------------------------------------------
+// The body is a surface of revolution: sweep the contract's (x, radius)
+// profile around the body axis, one quad per (axial segment x azimuthal
+// sector). Sources rather than horseshoes -- see Lattice::SourcePanel for
+// why a non-lifting closed volume takes one and not the other.
+//
+// FRAME. The contract states x FORWARD (aetherion_body_frd) so its stations
+// run from a nose at x = 0 to a tail at x = -Length. The solver is x AFT.
+// The conversion is the 180-degree rotation about y that ControlSurface.h
+// describes: x_solver = -x_frd, y unchanged, z_solver = -z_frd. For an
+// axisymmetric profile the z flip is invisible (a circle maps to itself),
+// so in practice only the axial coordinate reverses -- but it is written out
+// rather than assumed, because "only x changes" is true of THIS body and not
+// of the frame.
+//
+// WINDING. The kernel's solid angle is winding-sensitive, so each quad's
+// corner order is fixed against its own outward normal rather than trusted
+// to come out right from the sweep direction. Getting this backwards would
+// invert the body's whole pressure field, which is exactly the sort of error
+// that still looks plausible in a plot.
+//
+// THE BASE. This airframe's profile does not close: its final radius is a
+// duct exit. A source-panel body with an open end does not conserve mass, so
+// the base is capped here and the cap is tagged separately, leaving the
+// panels in place for the efflux boundary condition to claim later. Until
+// then the cap is an ordinary solid wall, which is a closed-body answer --
+// honest, and wrong in a known direction rather than unknown.
+std::vector<Lattice::SourcePanel> LatticeBuilder::BuildBody() const {
+    std::vector<Lattice::SourcePanel> panels;
+    if (!m_Options.IncludeBody) return panels;
+
+    const Geometry::BodyGeometry& body = m_Contract.Body;
+    if (!body.IsPresent()) return panels;
+
+    const int sectors = m_Options.BodyCircumferentialPanels;
+    if (sectors < MinBodySectors) return panels;
+
+    const auto& stations = body.Stations;
+
+    // Contract frame -> solver frame.
+    const auto axialPosition = [](double contractX) { return -contractX; };
+
+    // A point on the surface of revolution at axial station value `x`
+    // (already in solver frame) and radius `r`, at azimuth `angle`.
+    const auto surfacePoint = [](double x, double r, double angle) {
+        return Solver::Vec3(x, r * std::cos(angle), r * std::sin(angle));
+    };
+
+    // Fixes corner order so the quad's own normal points away from the body
+    // axis, then fills in the derived quantities.
+    const auto finishPanel = [&](Lattice::SourcePanel& panel, const Solver::Vec3& outwardHint) {
+        Solver::Vec3 normal = Solver::Cross(panel.Corners[2] - panel.Corners[0],
+                                            panel.Corners[3] - panel.Corners[1]);
+        if (Solver::Dot(normal, outwardHint) < 0.0) {
+            std::swap(panel.Corners[1], panel.Corners[3]);
+            normal = normal * -1.0;
+        }
+        // Half the diagonal cross product is the quad's area, and stays
+        // correct when a ring degenerates to triangles at a closed end.
+        panel.Area = Math::Half * Solver::Cross(panel.Corners[2] - panel.Corners[0],
+                                                panel.Corners[3] - panel.Corners[1])
+                                      .Norm();
+        panel.Normal = normal.Normalized();
+    };
+
+    // --- lateral surface ----------------------------------------------------
+    for (std::size_t i = 0; i + 1 < stations.size(); ++i) {
+        const double xNear = axialPosition(stations[i].x);
+        const double xFar = axialPosition(stations[i + 1].x);
+        const double rNear = stations[i].Radius;
+        const double rFar = stations[i + 1].Radius;
+
+        // A zero-length segment carries no surface.
+        if (std::fabs(xFar - xNear) < BodyDegenerateLength && std::fabs(rFar - rNear) < BodyDegenerateLength)
+            continue;
+
+        for (int j = 0; j < sectors; ++j) {
+            const double angle0 = Math::Two * std::numbers::pi * j / sectors;
+            const double angle1 = Math::Two * std::numbers::pi * (j + 1) / sectors;
+
+            Lattice::SourcePanel panel;
+            panel.Corners = {surfacePoint(xNear, rNear, angle0), surfacePoint(xFar, rFar, angle0),
+                             surfacePoint(xFar, rFar, angle1), surfacePoint(xNear, rNear, angle1)};
+
+            Solver::Vec3 centroid(0, 0, 0);
+            for (const Solver::Vec3& corner : panel.Corners) centroid = centroid + corner * 0.25;
+
+            // Radially outward at the panel's own azimuth; degenerate on the
+            // axis, where the ring has collapsed to a point.
+            const double midAngle = Math::Half * (angle0 + angle1);
+            const Solver::Vec3 outward(0.0, std::cos(midAngle), std::sin(midAngle));
+            finishPanel(panel, outward);
+
+            // Put the control point on the true frustum rather than inside
+            // the chord the flat quad cuts across the circle.
+            const double midRadius = Math::Half * (rNear + rFar);
+            panel.ControlPoint = (midRadius > BodyDegenerateLength)
+                                     ? Solver::Vec3(centroid.x, midRadius * std::cos(midAngle),
+                                                    midRadius * std::sin(midAngle))
+                                     : centroid;
+            panel.Surface = BodySurfaceName;
+            panel.StationIndex = static_cast<int>(i);
+            if (panel.Area > BodyDegenerateArea) panels.push_back(panel);
+        }
+    }
+
+    // --- base cap -----------------------------------------------------------
+    // Only when the profile actually ends open.
+    const double baseRadius = stations.back().Radius;
+    if (baseRadius > BodyDegenerateLength) {
+        const double baseX = axialPosition(stations.back().x);
+        const Solver::Vec3 centre(baseX, 0.0, 0.0);
+        // The base faces aft, which in solver axes is +x.
+        const Solver::Vec3 outward(1.0, 0.0, 0.0);
+
+        for (int j = 0; j < sectors; ++j) {
+            const double angle0 = Math::Two * std::numbers::pi * j / sectors;
+            const double angle1 = Math::Two * std::numbers::pi * (j + 1) / sectors;
+
+            // A triangle written as a quad with a repeated apex; the kernel
+            // skips the zero-length edge that creates.
+            Lattice::SourcePanel panel;
+            panel.Corners = {centre, surfacePoint(baseX, baseRadius, angle0),
+                             surfacePoint(baseX, baseRadius, angle1), centre};
+            finishPanel(panel, outward);
+
+            const double midAngle = Math::Half * (angle0 + angle1);
+            const double centroidRadius = Two3rds * baseRadius; // centroid of a triangle from the axis
+            panel.ControlPoint = Solver::Vec3(baseX, centroidRadius * std::cos(midAngle),
+                                              centroidRadius * std::sin(midAngle));
+            panel.Surface = BodyBaseSurfaceName;
+            panel.StationIndex = static_cast<int>(stations.size()) - 1;
+            if (panel.Area > BodyDegenerateArea) panels.push_back(panel);
+        }
+    }
+
+    return panels;
+}
+
 } // namespace Aeolion::PanelBuilder
