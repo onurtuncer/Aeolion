@@ -198,12 +198,90 @@ void TestSphereMatchesPotentialFlow() {
                                       std::to_string(worstSpeedError * 100.0) + "%");
 }
 
+// --- the wing-only case must BE the degenerate coupled case ----------------
+// Not "agree closely with" -- be. There is one set of equations, and a wing
+// with no body is that system with the source rows and columns absent. If
+// these ever diverge, a second treatment has crept in.
+Aeolion::Solver::WingParams DemoWing() {
+    Aeolion::Solver::WingParams wing;
+    wing.Span = 4.0;
+    wing.RootChord = 0.5;
+    wing.TipChord = 0.35;
+    wing.SweepQuarterChordDeg = 8.0;
+    wing.DihedralDeg = 3.0;
+    wing.TwistTipDeg = -2.0;
+    wing.NPanelsSemiSpan = 12;
+    return wing;
+}
+
+void TestWingOnlyIsExactlyTheDegenerateCase() {
+    const auto panels = Aeolion::Solver::BuildWing(DemoWing());
+    const double trail = 50.0 * DemoWing().Span;
+
+    Aeolion::Solver::ReferenceGeometry ref;
+    for (const auto& p : panels) ref.Area += p.PlanformArea;
+    ref.Span = DemoWing().Span;
+    ref.Chord = ref.Area / ref.Span;
+    Aeolion::Solver::FreestreamConditions fc;
+    fc.Vinf = 30.0; fc.alphaDeg = 4.0; fc.betaDeg = 2.0; fc.rho = 1.225;
+
+    // Entry point A: the vector<Panel> convenience overload.
+    const auto viaVector = Aeolion::Solver::SolveWithSystem(
+        Aeolion::Solver::Prepare(panels, trail), fc, ref);
+    // Entry point B: the coupled system, stated with an empty source list.
+    const auto viaSystem = Aeolion::Solver::SolveWithSystem(
+        Aeolion::Solver::Prepare(Aeolion::Solver::PanelSystem{panels, {}}, trail), fc, ref);
+
+    // Bitwise, not within a tolerance.
+    CHECK(viaVector.CL == viaSystem.CL, "CL must be identical through both entry points");
+    CHECK(viaVector.CDi == viaSystem.CDi, "CDi must be identical through both entry points");
+    CHECK(viaVector.Cm == viaSystem.Cm, "Cm must be identical through both entry points");
+    CHECK(viaVector.Cn == viaSystem.Cn, "Cn must be identical through both entry points");
+    CHECK(viaVector.gamma.size() == viaSystem.gamma.size(), "same number of circulations");
+    bool gammaIdentical = viaVector.gamma.size() == viaSystem.gamma.size();
+    for (std::size_t i = 0; gammaIdentical && i < viaVector.gamma.size(); ++i)
+        gammaIdentical = (viaVector.gamma[i] == viaSystem.gamma[i]);
+    CHECK(gammaIdentical, "every circulation must be bit-identical through both entry points");
+}
+
+// The blocking claim, checked directly: introducing a body adds rows and
+// columns, it does not perturb the wing's own influence coefficients. The
+// vortex-vortex block of the coupled matrix must equal the wing-only matrix
+// entry for entry.
+void TestCouplingLeavesTheWingBlockUntouched() {
+    const auto panels = Aeolion::Solver::BuildWing(DemoWing());
+    const auto body = BuildSphere(0.4, 8, 8);
+    const double trail = 50.0 * DemoWing().Span;
+
+    const Aeolion::Solver::PanelSystem wingOnly{panels, {}};
+    const Aeolion::Solver::PanelSystem coupled{panels, body};
+
+    CHECK(coupled.UnknownCount() == wingOnly.UnknownCount() + static_cast<int>(body.size()),
+          "the coupled system's size is the sum of its parts");
+
+    double worst = 0.0;
+    for (int i = 0; i < wingOnly.UnknownCount(); ++i)
+        for (int j = 0; j < wingOnly.UnknownCount(); ++j)
+            worst = std::max(worst, std::fabs(coupled.NormalInfluence(i, j, trail) -
+                                              wingOnly.NormalInfluence(i, j, trail)));
+    CHECK(worst == 0.0, "the vortex-vortex block must be untouched by adding a body, worst delta " +
+                            std::to_string(worst));
+
+    // And the source rows really are the ones that appeared: a solid body
+    // prescribes zero normal velocity, a lifting panel always does.
+    for (int i = 0; i < coupled.UnknownCount(); ++i)
+        CHECK(coupled.PrescribedNormalVelocity(i) == 0.0,
+              "a solid surface prescribes zero normal velocity at equation " + std::to_string(i));
+}
+
 } // namespace
 
 int main() {
     TestFarFieldLooksLikeAPointSource();
     TestSheetJump();
     TestSphereMatchesPotentialFlow();
+    TestWingOnlyIsExactlyTheDegenerateCase();
+    TestCouplingLeavesTheWingBlockUntouched();
 
     if (failures == 0) { std::cout << "PASS: TestSourcePanel\n"; return 0; }
     std::cerr << failures << " check(s) failed in TestSourcePanel\n";
