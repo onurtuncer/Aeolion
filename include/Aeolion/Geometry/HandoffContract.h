@@ -225,9 +225,15 @@ inline void RequireSpanningEtaSequence(const std::vector<double>& etas, std::str
     return axis.Normalized(); // direction is all that matters; magnitude is not part of the contract
 }
 
-[[nodiscard]] inline WakeModel ParseWakeModel(const std::string& name, std::string_view where) {
-    if (name == "frozen") return WakeModel::Frozen;
-    if (name == "relaxed") return WakeModel::Relaxed;
+// The solver trails its wake along +x and has no relaxed-wake iteration, so
+// "relaxed" is refused outright. Accepting it and solving a frozen wake
+// anyway would answer a question the caller did not ask, and nothing in the
+// result would reveal the substitution.
+inline void RequireSupportedWakeModel(const std::string& name, std::string_view where) {
+    if (name == "frozen") return;
+    if (name == "relaxed")
+        throw ContractError(std::format(
+            "{}.wake_model: 'relaxed' is not implemented; this solver trails a frozen wake only", where));
     throw ContractError(std::format("{}.wake_model: unknown model '{}'", where, name));
 }
 
@@ -324,7 +330,6 @@ inline void RequireSpanningEtaSequence(const std::vector<double>& etas, std::str
                                                 parameterization));
 
             AirfoilSection section;
-            section.Parameterization = SectionParameterization::CST;
             section.Eta = Number(sections[i], "eta", where);
             section.CoefficientsUpper = Coefficients(sections[i], "coefficients_upper", where);
             section.CoefficientsLower = Coefficients(sections[i], "coefficients_lower", where);
@@ -375,7 +380,7 @@ inline void RequireSpanningEtaSequence(const std::vector<double>& etas, std::str
         const auto& mesh = Object(root, "mesh_topology", "$");
         contract.Mesh.ChordwisePanels = Integer(mesh, "chordwise_panels", "mesh_topology");
         contract.Mesh.SpanwisePanelsPerSection = Integer(mesh, "spanwise_panels_per_section", "mesh_topology");
-        contract.Mesh.Wake = ParseWakeModel(String(mesh, "wake_model", "mesh_topology"), "mesh_topology");
+        RequireSupportedWakeModel(String(mesh, "wake_model", "mesh_topology"), "mesh_topology");
         if (contract.Mesh.ChordwisePanels < 1)
             throw ContractError(std::format("mesh_topology.chordwise_panels must be >= 1, got {}",
                                             contract.Mesh.ChordwisePanels));

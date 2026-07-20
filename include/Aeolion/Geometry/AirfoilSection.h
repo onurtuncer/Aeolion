@@ -22,15 +22,14 @@
 
 namespace Aeolion::Geometry {
 
-enum class SectionParameterization { CST };
-
-// Class-function exponents implied by SectionParameterization::CST.
+// Class-function exponents. CST is the only parameterization the schema
+// admits, so these are not conditional on a stored discriminator -- the
+// parser rejects anything else outright and nothing downstream branches.
 inline constexpr double CstN1 = 0.5;
 inline constexpr double CstN2 = 1.0;
 
 struct AirfoilSection {
     double Eta = 0.0; // normalized semi-span position, 0..1
-    SectionParameterization Parameterization = SectionParameterization::CST;
     std::vector<double> CoefficientsUpper;
     std::vector<double> CoefficientsLower;
 };

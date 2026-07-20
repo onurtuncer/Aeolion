@@ -7,8 +7,6 @@
 
 using Aeolion::Geometry::ContractError;
 using Aeolion::Geometry::ControlSurfaceBinding;
-using Aeolion::Geometry::SectionParameterization;
-using Aeolion::Geometry::WakeModel;
 
 namespace {
 
@@ -81,7 +79,6 @@ void TestParsesFixture() {
 
     Check(contract.AirfoilSections.size() == 5, "5 airfoil sections");
     for (const auto& section : contract.AirfoilSections) {
-        Check(section.Parameterization == SectionParameterization::CST, "section is CST-parameterized");
         Check(section.CoefficientsUpper.size() == 6, "6 upper CST coefficients");
         Check(section.CoefficientsLower.size() == 6, "6 lower CST coefficients");
     }
@@ -108,7 +105,6 @@ void TestParsesFixture() {
 
     Check(contract.Mesh.ChordwisePanels == 8, "chordwise panel count");
     Check(contract.Mesh.SpanwisePanelsPerSection == 6, "spanwise panel count per section");
-    Check(contract.Mesh.Wake == WakeModel::Frozen, "wake model");
 
     Check(contract.Propulsion.BladeStations.size() == 13, "13 blade stations");
     CheckClose(contract.Propulsion.DiskRadius, 0.1015, "disk radius");
@@ -304,6 +300,12 @@ void TestRejectsMalformed() {
                  [](auto& root) { root["airfoil_sections"] = nlohmann::json::array(); });
     CheckRejects("a non-CST parameterization",
                  [](auto& root) { root["airfoil_sections"][0]["parameterization"] = "bspline"; });
+    // 'relaxed' is a legal schema value that this solver cannot honour, so
+    // it must be refused rather than silently solved with a frozen wake.
+    CheckRejects("a relaxed wake, which is not implemented",
+                 [](auto& root) { root["mesh_topology"]["wake_model"] = "relaxed"; });
+    CheckRejects("an unknown wake model",
+                 [](auto& root) { root["mesh_topology"]["wake_model"] = "banana"; });
     CheckRejects("too few CST coefficients",
                  [](auto& root) { root["airfoil_sections"][0]["coefficients_upper"] = {0.1, 0.2, 0.3}; });
     CheckRejects("too many CST coefficients", [](auto& root) {

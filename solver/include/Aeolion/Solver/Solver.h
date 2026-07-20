@@ -295,12 +295,6 @@ struct LUFactorization {
     return x;
 }
 
-// Convenience one-shot wrapper (factorize + solve a single RHS) -- kept for
-// call sites that only ever need one solve against a given matrix.
-[[nodiscard]] inline std::vector<double> SolveLinear(ConstDenseMatrixView A, const std::vector<double>& b) {
-    return LuSolve(LuFactorize(A), b);
-}
-
 // A geometry-only factorization: the influence matrix depends solely on
 // panel positions/normals, never on alpha/beta/rates/externalField, so
 // this is what you build ONCE and reuse across many flight conditions
