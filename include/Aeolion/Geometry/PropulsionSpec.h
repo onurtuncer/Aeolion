@@ -1,4 +1,4 @@
-// Types/PropulsionSpec.h
+// Geometry/PropulsionSpec.h
 //
 // Propeller blade geometry as handed off for a BEMT run. Radial positions are
 // normalized (r/R); multiply by DiskRadius to get the metric radii that

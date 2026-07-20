@@ -1,5 +1,5 @@
-#include "Aeolion/HandoffContract.h"
-#include "Aeolion/VLM.h"
+#include "Aeolion/Geometry/HandoffContract.h"
+#include "Aeolion/VLM/VLM.h"
 #include <print>
 
 int main(int argc, char** argv) {

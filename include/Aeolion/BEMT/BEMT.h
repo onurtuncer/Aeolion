@@ -1,4 +1,4 @@
-// BEMT.h
+// BEMT/BEMT.h
 //
 // Blade Element Momentum Theory (BEMT) for a propeller, plus a slipstream
 // velocity field meant to be fed into VLM.h's Solve() externalField hook

@@ -1,4 +1,4 @@
-// Types/ControlSurface.h
+// Geometry/ControlSurface.h
 //
 // A hinged control surface. What it is hinged TO is given by Binding, and
 // that choice reinterprets the eta band -- see below.

@@ -1,4 +1,4 @@
-// VLM.h
+// VLM/VLM.h
 //
 // Minimal steady vortex lattice method (VLM) for a single lifting surface.
 //
@@ -21,8 +21,9 @@
 // directly, without a separate Trefftz-plane integration.
 //
 // The data model (Vec3 and the result/parameter structs) lives in
-// Aeolion/Math and Aeolion/Types; this header owns the algorithms and the
-// LAPACK-backed dense solver. The dense solve uses LAPACK (dgetrf/dgetrs
+// Aeolion/Math and in this header's siblings under Aeolion/VLM; this header
+// owns the algorithms and the LAPACK-backed dense solver, one folder per
+// namespace. The dense solve uses LAPACK (dgetrf/dgetrs
 // via the Fortran ABI); link against a LAPACK provider such as OpenBLAS.
 
 #pragma once
@@ -39,13 +40,13 @@
 
 #include "Aeolion/Math/Vec3.h"
 #include "Aeolion/Math/Constants.h"
-#include "Aeolion/Types/Panel.h"
-#include "Aeolion/Types/WingParams.h"
-#include "Aeolion/Types/FreestreamConditions.h"
-#include "Aeolion/Types/ReferenceGeometry.h"
-#include "Aeolion/Types/StationResult.h"
-#include "Aeolion/Types/SolveResult.h"
-#include "Aeolion/Types/StabilityDerivatives.h"
+#include "Aeolion/VLM/Panel.h"
+#include "Aeolion/VLM/WingParams.h"
+#include "Aeolion/VLM/FreestreamConditions.h"
+#include "Aeolion/VLM/ReferenceGeometry.h"
+#include "Aeolion/VLM/StationResult.h"
+#include "Aeolion/VLM/SolveResult.h"
+#include "Aeolion/VLM/StabilityDerivatives.h"
 
 // The dense solve calls LAPACK's double-precision general LU routines
 // directly through their Fortran ABI (dgetrf_ / dgetrs_). We bind these

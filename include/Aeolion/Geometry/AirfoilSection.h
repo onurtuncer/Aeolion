@@ -1,4 +1,4 @@
-// Types/AirfoilSection.h
+// Geometry/AirfoilSection.h
 //
 // A section shape attached to a spanwise station, carried as Class-Shape
 // Transformation (CST) coefficients rather than point coordinates.

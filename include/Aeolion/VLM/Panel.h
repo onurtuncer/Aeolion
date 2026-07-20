@@ -1,4 +1,4 @@
-// Types/Panel.h
+// VLM/Panel.h
 //
 // One horseshoe-vortex panel: the atomic geometric unit of the lattice.
 #pragma once

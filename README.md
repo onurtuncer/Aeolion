@@ -10,9 +10,15 @@ each stage rather than assumed correct — see "Validation" below.
 
 ```
 include/Aeolion/     header-only library (this is the actual toolkit)
-  Math/
+                     one folder per namespace; each holds its module header
+                     plus that module's plain data structs, one per file
+  Math/                                                   (Aeolion::Math)
     Vec3.h             3D double vector + dot/cross/axis-rotation helpers
-  Types/               the plain data model (no algorithms, no LAPACK)
+    Constants.h        shared numeric constants and angle conversions
+  VLM/                                                    (Aeolion::VLM)
+    VLM.h              3D VLM core: horseshoe vortices, LAPACK LU solve,
+                        sideslip, body rates, moments, stability
+                        derivatives, external-velocity-field hook
     Panel.h              one horseshoe-vortex panel
     WingParams.h         parametric single-wing planform
     FreestreamConditions.h   flight condition (freestream, rates, ref point)
@@ -20,17 +26,20 @@ include/Aeolion/     header-only library (this is the actual toolkit)
     StationResult.h      per-spanwise-station output
     SolveResult.h        full solve result (coeffs, forces, per-surface)
     StabilityDerivatives.h   central-difference derivative table
-  VLM.h                3D VLM core: horseshoe vortices, LAPACK LU solve,
-                        sideslip, body rates, moments, stability
-                        derivatives, external-velocity-field hook
-  DragEstimate.h       viscous CD0: flat-plate skin friction + form factor
-                        + interference factor component buildup
-  BEMT.h               propeller BEMT (hover-safe: solves for induced
+  BEMT/                                                   (Aeolion::BEMT)
+    BEMT.h             propeller BEMT (hover-safe: solves for induced
                         velocities directly, not induction factors) +
                         slipstream field for downstream control vanes
-  HandoffContract.h    strict parser for the aeolion_geometry.json handoff
-                        (planform stations, CST airfoil sections, control
-                        surfaces, mesh topology, BEMT blade geometry)
+  Geometry/                                           (Aeolion::Geometry)
+    HandoffContract.h  strict parser for the aeolion_geometry.json handoff
+    PlanformStation.h    one spanwise planform station
+    AirfoilSection.h     CST section shape at a station
+    ControlSurface.h     hinged surface + which body it binds to
+    MeshTopology.h       requested lattice discretization
+    PropulsionSpec.h     propeller blade geometry for a BEMT run
+  DragEstimate/                                   (Aeolion::DragEstimate)
+    DragEstimate.h     viscous CD0: flat-plate skin friction + form factor
+                        + interference factor component buildup
 
 src/                  driver programs (link against the aeolion library)
   main.cpp               parametric single-wing demo (vlm_demo)

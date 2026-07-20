@@ -1,4 +1,4 @@
-// HandoffContract.h
+// Geometry/HandoffContract.h
 //
 // Parser for the aeolion_geometry.json handoff produced by
 // vbat-uav-notebooks -- the full design description: planform stations, CST
@@ -23,12 +23,12 @@
 #pragma once
 
 #include "Aeolion/Math/Vec3.h"
-#include "Aeolion/Types/AirfoilSection.h"
-#include "Aeolion/Types/ControlSurface.h"
-#include "Aeolion/Types/MeshTopology.h"
-#include "Aeolion/Types/PlanformStation.h"
-#include "Aeolion/Types/PropulsionSpec.h"
-#include "Aeolion/Types/WingParams.h"
+#include "Aeolion/Geometry/AirfoilSection.h"
+#include "Aeolion/Geometry/ControlSurface.h"
+#include "Aeolion/Geometry/MeshTopology.h"
+#include "Aeolion/Geometry/PlanformStation.h"
+#include "Aeolion/Geometry/PropulsionSpec.h"
+#include "Aeolion/VLM/WingParams.h"
 
 #include <charconv>
 #include <cmath>

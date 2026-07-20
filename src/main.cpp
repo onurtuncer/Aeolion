@@ -7,7 +7,7 @@
 //
 // Edit the demo constants below (or wire up argv) to study your own planform.
 
-#include "Aeolion/VLM.h"
+#include "Aeolion/VLM/VLM.h"
 #include "Aeolion/Math/Constants.h"
 #include <numbers>
 #include <fstream>

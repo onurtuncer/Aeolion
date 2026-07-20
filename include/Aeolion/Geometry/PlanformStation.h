@@ -1,4 +1,4 @@
-// Types/PlanformStation.h
+// Geometry/PlanformStation.h
 //
 // One spanwise station of the handoff contract's planform. Stations are
 // ordered by increasing Eta (0 at the root, 1 at the tip) and the quantities

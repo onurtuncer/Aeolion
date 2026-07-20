@@ -1,4 +1,4 @@
-// Types/MeshTopology.h
+// Geometry/MeshTopology.h
 //
 // Requested lattice discretization. This is the producer's recommendation for
 // how finely to panel the surface, not a property of the geometry itself.

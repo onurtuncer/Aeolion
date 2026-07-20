@@ -16,7 +16,7 @@ option(AEOLION_BUILD_TESTS "Build the test suite" ON)
 option(AEOLION_WARNINGS "Build with warnings enabled" ON)
 
 # ---------------------------------------------------------------- library --
-# Header-only: everything lives under include/Aeolion/*.h. This INTERFACE
+# Header-only: everything lives under include/Aeolion/<Namespace>/*.h. This INTERFACE
 # target hands executables and tests the include path, the C++23 requirement,
 # warnings, and the LAPACK backend via a single target_link_libraries(aeolion).
 add_library(aeolion INTERFACE)

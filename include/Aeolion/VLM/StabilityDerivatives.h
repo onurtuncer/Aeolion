@@ -1,4 +1,4 @@
-// Types/StabilityDerivatives.h
+// VLM/StabilityDerivatives.h
 //
 // Central-difference stability & control derivatives about a baseline
 // flight condition. Angular derivatives (CL_alpha, CY_beta, ...) are per
