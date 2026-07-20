@@ -96,7 +96,7 @@ void LatticeRenderer::AppendLine(std::vector<float>& lines, const glm::vec3& a, 
                                b.x, b.y, b.z, color.r, color.g, color.b});
 }
 
-void LatticeRenderer::Update(const std::vector<VLM::Panel>& panels, const VLM::SolveResult& result,
+void LatticeRenderer::Update(const std::vector<Solver::Panel>& panels, const Solver::SolveResult& result,
                              const LatticeDisplayOptions& options, double span) {
     const std::size_t n = panels.size();
 
@@ -138,7 +138,7 @@ void LatticeRenderer::Update(const std::vector<VLM::Panel>& panels, const VLM::S
     std::vector<float> lineVerts;
 
     for (std::size_t i = 0; i < n; ++i) {
-        const VLM::Panel& p = panels[i];
+        const Solver::Panel& p = panels[i];
         double chord = (p.SpanwiseWidth > 0.0) ? p.Area / p.SpanwiseWidth : 0.0;
 
         glm::vec3 a = ToGlm(p.A);

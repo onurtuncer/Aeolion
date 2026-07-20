@@ -5,8 +5,9 @@
 // on it. Lives in namespace Aeolion::Math.
 //
 // For source-compatibility the names are also re-exported into
-// Aeolion::VLM, so existing VLM::Vec3 / VLM::Dot / VLM::Cross references
-// keep resolving -- VLM is the umbrella that these math types feed into.
+// Aeolion::Solver, so existing Solver::Vec3 / Solver::Dot / Solver::Cross
+// references keep resolving -- Solver is the umbrella that these math types
+// feed into.
 
 #pragma once
 #include <cmath>
@@ -53,11 +54,11 @@ struct Vec3 {
 
 } // namespace Aeolion::Math
 
-// Re-export the math vocabulary into Aeolion::VLM (see file header).
-namespace Aeolion::VLM {
+// Re-export the math vocabulary into Aeolion::Solver (see file header).
+namespace Aeolion::Solver {
     using Math::Vec3;
     using Math::Dot;
     using Math::Cross;
     using Math::RotateAboutX;
     using Math::RotateAboutY;
-} // namespace Aeolion::VLM
+} // namespace Aeolion::Solver

@@ -1,11 +1,11 @@
-// VLM/Panel.h
+// Solver/Panel.h
 //
 // One horseshoe-vortex panel: the atomic geometric unit of the lattice.
 #pragma once
 #include <string>
 #include "Aeolion/Math/Vec3.h"
 
-namespace Aeolion::VLM {
+namespace Aeolion::Solver {
 
 struct Panel {
     Vec3 A, B;              // bound vortex endpoints (quarter-chord), A.y < B.y
@@ -17,4 +17,4 @@ struct Panel {
     std::string Surface;    // which lifting surface this panel belongs to (e.g. "wing", "htail")
 };
 
-} // namespace Aeolion::VLM
+} // namespace Aeolion::Solver

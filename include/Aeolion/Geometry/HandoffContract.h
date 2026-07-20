@@ -28,7 +28,7 @@
 #include "Aeolion/Geometry/MeshTopology.h"
 #include "Aeolion/Geometry/PlanformStation.h"
 #include "Aeolion/Geometry/PropulsionSpec.h"
-#include "Aeolion/VLM/WingParams.h"
+#include "Aeolion/Solver/WingParams.h"
 
 #include <charconv>
 #include <cmath>
@@ -421,7 +421,7 @@ inline void RequireSpanningEtaSequence(const std::vector<double>& etas, std::str
     return contract;
 }
 
-// --- bridge to the parametric single-trapezoid VLM wing -------------------
+// --- bridge to the parametric single-trapezoid solver wing -----------------
 // BuildWing() models ONE linearly-tapered, linearly-twisted trapezoid, which
 // is strictly less expressive than the contract's per-station planform. This
 // reduction therefore refuses anything it cannot represent exactly rather than
@@ -433,7 +433,7 @@ inline void RequireSpanningEtaSequence(const std::vector<double>& etas, std::str
 // this is the honest narrow path.
 inline constexpr double TrapezoidFitTolerance = 1e-9;
 
-[[nodiscard]] inline VLM::WingParams ToWingParams(const HandoffContract& contract) {
+[[nodiscard]] inline Solver::WingParams ToWingParams(const HandoffContract& contract) {
     const auto& stations = contract.Stations;
     const PlanformStation& root = stations.front();
     const PlanformStation& tip = stations.back();
@@ -461,7 +461,7 @@ inline constexpr double TrapezoidFitTolerance = 1e-9;
         throw ContractError(std::format("planform.stations[0].twist: root incidence {} is not representable",
                                         root.TwistDeg));
 
-    VLM::WingParams wing;
+    Solver::WingParams wing;
     wing.Span = contract.Span;
     wing.RootChord = root.Chord;
     wing.TipChord = tip.Chord;

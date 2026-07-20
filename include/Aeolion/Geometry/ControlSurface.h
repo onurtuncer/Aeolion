@@ -10,7 +10,7 @@
 // --- reference frame ------------------------------------------------------
 // HingeAxis is expressed in the contract's own frame. For
 // "aetherion_body_frd" that is x-forward / y-right / z-down, which is NOT the
-// VLM convention (x aft, y right, z up). Per ADR-0016 the contract states its
+// solver's convention (x aft, y right, z up). Per ADR-0016 the contract states its
 // frame once and the consumer converts explicitly at ingest, so nothing here
 // is auto-rotated.
 //
@@ -31,7 +31,7 @@
 namespace Aeolion::Geometry {
 
 // Which body a control surface is hinged to. This determines whether the
-// surface belongs in the VLM lattice at all, and what its eta band measures.
+// surface belongs in the solver's lattice at all, and what its eta band measures.
 enum class ControlSurfaceBinding {
     // Hinged to the wing planform. Eta is the semi-span fraction, directly
     // comparable to PlanformStation::Eta.

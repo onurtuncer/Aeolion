@@ -1,4 +1,4 @@
-// VLM/SolveResult.h
+// Solver/SolveResult.h
 //
 // Full result of a VLM solve: circulation distribution, per-station
 // breakdown, integrated force/moment coefficients and their dimensional
@@ -7,9 +7,9 @@
 #include <vector>
 #include <string>
 #include <map>
-#include "Aeolion/VLM/StationResult.h"
+#include "Aeolion/Solver/StationResult.h"
 
-namespace Aeolion::VLM {
+namespace Aeolion::Solver {
 
 struct SolveResult {
     std::vector<double> gamma;
@@ -29,4 +29,4 @@ struct SolveResult {
     std::map<std::string, double> AreaBySurface;  // [m^2]
 };
 
-} // namespace Aeolion::VLM
+} // namespace Aeolion::Solver

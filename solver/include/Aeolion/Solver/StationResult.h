@@ -1,11 +1,11 @@
-// VLM/StationResult.h
+// Solver/StationResult.h
 //
 // Per-spanwise-station output of a solve (one entry per panel, then sorted
 // by span coordinate).
 #pragma once
 #include <string>
 
-namespace Aeolion::VLM {
+namespace Aeolion::Solver {
 
 struct StationResult {
     double y = 0.0;
@@ -16,4 +16,4 @@ struct StationResult {
     int PanelIndex = -1;      // index into the original (unsorted) panel/gamma array
 };
 
-} // namespace Aeolion::VLM
+} // namespace Aeolion::Solver

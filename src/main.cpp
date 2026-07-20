@@ -1,13 +1,13 @@
-// main.cpp — example driver for the vortex lattice method in VLM.h
+// main.cpp — example driver for the vortex lattice method in Solver.h
 //
 // Build:
-//   g++ -std=c++23 -O2 -Iinclude -o vlm_demo src/main.cpp
+//   g++ -std=c++23 -O2 -Iinclude -o solver_demo src/main.cpp
 // Run:
-//   ./vlm_demo
+//   ./solver_demo
 //
 // Edit the demo constants below (or wire up argv) to study your own planform.
 
-#include "Aeolion/VLM/VLM.h"
+#include "Aeolion/Solver/Solver.h"
 #include "Aeolion/Math/Constants.h"
 #include <numbers>
 #include <fstream>
@@ -36,7 +36,7 @@ constexpr double LiftingLineArCorrection = Math::Two; // the "2" in 1 + 2/AR
 }
 
 int main() {
-    VLM::WingParams wing;
+    Solver::WingParams wing;
     wing.Span = DemoSpan;
     wing.RootChord = DemoRootChord;
     wing.TipChord = DemoTipChord;
@@ -46,12 +46,12 @@ int main() {
     wing.NPanelsSemiSpan = DemoPanelsSemiSpan;
     wing.CosineSpacing = true;
 
-    VLM::FreestreamConditions fc;
+    Solver::FreestreamConditions fc;
     fc.Vinf = DemoVinf;
     fc.alphaDeg = DemoAlphaDeg;
     fc.rho = DemoAirDensity;
 
-    VLM::SolveResult res = VLM::Solve(wing, fc);
+    Solver::SolveResult res = Solver::Solve(wing, fc);
 
     double AR = (wing.Span * wing.Span) / res.ReferenceArea;
 
@@ -62,7 +62,7 @@ int main() {
     std::println("CL                 : {:.5f}", res.CL);
     std::println("CDi (induced)      : {:.5f}", res.CDi);
     std::println("CY (side)          : {:.5f}", res.CY);
-    std::println("L/D (induced only) : {:.5f}", res.CDi > VLM::GeometryEps ? res.CL / res.CDi : 0.0);
+    std::println("L/D (induced only) : {:.5f}", res.CDi > Solver::GeometryEps ? res.CL / res.CDi : 0.0);
 
     // Sanity check against linear thin-wing theory for an unswept,
     // untwisted flat wing: CL ~= 2*pi*alpha / (1 + 2/AR)  [alpha in rad]
@@ -84,13 +84,13 @@ int main() {
     // Stability derivatives about the quarter-chord of the mean aerodynamic
     // chord (a common default reference point for a wing-alone case; set
     // fc.RefPoint to your actual CG for a real aircraft).
-    std::vector<VLM::Panel> panels = VLM::BuildWing(wing);
+    std::vector<Solver::Panel> panels = Solver::BuildWing(wing);
     for (auto& p : panels) p.Surface = "wing";
-    VLM::ReferenceGeometry ref;
+    Solver::ReferenceGeometry ref;
     ref.Area = res.ReferenceArea; ref.Span = wing.Span; ref.Chord = res.ReferenceArea / wing.Span;
-    double trail = VLM::DefaultTrailSpanFactor * wing.Span;
-    fc.RefPoint = VLM::Vec3(ref.Chord * Math::QuarterChord, 0, 0);
-    VLM::StabilityDerivatives d = VLM::ComputeDerivatives(panels, fc, ref, trail);
+    double trail = Solver::DefaultTrailSpanFactor * wing.Span;
+    fc.RefPoint = Solver::Vec3(ref.Chord * Math::QuarterChord, 0, 0);
+    Solver::StabilityDerivatives d = Solver::ComputeDerivatives(panels, fc, ref, trail);
 
     std::println("\n=== Stability derivatives (wing alone, about x={:.4f}) ===", fc.RefPoint.x);
     std::println("CL_alpha  = {:.4f} /rad", d.CL_alpha);

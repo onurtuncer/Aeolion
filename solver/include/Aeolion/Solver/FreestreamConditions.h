@@ -1,11 +1,11 @@
-// VLM/FreestreamConditions.h
+// Solver/FreestreamConditions.h
 //
 // The flight condition a solve is evaluated at: freestream, attitude, body
 // rates, and the moment/rotation reference point.
 #pragma once
 #include "Aeolion/Math/Vec3.h"
 
-namespace Aeolion::VLM {
+namespace Aeolion::Solver {
 
 struct FreestreamConditions {
     double Vinf = 20.0;      // [m/s]
@@ -18,4 +18,4 @@ struct FreestreamConditions {
     Vec3 RefPoint = Vec3(0, 0, 0); // moment reference point AND rotation center (e.g. CG)
 };
 
-} // namespace Aeolion::VLM
+} // namespace Aeolion::Solver

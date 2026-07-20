@@ -1,9 +1,9 @@
-// VLM/WingParams.h
+// Solver/WingParams.h
 //
 // Parametric single-wing planform description consumed by BuildWing().
 #pragma once
 
-namespace Aeolion::VLM {
+namespace Aeolion::Solver {
 
 struct WingParams {
     double Span = 0.0;            // full span, tip-to-tip [m]
@@ -17,4 +17,4 @@ struct WingParams {
     double TrailLength = 0.0;     // 0 => auto (50x span)
 };
 
-} // namespace Aeolion::VLM
+} // namespace Aeolion::Solver

@@ -11,7 +11,7 @@
 //
 // The producer subtracts the linear psi * y_TE trailing-edge ramp before
 // fitting, so these coefficients describe the SHARP-TE equivalent section.
-// That is what a VLM camber surface consumes; there is deliberately no
+// That is what the solver's camber surface consumes; there is deliberately no
 // trailing-edge thickness field in the schema.
 //
 // The coefficients are the intended optimization design variables, so they
