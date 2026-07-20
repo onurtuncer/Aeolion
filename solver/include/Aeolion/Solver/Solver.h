@@ -20,11 +20,13 @@
 // Kutta-Joukowski to that local segment. This gives lift AND induced drag
 // directly, without a separate Trefftz-plane integration.
 //
-// The data model (Vec3 and the result/parameter structs) lives in
-// Aeolion/Math and in this header's siblings under Aeolion/Solver; this
-// header owns the algorithms and the LAPACK-backed dense solver, one folder
-// per namespace. The dense solve uses LAPACK (dgetrf/dgetrs
-// via the Fortran ABI); link against a LAPACK provider such as OpenBLAS.
+// The data model lives outside this header: Vec3 in Aeolion/Math, Panel in
+// Aeolion/Lattice (shared vocabulary, since PanelBuilder produces panels
+// and the viewer draws them), and the result/parameter structs in this
+// header's siblings under Aeolion/Solver. This header owns the algorithms
+// and the LAPACK-backed dense solver. The dense solve uses LAPACK
+// (dgetrf/dgetrs via the Fortran ABI); link against a LAPACK provider such
+// as OpenBLAS.
 
 #pragma once
 #include <cmath>
@@ -40,7 +42,7 @@
 
 #include "Aeolion/Math/Vec3.h"
 #include "Aeolion/Math/Constants.h"
-#include "Aeolion/Solver/Panel.h"
+#include "Aeolion/Lattice/Panel.h"
 #include "Aeolion/Solver/WingParams.h"
 #include "Aeolion/Solver/FreestreamConditions.h"
 #include "Aeolion/Solver/ReferenceGeometry.h"

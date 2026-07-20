@@ -13,4 +13,7 @@ aeolion_add_test(TestBEMT)
 aeolion_add_test(TestPropVane)
 aeolion_add_test(TestDenseSolve)
 aeolion_add_test(TestHandoffContract)
+
 aeolion_add_test(TestPanelBuilder)
+# The only test that exercises compiled code rather than headers alone.
+target_link_libraries(TestPanelBuilder PRIVATE aeolion_panelbuilder)

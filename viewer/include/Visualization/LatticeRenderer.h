@@ -14,7 +14,7 @@
 #include "Renderer/Shader.h"
 #include "Renderer/VertexArray.h"
 
-#include "Aeolion/Solver/Panel.h"
+#include "Aeolion/Lattice/Panel.h"
 #include "Aeolion/Solver/SolveResult.h"
 #include "Aeolion/Solver/StationResult.h"
 

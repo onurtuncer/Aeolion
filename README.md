@@ -16,7 +16,6 @@ solver/include/Aeolion/Solver/       the vortex lattice method core, kept as its
   Solver.h           3D VLM core: horseshoe vortices, LAPACK LU solve,
                       sideslip, body rates, moments, stability
                       derivatives, external-velocity-field hook
-  Panel.h              one horseshoe-vortex panel
   WingParams.h         parametric single-wing planform
   FreestreamConditions.h   flight condition (freestream, rates, ref point)
   ReferenceGeometry.h  coefficient normalization constants
@@ -24,18 +23,35 @@ solver/include/Aeolion/Solver/       the vortex lattice method core, kept as its
   SolveResult.h        full solve result (coeffs, forces, per-surface)
   StabilityDerivatives.h   central-difference derivative table
 
+panelbuilder/                    aeolion_panelbuilder (STATIC library)
+                                 the one component with compiled sources
+                                                    (Aeolion::PanelBuilder)
+  include/Aeolion/PanelBuilder/
+    PanelBuilder.h     LatticeBuilder: builds the solver's lattice from a
+                        parsed handoff -- CST camber surface, spanwise +
+                        chordwise discretization, deflected control
+                        surfaces, breakpoints on every surface edge
+  src/PanelBuilder.cpp
+
 include/Aeolion/     header-only library (the rest of the toolkit)
                      one folder per namespace; each holds its module header
                      plus that module's plain data structs, one per file
   Math/                                                   (Aeolion::Math)
     Vec3.h             3D double vector + dot/cross/axis-rotation helpers
     Constants.h        shared numeric constants and angle conversions
+  Lattice/                                             (Aeolion::Lattice)
+    Panel.h            one horseshoe-vortex panel -- shared vocabulary
+                        between the builder, the solver and the viewer,
+                        so it belongs to none of them (re-exported into
+                        Aeolion::Solver for source compatibility)
   BEMT/                                                   (Aeolion::BEMT)
     BEMT.h             propeller BEMT (hover-safe: solves for induced
                         velocities directly, not induction factors) +
                         slipstream field for downstream control vanes
   Geometry/                                           (Aeolion::Geometry)
     HandoffContract.h  strict parser for the aeolion_geometry.json handoff
+    CstSurface.h       CST evaluation: camber mean line, its slope, and
+                        camber-line arc length
     PlanformStation.h    one spanwise planform station
     AirfoilSection.h     CST section shape at a station
     ControlSurface.h     hinged surface + which body it binds to
@@ -58,6 +74,9 @@ tests/                 regression suite, wired into ctest
   TestDenseSolve.cpp            LAPACK dense-solve sanity check
   TestHandoffContract.cpp       JSON handoff parsing, contract invariants,
                                  surface binding, trapezoid reduction
+  TestPanelBuilder.cpp          camber lifts at zero incidence, chordwise
+                                 rows, control deflection, mesh lands on
+                                 control surface edges
 
 cmake/                build modules (CompilerWarnings, LapackBackend) + vcpkg triplets
 ```

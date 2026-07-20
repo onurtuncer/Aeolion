@@ -2,7 +2,7 @@
 // handoff is a genuine cambered, chordwise-discretized surface:
 //
 //   - Reduction: with one chordwise row and a symmetric (zero-camber)
-//     section, BuildPanels() must reproduce the trusted
+//     section, the builder must reproduce the trusted
 //     ToWingParams()+BuildWing() lattice essentially to floating point.
 //     Two variants isolate twist and dihedral, because the two builders'
 //     section frames agree exactly when only one of the pair is nonzero
@@ -36,6 +36,20 @@ static int failures = 0;
 #define CHECK(cond, msg) do { if (!(cond)) { std::cerr << "FAIL: " << msg << "\n"; ++failures; } } while (0)
 
 namespace {
+
+namespace PB = Aeolion::PanelBuilder;
+
+// Thin wrappers so the assertions below stay about aerodynamics rather than
+// about builder plumbing.
+std::vector<Panel> BuildLattice(const HandoffContract& contract) {
+    return PB::LatticeBuilder(contract).Build();
+}
+std::vector<Panel> BuildLattice(const HandoffContract& contract, const PB::ControlDeflection& deflection) {
+    return PB::LatticeBuilder(contract).Deflect(deflection).Build();
+}
+std::vector<Panel> BuildLattice(const HandoffContract& contract, const PB::LatticeOptions& options) {
+    return PB::LatticeBuilder(contract, options).Build();
+}
 
 // A section whose upper and lower coefficients are exact negatives, so the
 // mean line is identically zero: a symmetric airfoil, the only case that can
@@ -141,8 +155,10 @@ HandoffContract MakeCrankedContract() {
 }
 
 Aeolion::Solver::SolveResult SolveLattice(const std::vector<Panel>& panels, double span, double alphaDeg) {
+    // Reference area is the planform projection, per the coefficient
+    // convention (Solver::Panel).
     double area = 0.0;
-    for (const auto& p : panels) area += p.Area;
+    for (const auto& p : panels) area += p.PlanformArea;
     Aeolion::Solver::ReferenceGeometry ref;
     ref.Area = area; ref.Span = span; ref.Chord = area / span;
     Aeolion::Solver::FreestreamConditions fc;
@@ -185,7 +201,12 @@ void CheckReducesToBuildWing(const HandoffContract& contract, const std::string&
     std::vector<Panel> expected = Aeolion::Solver::BuildWing(wing);
     for (auto& p : expected) p.Surface = "wing";
 
-    const std::vector<Panel> actual = Aeolion::PanelBuilder::BuildPanels(contract);
+    // ToWingParams() leaves WingParams::CosineSpacing false, so the
+    // comparison must ask for uniform explicitly -- the builder's own
+    // default is cosine.
+    const Aeolion::PanelBuilder::LatticeOptions uniform{Aeolion::PanelBuilder::Spacing::Uniform,
+                                                        Aeolion::PanelBuilder::Spacing::Uniform};
+    const std::vector<Panel> actual = BuildLattice(contract, uniform);
 
     CHECK(actual.size() == expected.size(),
           label + ": panel count " + std::to_string(actual.size()) + " != " + std::to_string(expected.size()));
@@ -207,9 +228,9 @@ void TestCamberLiftsAtZeroIncidence() {
     const HandoffContract cambered = MakeRectangularContract(4, 0.06);
     const HandoffContract moreCambered = MakeRectangularContract(4, 0.12);
 
-    const auto symmetricResult = SolveLattice(Aeolion::PanelBuilder::BuildPanels(symmetric), symmetric.Span, 0.0);
-    const auto camberedResult = SolveLattice(Aeolion::PanelBuilder::BuildPanels(cambered), cambered.Span, 0.0);
-    const auto moreResult = SolveLattice(Aeolion::PanelBuilder::BuildPanels(moreCambered), moreCambered.Span, 0.0);
+    const auto symmetricResult = SolveLattice(BuildLattice(symmetric), symmetric.Span, 0.0);
+    const auto camberedResult = SolveLattice(BuildLattice(cambered), cambered.Span, 0.0);
+    const auto moreResult = SolveLattice(BuildLattice(moreCambered), moreCambered.Span, 0.0);
 
     std::cout << "alpha=0: CL symmetric=" << symmetricResult.CL << "  cambered=" << camberedResult.CL
               << "  more cambered=" << moreResult.CL << "\n";
@@ -224,7 +245,7 @@ void TestCamberLiftsAtZeroIncidence() {
     // Zero-lift angle must go negative for a positively-cambered section --
     // the classic thin-airfoil signature of camber.
     const auto camberedAtNegative =
-        SolveLattice(Aeolion::PanelBuilder::BuildPanels(cambered), cambered.Span, -4.0);
+        SolveLattice(BuildLattice(cambered), cambered.Span, -4.0);
     CHECK(camberedAtNegative.CL < camberedResult.CL, "CL must still increase with alpha for a cambered wing");
     CHECK(camberedAtNegative.CL < 0.0, "a moderately cambered wing should be below zero lift at alpha=-4deg");
 }
@@ -233,7 +254,7 @@ void TestCamberLiftsAtZeroIncidence() {
 void TestChordwiseRows() {
     const int rows = 5;
     const HandoffContract contract = MakeRectangularContract(rows, 0.04);
-    const std::vector<Panel> panels = Aeolion::PanelBuilder::BuildPanels(contract);
+    const std::vector<Panel> panels = BuildLattice(contract);
 
     const std::size_t strips = 2 * static_cast<std::size_t>(contract.Mesh.SpanwisePanelsPerSection) *
                                (contract.Stations.size() - 1);
@@ -274,7 +295,7 @@ void TestChordwiseRows() {
     for (int m : {1, 2, 4, 8}) {
         const HandoffContract refined = MakeRectangularContract(m, 0.04);
         const auto refinedResult =
-            SolveLattice(Aeolion::PanelBuilder::BuildPanels(refined), refined.Span, 3.0);
+            SolveLattice(BuildLattice(refined), refined.Span, 3.0);
         std::cout << "chordwise rows=" << m << "  CL=" << refinedResult.CL << "\n";
         CHECK(std::isfinite(refinedResult.CL), "CL must be finite at chordwise rows=" + std::to_string(m));
         if (m > 1)
@@ -286,7 +307,7 @@ void TestChordwiseRows() {
 
 void TestCrankedPlanform() {
     const HandoffContract contract = MakeCrankedContract();
-    const std::vector<Panel> panels = Aeolion::PanelBuilder::BuildPanels(contract);
+    const std::vector<Panel> panels = BuildLattice(contract);
 
     double totalPlanform = 0.0;
     for (const auto& p : panels) totalPlanform += p.PlanformArea;
@@ -324,7 +345,7 @@ void TestJsonFixture() {
     const HandoffContract contract = Aeolion::Geometry::ParseHandoff(root);
     CHECK(contract.Mesh.ChordwisePanels > 1, "fixture should request more than one chordwise row");
 
-    const std::vector<Panel> panels = Aeolion::PanelBuilder::BuildPanels(contract);
+    const std::vector<Panel> panels = BuildLattice(contract);
     const std::size_t strips = 2 * static_cast<std::size_t>(contract.Mesh.SpanwisePanelsPerSection) *
                                (contract.Stations.size() - 1);
     CHECK(panels.size() == strips * static_cast<std::size_t>(contract.Mesh.ChordwisePanels),
@@ -349,7 +370,7 @@ void TestJsonFixture() {
 void TestCamberedAreaExceedsPlanform() {
     // Flat, no dihedral: the curved surface IS its projection, exactly.
     const HandoffContract flat = MakeRectangularContract(6, 0.0);
-    for (const auto& p : Aeolion::PanelBuilder::BuildPanels(flat))
+    for (const auto& p : BuildLattice(flat))
         CHECK(std::fabs(p.Area - p.PlanformArea) < 1e-12 * p.PlanformArea,
               "a flat un-dihedralled panel's area must equal its planform projection");
 
@@ -357,7 +378,7 @@ void TestCamberedAreaExceedsPlanform() {
     const HandoffContract cambered = MakeRectangularContract(6, 0.10);
     double totalArea = 0.0;
     double totalPlanform = 0.0;
-    for (const auto& p : Aeolion::PanelBuilder::BuildPanels(cambered)) {
+    for (const auto& p : BuildLattice(cambered)) {
         CHECK(p.Area > p.PlanformArea, "a cambered panel's arc area must exceed its projection");
         totalArea += p.Area;
         totalPlanform += p.PlanformArea;
@@ -374,7 +395,7 @@ void TestCamberedAreaExceedsPlanform() {
     // Dihedral tilts the surface out of the reference plane by exactly
     // 1/cos(dihedral), independent of camber.
     const HandoffContract dihedral = MakeTrapezoidContract(0.0, 20.0);
-    for (const auto& p : Aeolion::PanelBuilder::BuildPanels(dihedral)) {
+    for (const auto& p : BuildLattice(dihedral)) {
         const double expected = p.PlanformArea / std::cos(Aeolion::Math::DegToRad(20.0));
         CHECK(std::fabs(p.Area - expected) < 1e-9 * expected,
               "dihedral must scale a flat panel's area by 1/cos(dihedral)");
@@ -400,13 +421,13 @@ void TestControlSurfaceDeflection() {
     using Aeolion::Geometry::ControlSurfaceBinding;
     const HandoffContract contract = MakeFlappedContract(ControlSurfaceBinding::Wing);
 
-    const auto neutral = Aeolion::PanelBuilder::BuildPanels(contract);
+    const auto neutral = BuildLattice(contract);
     const auto flapDown =
-        Aeolion::PanelBuilder::BuildPanels(contract, {Aeolion::PanelBuilder::Symmetric(0, 10.0)});
+        BuildLattice(contract, Aeolion::PanelBuilder::Symmetric(0, 10.0));
     const auto flapUp =
-        Aeolion::PanelBuilder::BuildPanels(contract, {Aeolion::PanelBuilder::Symmetric(0, -10.0)});
+        BuildLattice(contract, Aeolion::PanelBuilder::Symmetric(0, -10.0));
     const auto aileron =
-        Aeolion::PanelBuilder::BuildPanels(contract, {Aeolion::PanelBuilder::Antisymmetric(0, 10.0)});
+        BuildLattice(contract, Aeolion::PanelBuilder::Antisymmetric(0, 10.0));
 
     // Deflection must not change the lattice topology -- only its shape.
     CHECK(flapDown.size() == neutral.size(), "deflection must not change panel count");
@@ -452,9 +473,9 @@ void TestDuctJetSurfacesAreNeverLatticed() {
     // ControlSurface.h is emphatic that it must not enter the wing lattice.
     const HandoffContract ductJet = MakeFlappedContract(ControlSurfaceBinding::DuctJet);
 
-    const auto neutral = Aeolion::PanelBuilder::BuildPanels(ductJet);
+    const auto neutral = BuildLattice(ductJet);
     const auto commanded =
-        Aeolion::PanelBuilder::BuildPanels(ductJet, {Aeolion::PanelBuilder::Symmetric(0, 20.0)});
+        BuildLattice(ductJet, Aeolion::PanelBuilder::Symmetric(0, 20.0));
 
     CHECK(neutral.size() == commanded.size(), "duct-jet surface must not change the wing lattice size");
     for (std::size_t i = 0; i < neutral.size(); ++i)
@@ -472,9 +493,9 @@ void TestHingeLandsOnPanelEdge() {
     const HandoffContract contract = MakeFlappedContract(ControlSurfaceBinding::Wing);
     const double hingeChordFraction = contract.ControlSurfaces.front().ChordFraction;
 
-    const auto neutral = Aeolion::PanelBuilder::BuildPanels(contract);
+    const auto neutral = BuildLattice(contract);
     const auto deflected =
-        Aeolion::PanelBuilder::BuildPanels(contract, {Aeolion::PanelBuilder::Symmetric(0, 15.0)});
+        BuildLattice(contract, Aeolion::PanelBuilder::Symmetric(0, 15.0));
 
     // Panels that moved are exactly the aft ones; their planform areas must
     // sum to the commanded chord fraction of the covered strips' area.
@@ -499,6 +520,80 @@ void TestHingeLandsOnPanelEdge() {
               std::to_string(movedFraction));
 }
 
+// --- the mesh must land on control surface edges ---------------------------
+// Without a breakpoint there, a surface's span snaps to whatever panel
+// boundary happens to be nearest, making its control authority a property
+// of the mesh rather than of the contract.
+void TestControlSurfaceBandIsExact() {
+    using Aeolion::Geometry::ControlSurfaceBinding;
+    HandoffContract contract = MakeRectangularContract(6, 0.0);
+    // Band edges deliberately chosen NOT to fall on any boundary of the
+    // underlying 12-panel division, so the mesh has to insert them.
+    Aeolion::Geometry::ControlSurface flap;
+    flap.Name = "aileron";
+    flap.ChordFraction = 0.25;
+    flap.EtaStart = 0.37;
+    flap.EtaEnd = 0.91;
+    flap.HingeAxis = Aeolion::Math::Vec3(0.0, 1.0, 0.0);
+    flap.Binding = ControlSurfaceBinding::Wing;
+    contract.ControlSurfaces = {flap};
+
+    const auto neutral = BuildLattice(contract);
+    const auto moved =
+        BuildLattice(contract, Aeolion::PanelBuilder::Antisymmetric(0, 10.0));
+
+    const double halfSpan = contract.Span * 0.5;
+    double lo = 2.0, hi = -1.0;
+    for (std::size_t i = 0; i < neutral.size(); ++i) {
+        if ((moved[i].ControlPoint - neutral[i].ControlPoint).Norm() < 1e-12) continue;
+        const double etaA = std::fabs(neutral[i].A.y) / halfSpan;
+        const double etaB = std::fabs(neutral[i].B.y) / halfSpan;
+        lo = std::min({lo, etaA, etaB});
+        hi = std::max({hi, etaA, etaB});
+    }
+    std::cout << "band: requested [" << flap.EtaStart << ", " << flap.EtaEnd << "]  meshed [" << lo << ", " << hi
+              << "]\n";
+    CHECK(std::fabs(lo - flap.EtaStart) < 1e-9,
+          "the deflected band's inboard edge must sit exactly at eta_start, got " + std::to_string(lo));
+    CHECK(std::fabs(hi - flap.EtaEnd) < 1e-9,
+          "the deflected band's outboard edge must sit exactly at eta_end, got " + std::to_string(hi));
+
+    // Subdividing at the band edges must redistribute the section's panel
+    // budget, not inflate it.
+    const auto plain = BuildLattice(MakeRectangularContract(6, 0.0));
+    CHECK(neutral.size() == plain.size(),
+          "adding a control surface must not change panel count (" + std::to_string(neutral.size()) + " vs " +
+              std::to_string(plain.size()) + ")");
+}
+
+// Cosine must actually cluster, and must leave the wing's total geometry
+// alone -- it redistributes panels, it does not add or remove area.
+void TestCosineSpacingClusters() {
+    using Aeolion::PanelBuilder::LatticeOptions;
+    using Aeolion::PanelBuilder::Spacing;
+    const HandoffContract contract = MakeRectangularContract(1, 0.0);
+
+    const auto uniform = BuildLattice(contract, {Spacing::Uniform, Spacing::Uniform});
+    const auto cosine = BuildLattice(contract, {Spacing::Cosine, Spacing::Uniform});
+    CHECK(uniform.size() == cosine.size(), "spacing must not change panel count");
+
+    const auto widthSpread = [](const std::vector<Panel>& panels) {
+        double lo = 1e30, hi = -1e30;
+        for (const auto& p : panels) { lo = std::min(lo, p.SpanwiseWidth); hi = std::max(hi, p.SpanwiseWidth); }
+        return hi / lo;
+    };
+    CHECK(std::fabs(widthSpread(uniform) - 1.0) < 1e-9, "uniform spacing must give equal-width panels");
+    CHECK(widthSpread(cosine) > 3.0,
+          "cosine spacing should cluster strongly at the tips, width ratio was " +
+              std::to_string(widthSpread(cosine)));
+
+    double uniformArea = 0.0, cosineArea = 0.0;
+    for (const auto& p : uniform) uniformArea += p.PlanformArea;
+    for (const auto& p : cosine) cosineArea += p.PlanformArea;
+    CHECK(std::fabs(uniformArea - cosineArea) < 1e-9 * uniformArea,
+          "spacing must not change total planform area");
+}
+
 } // namespace
 
 int main() {
@@ -511,6 +606,8 @@ int main() {
     TestControlSurfaceDeflection();
     TestDuctJetSurfacesAreNeverLatticed();
     TestHingeLandsOnPanelEdge();
+    TestControlSurfaceBandIsExact();
+    TestCosineSpacingClusters();
     TestJsonFixture();
 
     if (failures == 0) { std::cout << "PASS: TestPanelBuilder\n"; return 0; }

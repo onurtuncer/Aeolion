@@ -1,6 +1,13 @@
-// Solver/Panel.h
+// Lattice/Panel.h
 //
 // One horseshoe-vortex panel: the atomic geometric unit of the lattice.
+//
+// This is shared vocabulary, not solver-owned: PanelBuilder produces
+// panels, Solver consumes them, and the viewer draws them. It therefore
+// lives in its own small module rather than inside any one of them, the
+// same way Math::Vec3 does -- and, like Vec3, it is re-exported into
+// Aeolion::Solver at the bottom of this file so Solver::Panel keeps
+// resolving for code that thinks of it as part of the solver's API.
 //
 // A lattice may be a single spanwise row (one panel per span station, the
 // flat wing BuildWing() produces) or several chordwise rows stacked on a
@@ -12,7 +19,9 @@
 #include <string>
 #include "Aeolion/Math/Vec3.h"
 
-namespace Aeolion::Solver {
+namespace Aeolion::Lattice {
+
+using Math::Vec3;
 
 struct Panel {
     Vec3 A, B;              // bound vortex endpoints (panel quarter-chord), A.y < B.y
@@ -43,4 +52,9 @@ struct Panel {
     int StripIndex = -1;
 };
 
+} // namespace Aeolion::Lattice
+
+// Re-export into the solver's namespace (see file header).
+namespace Aeolion::Solver {
+    using Lattice::Panel;
 } // namespace Aeolion::Solver
