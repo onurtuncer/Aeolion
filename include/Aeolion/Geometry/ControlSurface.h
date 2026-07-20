@@ -45,6 +45,18 @@ enum class ControlSurfaceBinding {
     DuctJet,
 };
 
+// Travel limits, in degrees about the hinge axis. The hard limits are the
+// mechanical stops. The soft limit, where present, is the smaller angle a
+// controller should respect in normal operation -- it exists because a vane
+// can be driven to its stop but should not be, so a trim/allocation routine
+// wanting a usable range should read SoftLimitDeg and not MaxDeg.
+struct DeflectionLimits {
+    double MinDeg = 0.0;
+    double MaxDeg = 0.0;
+    bool HasSoftLimit = false;
+    double SoftLimitDeg = 0.0; // symmetric: usable range is +/- this
+};
+
 struct ControlSurface {
     std::string Name;
     double ChordFraction = 0.0; // fraction of local chord aft of the hinge, 0..1
@@ -52,6 +64,7 @@ struct ControlSurface {
     double EtaEnd = 0.0;
     Math::Vec3 HingeAxis{0.0, 1.0, 0.0}; // unit vector, contract reference frame
     ControlSurfaceBinding Binding = ControlSurfaceBinding::Wing;
+    DeflectionLimits Limits;
 };
 
 } // namespace Aeolion::Geometry

@@ -1,0 +1,40 @@
+// Geometry/BodyGeometry.h
+//
+// The fuselage/duct body, as an axisymmetric body of revolution: a profile
+// of (x, radius) stations that the surface is swept from about the body
+// axis. The contract carries no circumferential variation, so the body is
+// axisymmetric by construction.
+//
+// --- reference frame ------------------------------------------------------
+// x is in the contract's own frame (aetherion_body_frd: x FORWARD), so the
+// stations run from the nose at x = 0 to the tail at x = -Length. That is
+// the opposite sense to the solver's x-aft convention; the consumer
+// converts explicitly at ingest, exactly as ControlSurface.h describes for
+// hinge axes. Nothing here is auto-rotated.
+//
+// --- what the profile is allowed to be ------------------------------------
+// The nose may be sharp (radius 0) or blunt, and the TAIL MAY BE OPEN --
+// a nonzero final radius is not a malformed contract, it is a truncated
+// base. On this airframe the open tail is the duct exit that the duct-jet
+// vanes sit in (see ControlSurface.h), so refusing it would refuse the
+// actual vehicle. Any consumer that panels this body has to decide what to
+// do about that base; the contract's job is only to state it faithfully.
+#pragma once
+
+#include <vector>
+
+namespace Aeolion::Geometry {
+
+struct BodyStation {
+    double x = 0.0;      // [m], contract frame (x forward, so aft is negative)
+    double Radius = 0.0; // [m], >= 0; zero means the profile closes to a point
+};
+
+struct BodyGeometry {
+    double Length = 0.0;              // [m], nose-to-tail
+    std::vector<BodyStation> Stations; // ordered nose -> tail (x strictly decreasing)
+
+    [[nodiscard]] bool IsPresent() const { return !Stations.empty(); }
+};
+
+} // namespace Aeolion::Geometry

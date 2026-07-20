@@ -5,7 +5,8 @@
 // BEMT::PropGeometry wants. The innermost station's RadiusFraction is the hub
 // cutout -- the blade is not defined inboard of it.
 //
-// TODO Blade count is not part of the schema; the consumer supplies it.
+// Blade count arrived in schema 1.4.0 (n_blades); older documents omit it,
+// leaving BladeCount zero for the consumer to supply as it did before.
 #pragma once
 
 #include <vector>
@@ -21,6 +22,7 @@ struct BladeStationSpec {
 struct PropulsionSpec {
     double DiskRadius = 0.0;   // [m]
     double ReferenceRpm = 0.0;
+    int BladeCount = 0;        // 0 = not stated by this contract (schema < 1.4.0)
     std::vector<BladeStationSpec> BladeStations; // ordered by increasing RadiusFraction
 };
 
