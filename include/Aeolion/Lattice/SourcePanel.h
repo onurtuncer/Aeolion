@@ -53,6 +53,18 @@ struct SourcePanel {
     // which is how the open base carries the propeller efflux.
     double PrescribedNormalVelocity = 0.0;
 
+    // Whether this panel is a real wall or just a boundary the flow passes
+    // through. A permeable panel still imposes its condition -- that is how
+    // the efflux shapes the field around the rest of the body -- but it
+    // contributes NO pressure force, because there is no surface there for
+    // pressure to act on.
+    //
+    // Getting this wrong is subtle rather than loud: integrating Cp over a
+    // permeable face silently converts a fast jet into base suction, which
+    // reads as drag. A jet's thrust is momentum flux through the exit plane,
+    // which is not a pressure force on the body at all.
+    bool Permeable = false;
+
     std::string Surface;  // which body this belongs to (e.g. "fuselage")
 
     // Axial station index along the body, so a chordwise/axial pressure

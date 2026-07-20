@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <numbers>
 #include <utility>
 #include <vector>
@@ -526,28 +527,65 @@ std::vector<Lattice::SourcePanel> LatticeBuilder::BuildBody() const {
         // The base faces aft, which in solver axes is +x.
         const Solver::Vec3 outward(1.0, 0.0, 0.0);
 
-        for (int j = 0; j < sectors; ++j) {
-            const double angle0 = Math::Two * std::numbers::pi * j / sectors;
-            const double angle1 = Math::Two * std::numbers::pi * (j + 1) / sectors;
+        // Subdivided radially, not a single fan of full-radius triangles.
+        // Potential flow has a velocity singularity at the sharp base rim,
+        // and one control point per full-radius wedge resolves it so badly
+        // that a CLOSED body stops satisfying d'Alembert -- which is how
+        // this was caught.
+        const int rings = BodyBaseRadialRings;
+        for (int ring = 0; ring < rings; ++ring) {
+            const double rInner = baseRadius * ring / rings;
+            const double rOuter = baseRadius * (ring + 1) / rings;
+            for (int j = 0; j < sectors; ++j) {
+                const double angle0 = Math::Two * std::numbers::pi * j / sectors;
+                const double angle1 = Math::Two * std::numbers::pi * (j + 1) / sectors;
 
-            // A triangle written as a quad with a repeated apex; the kernel
-            // skips the zero-length edge that creates.
-            Lattice::SourcePanel panel;
-            panel.Corners = {centre, surfacePoint(baseX, baseRadius, angle0),
-                             surfacePoint(baseX, baseRadius, angle1), centre};
-            finishPanel(panel, outward);
+                Lattice::SourcePanel panel;
+                if (ring == 0) {
+                    // Innermost ring is a triangle, written as a quad with a
+                    // repeated apex; the kernel skips the zero-length edge.
+                    panel.Corners = {centre, surfacePoint(baseX, rOuter, angle0),
+                                     surfacePoint(baseX, rOuter, angle1), centre};
+                } else {
+                    panel.Corners = {surfacePoint(baseX, rInner, angle0), surfacePoint(baseX, rOuter, angle0),
+                                     surfacePoint(baseX, rOuter, angle1), surfacePoint(baseX, rInner, angle1)};
+                }
+                finishPanel(panel, outward);
 
-            const double midAngle = Math::Half * (angle0 + angle1);
-            const double centroidRadius = Two3rds * baseRadius; // centroid of a triangle from the axis
-            panel.ControlPoint = Solver::Vec3(baseX, centroidRadius * std::cos(midAngle),
-                                              centroidRadius * std::sin(midAngle));
-            panel.Surface = BodyBaseSurfaceName;
-            panel.StationIndex = static_cast<int>(stations.size()) - 1;
-            if (panel.Area > BodyDegenerateArea) panels.push_back(panel);
+                const double midAngle = Math::Half * (angle0 + angle1);
+                const double centroidRadius =
+                    (ring == 0) ? Two3rds * rOuter : Math::Half * (rInner + rOuter);
+                panel.ControlPoint = Solver::Vec3(baseX, centroidRadius * std::cos(midAngle),
+                                                  centroidRadius * std::sin(midAngle));
+                panel.Surface = BodyBaseSurfaceName;
+                panel.StationIndex = static_cast<int>(stations.size()) - 1;
+                if (panel.Area > BodyDegenerateArea) panels.push_back(panel);
+            }
         }
     }
 
     return panels;
+}
+
+
+// --- base efflux ------------------------------------------------------------
+int ApplyBaseEfflux(std::vector<Lattice::SourcePanel>& body,
+                    const std::function<Math::Vec3(const Math::Vec3&)>& slipstream,
+                    const Math::Vec3& referenceFreestream) {
+    int affected = 0;
+    for (Lattice::SourcePanel& panel : body) {
+        // Only the cap transpires. The rest of the body is a wall and stays
+        // one, so this cannot quietly perforate the whole fuselage.
+        if (panel.Surface != BodyBaseSurfaceName) continue;
+
+        const Math::Vec3 induced = slipstream ? slipstream(panel.ControlPoint) : Math::Vec3(0, 0, 0);
+        panel.PrescribedNormalVelocity = Math::Dot(referenceFreestream + induced, panel.Normal);
+        // The cap stops being a wall: it still imposes the efflux, but no
+        // pressure force is integrated over it (Lattice::SourcePanel).
+        panel.Permeable = true;
+        ++affected;
+    }
+    return affected;
 }
 
 } // namespace Aeolion::PanelBuilder

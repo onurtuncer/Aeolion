@@ -507,6 +507,10 @@ struct PreparedSystem {
     const double qInf = Half * rho * fc.Vinf * fc.Vinf;
     for (int k = 0; k < NB; ++k) {
         const SourcePanel& body = bodies[static_cast<std::size_t>(k)];
+        // A permeable face still shaped the flow through its boundary
+        // condition, but there is no wall there for pressure to push on.
+        // See Lattice::SourcePanel::Permeable.
+        if (body.Permeable) continue;
         Vec3 vind(0, 0, 0);
         for (int j = 0; j < N; ++j)
             vind = vind + HorseshoeVelocity(body.ControlPoint, panels[j], gamma[j], trail);

@@ -113,6 +113,7 @@
 #include "Aeolion/Lattice/SourcePanel.h"
 
 #include <cstddef>
+#include <functional>
 #include <utility>
 #include <vector>
 
@@ -143,6 +144,11 @@ inline constexpr int MinBodySectors = 3;
 // would only put near-zero rows into the influence matrix.
 inline constexpr double BodyDegenerateLength = 1e-12;
 inline constexpr double BodyDegenerateArea = 1e-18;
+
+// Radial subdivisions of the base cap. Potential flow is singular at a
+// sharp base rim, and a single fan of full-radius wedges resolves it badly
+// enough that a closed body visibly stops satisfying d'Alembert.
+inline constexpr int BodyBaseRadialRings = 4;
 
 inline constexpr double Two3rds = 2.0 / 3.0; // radial centroid of a triangle spanning the axis to the rim
 
@@ -231,6 +237,41 @@ struct LatticeOptions {
     // to resolve it circumferentially rather than treat it as rings.
     int BodyCircumferentialPanels = 16;
 };
+
+// --- base efflux ------------------------------------------------------------
+// The base that BuildBody() caps is a duct exit, not a wall: fluid leaves
+// through it. This turns those panels from a solid cap into an outflow
+// boundary carrying the propeller jet.
+//
+// WHAT IS PRESCRIBED. Lattice::SourcePanel::PrescribedNormalVelocity is the
+// TOTAL normal velocity the boundary condition enforces, so what goes there
+// is the jet's exit speed along the outward normal -- the oncoming flow plus
+// the slipstream's own induced velocity. The solver then asks the sources
+// for the difference between that and what the freestream already supplies,
+// which is exactly the excess the jet has to add. A solid wall prescribes
+// zero and gets the ordinary tangency condition, so the two cases are the
+// same equation with a different right-hand side, not different treatments.
+//
+// WHY A REFERENCE CONDITION. The exit velocity of a ducted fan is set by the
+// propeller's operating point, not by the airframe's attitude, so it is
+// baked in once rather than recomputed per alpha. That is an approximation
+// and worth stating plainly: the freestream's contribution to the exit
+// velocity does vary with incidence (as cos(alpha) at the base), and this
+// ignores that variation. It is small next to the jet's own induced velocity
+// for any meaningful thrust setting, and it keeps the influence matrix
+// flight-condition-independent, which is what makes a derivative sweep cheap.
+//
+// The slipstream is taken as a plain callable so this does not drag a BEMT
+// dependency into the panel builder; BEMT::SlipstreamField satisfies it
+// directly. With no propeller state, simply never call this: the base stays
+// the solid cap BuildBody() produced, which is a closed-body answer -- wrong
+// in a known direction rather than an unknown one.
+//
+// Returns the number of base panels affected, so a caller can tell the
+// difference between "applied" and "there was no base".
+[[nodiscard]] int ApplyBaseEfflux(std::vector<Lattice::SourcePanel>& body,
+                                  const std::function<Math::Vec3(const Math::Vec3&)>& slipstream,
+                                  const Math::Vec3& referenceFreestream);
 
 // --- the builder ------------------------------------------------------------
 class LatticeBuilder {
