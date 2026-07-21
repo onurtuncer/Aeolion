@@ -247,6 +247,24 @@ struct LatticeOptions {
     // defined relationship to cut against and nothing is trimmed.
     bool TrimWingAtBody = true;
 
+    // Carry the wing's bound circulation THROUGH the fuselage.
+    //
+    // Trimming alone loses lift that the real aircraft keeps: a source
+    // distribution cannot carry circulation, and lift is circulation, so a
+    // sources-only body recovers only about three quarters of the trimmed
+    // root load. The classical fix (Pitts, Nielsen & Kaattari) is a
+    // carry-through vortex spanning the body at the strength of the
+    // innermost exposed strip.
+    //
+    // Implemented by EXTENDING that strip's bound segment inboard to the
+    // centreline rather than adding an unknown: the strength is then equal
+    // to its neighbour's by construction instead of by a constraint row, so
+    // the system stays one block of tangency equations. Tangency is still
+    // enforced only on the exposed wing, since the extended part of the
+    // segment runs inside the body where a boundary condition would be
+    // meaningless.
+    bool CarryThroughLift = true;
+
     // Circumferential divisions around the body. The handoff schema states
     // an axial station list but no azimuthal resolution, so this is the
     // consumer's choice. The body is axisymmetric, but the FLOW around it
@@ -390,7 +408,7 @@ private:
     [[nodiscard]] std::vector<std::pair<double, double>> ChordwiseRowBounds(const HingeSpec& hinge) const;
     [[nodiscard]] Solver::Vec3 SurfacePoint(const SpanStation& station, double sign, double psi) const;
     void EmitStrip(const SpanStation& inner, const SpanStation& outer, double sign, int stripIndex,
-                   std::vector<Solver::Panel>& panels) const;
+                   bool carryThrough, std::vector<Solver::Panel>& panels) const;
 
     Geometry::HandoffContract m_Contract;
     LatticeOptions m_Options;

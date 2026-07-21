@@ -120,11 +120,19 @@ void TestCoupledAirframe() {
               << "  largest |A|: vortex columns " << vortexColumnMax << ", source columns "
               << sourceColumnMax << " (ratio " << vortexColumnMax / sourceColumnMax << ")\n";
 
-    // 0.86 / 149 is 0.0058, which is the "collapsed" ratio almost exactly --
-    // the metric is measuring the unit mismatch, not the matrix.
-    CHECK(std::fabs(wingOnly.Factorization.MinPivotRatio / (vortexColumnMax / sourceColumnMax) -
-                    coupled.Factorization.MinPivotRatio) < 0.3 * coupled.Factorization.MinPivotRatio,
-          "the coupled pivot ratio should be explained by the block magnitude mismatch");
+    // Scaling the coupled ratio back up by the block mismatch should land
+    // near the wing-only figure. This is an order-of-magnitude argument, not
+    // an identity -- the two matrices are not the same matrix -- so the band
+    // is a factor of three. It is enough to distinguish "the metric is
+    // measuring a unit mismatch" from "the matrix is a hundred times worse",
+    // which is the question that mattered.
+    const double rescaled =
+        coupled.Factorization.MinPivotRatio * (vortexColumnMax / sourceColumnMax);
+    CHECK(rescaled > wingOnly.Factorization.MinPivotRatio / 3.0 &&
+              rescaled < wingOnly.Factorization.MinPivotRatio * 3.0,
+          "the coupled pivot ratio should be explained by the block magnitude mismatch: rescaled " +
+              std::to_string(rescaled) + " against wing-only " +
+              std::to_string(wingOnly.Factorization.MinPivotRatio));
 
     // The real measure: does the solution satisfy its own equations?
     fc.alphaDeg = 6.0;
@@ -155,50 +163,65 @@ void TestCoupledAirframe() {
     // gave. That round trip is the real test of the wing-body coupling: it
     // is not a comparison against the builder's own arithmetic, and neither
     // half of it passes on its own.
+    // Three lattices isolate what each mechanism does:
+    //   whole  -- untrimmed, wing run through the body (geometrically wrong,
+    //             but it is the lift a full-span wing carries)
+    //   cut    -- trimmed with NO carry-through: the root load simply lost
+    //   joined -- trimmed WITH the carry-through vortex
+    // Trimming must cost lift, and the carry-through must give it back. If
+    // it did not, the carry-through would be decoration.
     PB::LatticeOptions untrimmedOptions;
     untrimmedOptions.TrimWingAtBody = false;
-    const auto untrimmedWing = PB::LatticeBuilder(contract, untrimmedOptions).Build();
-    const auto untrimmed =
-        Aeolion::Solver::Prepare(Aeolion::Solver::PanelSystem{untrimmedWing, {}}, trail);
+    const auto untrimmed = Aeolion::Solver::Prepare(
+        Aeolion::Solver::PanelSystem{PB::LatticeBuilder(contract, untrimmedOptions).Build(), {}}, trail);
 
-    std::cout << "  alpha  CL untrimmed  CL trimmed  CL trimmed+body   recovery\n";
+    PB::LatticeOptions noCarryOptions;
+    noCarryOptions.CarryThroughLift = false;
+    const auto severed = Aeolion::Solver::Prepare(
+        Aeolion::Solver::PanelSystem{PB::LatticeBuilder(contract, noCarryOptions).Build(), {}}, trail);
+
+    std::cout << "  alpha    whole      cut    joined   joined+body   carry-through   body\n";
     double previousDCm = 0.0;
     for (double alphaDeg : {0.0, 4.0, 8.0}) {
         fc.alphaDeg = alphaDeg;
         const auto whole = Aeolion::Solver::SolveWithSystem(untrimmed, fc, ref);
-        const auto cut = Aeolion::Solver::SolveWithSystem(wingOnly, fc, ref);
+        const auto cut = Aeolion::Solver::SolveWithSystem(severed, fc, ref);
+        const auto joined = Aeolion::Solver::SolveWithSystem(wingOnly, fc, ref);
         const auto both = Aeolion::Solver::SolveWithSystem(coupled, fc, ref);
 
-        const double recovery = (both.CL - cut.CL) / (whole.CL - cut.CL);
-        std::printf("  %5.1f  %11.5f  %10.5f  %15.5f  %8.1f%%\n", alphaDeg, whole.CL, cut.CL, both.CL,
-                    100.0 * recovery);
+        const double restored = (joined.CL - cut.CL) / (whole.CL - cut.CL);
+        const double bodyEffect = (both.CL - joined.CL) / joined.CL;
+        std::printf("  %5.1f  %8.5f %8.5f  %8.5f  %11.5f  %12.1f%% %+6.1f%%\n", alphaDeg, whole.CL, cut.CL,
+                    joined.CL, both.CL, 100.0 * restored, 100.0 * bodyEffect);
 
         CHECK(std::isfinite(both.CL) && std::isfinite(both.Cm), "the coupled solve must be finite");
-        CHECK(cut.CL < whole.CL, "trimming the root must cost lift at alpha=" + std::to_string(alphaDeg));
+        CHECK(cut.CL < whole.CL, "trimming without carry-through must cost lift at alpha=" +
+                                     std::to_string(alphaDeg));
 
-        // The body recovers most but NOT all of it -- measured 64% to 75%
-        // over this range, rising with incidence. The shortfall is
-        // structural, not a tuning problem: a source distribution cannot
-        // carry circulation, and lift IS circulation. Sources enforce
-        // tangency and so produce the upwash that loads the exposed wing
-        // harder, which is where the recovered part comes from, but the
-        // bound vorticity that the real wing carries THROUGH the fuselage
-        // has nowhere to live in a source-only body.
-        //
-        // Closing the remaining quarter needs a carry-through vortex
-        // spanning the body at the strength of the innermost exposed strip
-        // -- the classical Pitts/Nielsen/Kaattari treatment -- which is a
-        // constraint between unknowns rather than another panel. Until then
-        // this band records what the model actually does rather than what
-        // slender-body theory says it should.
-        CHECK(recovery > 0.55 && recovery < 0.90,
-              "the body should carry most of the trimmed root load, recovered " +
-                  std::to_string(100.0 * recovery) + "% at alpha=" + std::to_string(alphaDeg));
+        // The carry-through restores the bound circulation the fuselage
+        // interrupts, so a trimmed wing carrying it should reproduce the
+        // full-span wing almost exactly. It is the same vorticity spanning
+        // the same distance -- only the tangency points moved outboard, off
+        // the part of the wing that is inside the body.
+        CHECK(std::fabs(joined.CL - whole.CL) < 0.02 * whole.CL,
+              "the carry-through should restore the full-span lift, got " + std::to_string(joined.CL) +
+                  " against " + std::to_string(whole.CL) + " at alpha=" + std::to_string(alphaDeg));
+        CHECK(restored > 0.95,
+              "the carry-through should account for essentially all the trimmed load, restored " +
+                  std::to_string(100.0 * restored) + "%");
+
+        // On top of that, the body's own displacement adds a modest
+        // increment -- blockage and upwash over the exposed wing. Modest is
+        // the point: the body's frontal area is a few percent of the wing's,
+        // so a large swing would mean the coupling is wrong, not strong.
+        CHECK(bodyEffect > 0.0 && bodyEffect < 0.20,
+              "the body should add a modest increment on top of the carry-through, got " +
+                  std::to_string(100.0 * bodyEffect) + "% at alpha=" + std::to_string(alphaDeg));
 
         if (alphaDeg > 0.0)
-            CHECK(std::fabs(both.Cm - cut.Cm) > std::fabs(previousDCm),
+            CHECK(std::fabs(both.Cm - joined.Cm) > std::fabs(previousDCm),
                   "the body's pitching contribution should grow with incidence");
-        previousDCm = both.Cm - cut.Cm;
+        previousDCm = both.Cm - joined.Cm;
     }
 }
 

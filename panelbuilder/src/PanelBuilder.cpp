@@ -389,7 +389,8 @@ Solver::Vec3 LatticeBuilder::SurfacePoint(const SpanStation& station, double sig
 // `inner`/`outer` are two adjacent semi-span stations (inner has the smaller
 // |y|); `sign` is +1 for the right semi-span, -1 for the mirrored left one.
 void LatticeBuilder::EmitStrip(const SpanStation& inner, const SpanStation& outer, double sign,
-                                      int stripIndex, std::vector<Solver::Panel>& panels) const {
+                               int stripIndex, bool carryThrough,
+                               std::vector<Solver::Panel>& panels) const {
     const SpanStation mid = MidStation(inner, outer);
     const SectionFrame midFrame = FrameAt(mid, sign);
     const HingeSpec hinge = HingeForStrip(mid.Eta);
@@ -412,7 +413,13 @@ void LatticeBuilder::EmitStrip(const SpanStation& inner, const SpanStation& oute
         const double psiBound = psiStart + Math::QuarterChord * (psiEnd - psiStart);
         const double psiControl = psiStart + Math::ThreeQuarterChord * (psiEnd - psiStart);
 
-        const Solver::Vec3 innerPoint = deflect(inner, SurfacePoint(inner, sign, psiBound), psiBound);
+        // On a carry-through strip the bound segment starts at the
+        // CENTRELINE, not at the body surface: that extension is the
+        // vorticity the wing carries through the fuselage. It follows the
+        // planform's own quarter-chord line inboard, so a swept wing's
+        // carry-through is swept too.
+        const SpanStation& inboard = carryThrough ? m_SemiSpan.front() : inner;
+        const Solver::Vec3 innerPoint = deflect(inboard, SurfacePoint(inboard, sign, psiBound), psiBound);
         const Solver::Vec3 outerPoint = deflect(outer, SurfacePoint(outer, sign, psiBound), psiBound);
 
         Solver::Panel panel;
@@ -435,7 +442,9 @@ void LatticeBuilder::EmitStrip(const SpanStation& inner, const SpanStation& oute
 
         panel.TrailDirA = Solver::Vec3(1, 0, 0);
         panel.TrailDirB = Solver::Vec3(1, 0, 0);
-        panel.SpanwiseWidth = outer.y - inner.y;
+        // Width matches the bound segment's extent, so lift-per-span and
+        // sectional cl stay consistent with the load actually on it.
+        panel.SpanwiseWidth = outer.y - inboard.y;
 
         // Projection for coefficients; true curved surface for geometry.
         // Deflection is a rigid rotation, so it leaves arc length -- and
@@ -443,8 +452,11 @@ void LatticeBuilder::EmitStrip(const SpanStation& inner, const SpanStation& oute
         const double arcFraction =
             Geometry::CamberArcLengthFraction(m_Contract.AirfoilSections, mid.Eta, psiStart, psiEnd);
         const double dihedralRad = Math::DegToRad(mid.DihedralDeg);
-        panel.PlanformArea = (mid.Chord * (psiEnd - psiStart)) * panel.SpanwiseWidth;
-        panel.Area = (mid.Chord * arcFraction) * (panel.SpanwiseWidth / std::cos(dihedralRad));
+        // Mean chord over the strip's full extent, which on a carry-through
+        // strip reaches the centreline rather than the body surface.
+        const double stripChord = carryThrough ? Math::Half * (inboard.Chord + outer.Chord) : mid.Chord;
+        panel.PlanformArea = (stripChord * (psiEnd - psiStart)) * panel.SpanwiseWidth;
+        panel.Area = (stripChord * arcFraction) * (panel.SpanwiseWidth / std::cos(dihedralRad));
 
         panel.Surface = "wing";
         panel.StripIndex = stripIndex;
@@ -465,13 +477,22 @@ std::vector<Solver::Panel> LatticeBuilder::Build() const {
         return m_TrimEta > 0.0 && Math::Half * (inner.Eta + outer.Eta) < m_TrimEta;
     };
 
+    // The first strip to survive the trim on each side is the one whose
+    // bound vortex carries through the body.
+    std::size_t innermost = m_SemiSpan.size();
+    for (std::size_t k = 0; k + 1 < m_SemiSpan.size(); ++k)
+        if (!buried(m_SemiSpan[k], m_SemiSpan[k + 1])) { innermost = k; break; }
+    const bool carryThrough = m_Options.CarryThroughLift && m_TrimEta > 0.0;
+
     for (std::size_t k = 0; k + 1 < m_SemiSpan.size(); ++k) { // left semi-span
         if (buried(m_SemiSpan[k], m_SemiSpan[k + 1])) continue;
-        EmitStrip(m_SemiSpan[k], m_SemiSpan[k + 1], -1.0, stripIndex++, panels);
+        EmitStrip(m_SemiSpan[k], m_SemiSpan[k + 1], -1.0, stripIndex++, carryThrough && k == innermost,
+                  panels);
     }
     for (std::size_t k = 0; k + 1 < m_SemiSpan.size(); ++k) { // right semi-span
         if (buried(m_SemiSpan[k], m_SemiSpan[k + 1])) continue;
-        EmitStrip(m_SemiSpan[k], m_SemiSpan[k + 1], +1.0, stripIndex++, panels);
+        EmitStrip(m_SemiSpan[k], m_SemiSpan[k + 1], +1.0, stripIndex++, carryThrough && k == innermost,
+                  panels);
     }
 
     std::ranges::sort(panels, {}, [](const Solver::Panel& p) { return p.A.y; });
