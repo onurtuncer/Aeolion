@@ -6,12 +6,14 @@
 
 namespace Aeolion::Geometry {
 
-enum class WakeModel { Frozen, Relaxed };
-
+// The schema's wake_model is validated at parse time but not stored: the
+// solver implements exactly one wake (frozen, trailing legs along +x), so
+// there is nothing for a consumer to branch on. A contract asking for a
+// relaxed wake is REJECTED rather than quietly solved with a frozen one --
+// see the parser. Store a wake model here only when more than one exists.
 struct MeshTopology {
     int ChordwisePanels = 0;
     int SpanwisePanelsPerSection = 0; // panels between each adjacent station pair
-    WakeModel Wake = WakeModel::Frozen;
 };
 
 } // namespace Aeolion::Geometry

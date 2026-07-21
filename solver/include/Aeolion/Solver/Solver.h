@@ -1,4 +1,4 @@
-// VLM/VLM.h
+// Solver/Solver.h
 //
 // Minimal steady vortex lattice method (VLM) for a single lifting surface.
 //
@@ -20,11 +20,13 @@
 // Kutta-Joukowski to that local segment. This gives lift AND induced drag
 // directly, without a separate Trefftz-plane integration.
 //
-// The data model (Vec3 and the result/parameter structs) lives in
-// Aeolion/Math and in this header's siblings under Aeolion/VLM; this header
-// owns the algorithms and the LAPACK-backed dense solver, one folder per
-// namespace. The dense solve uses LAPACK (dgetrf/dgetrs
-// via the Fortran ABI); link against a LAPACK provider such as OpenBLAS.
+// The data model lives outside this header: Vec3 in Aeolion/Math, Panel in
+// Aeolion/Lattice (shared vocabulary, since PanelBuilder produces panels
+// and the viewer draws them), and the result/parameter structs in this
+// header's siblings under Aeolion/Solver. This header owns the algorithms
+// and the LAPACK-backed dense solver. The dense solve uses LAPACK
+// (dgetrf/dgetrs via the Fortran ABI); link against a LAPACK provider such
+// as OpenBLAS.
 
 #pragma once
 #include <cmath>
@@ -40,13 +42,15 @@
 
 #include "Aeolion/Math/Vec3.h"
 #include "Aeolion/Math/Constants.h"
-#include "Aeolion/VLM/Panel.h"
-#include "Aeolion/VLM/WingParams.h"
-#include "Aeolion/VLM/FreestreamConditions.h"
-#include "Aeolion/VLM/ReferenceGeometry.h"
-#include "Aeolion/VLM/StationResult.h"
-#include "Aeolion/VLM/SolveResult.h"
-#include "Aeolion/VLM/StabilityDerivatives.h"
+#include "Aeolion/Lattice/Panel.h"
+#include "Aeolion/Lattice/SourcePanel.h"
+#include "Aeolion/Solver/SourceInfluence.h"
+#include "Aeolion/Solver/WingParams.h"
+#include "Aeolion/Solver/FreestreamConditions.h"
+#include "Aeolion/Solver/ReferenceGeometry.h"
+#include "Aeolion/Solver/StationResult.h"
+#include "Aeolion/Solver/SolveResult.h"
+#include "Aeolion/Solver/StabilityDerivatives.h"
 
 // The dense solve calls LAPACK's double-precision general LU routines
 // directly through their Fortran ABI (dgetrf_ / dgetrs_). We bind these
@@ -62,7 +66,7 @@ extern "C" {
                  double* b, const int* ldb, int* info);
 }
 
-namespace Aeolion::VLM {
+namespace Aeolion::Solver {
 
 using Math::Half;
 using Math::Two;
@@ -181,7 +185,10 @@ inline constexpr double DefaultRateStepFraction = 0.002; // central-difference r
         p.TrailDirA = Vec3(1, 0, 0);
         p.TrailDirB = Vec3(1, 0, 0);
         p.SpanwiseWidth = yB - yA;
-        p.Area = Half * (cA + cB) * p.SpanwiseWidth;
+        p.PlanformArea = Half * (cA + cB) * p.SpanwiseWidth;
+        // This lattice is flat, so the only thing separating the true
+        // surface from its projection is the dihedral tilt.
+        p.Area = p.PlanformArea / std::cos(dihedral);
         panels.push_back(p);
     }
     return panels;
@@ -249,7 +256,21 @@ struct LUFactorization {
     std::vector<double> Flat; // row-major N*N (== column-major A^T), overwritten in place with L/U by dgetrf
     std::vector<int> Ipiv;
     bool NearSingular = false;
-    double MinPivotRatio = 1.0; // diagonal-vs-scale heuristic, for a quick eyeballed diagnostic (see also SingularAtIndex)
+    // Smallest LU pivot divided by the largest entry ANYWHERE in A.
+    //
+    // Only meaningful when A's entries are commensurable, which is true of a
+    // pure lifting-surface system and false of a mixed one. A horseshoe's
+    // normal influence per unit circulation has units of 1/length; a source
+    // panel's per unit strength is dimensionless. On a wing-body system the
+    // vortex columns therefore dwarf the source columns -- measured at 149:1
+    // on the reference airframe -- and this ratio collapses by about that
+    // factor while the solve stays exact (relative residual 2e-15).
+    //
+    // So: do not read this as a conditioning number for a coupled system.
+    // Check the residual of A x - b instead, which is what TestAirframe
+    // asserts. See also SingularAtIndex, which is dgetrf's own verdict and
+    // carries no such caveat.
+    double MinPivotRatio = 1.0;
     int SingularAtIndex = 0; // dgetrf's INFO: >0 means U(info,info) is exactly zero -- 0 = fully nonsingular
 };
 
@@ -290,38 +311,100 @@ struct LUFactorization {
     return x;
 }
 
-// Convenience one-shot wrapper (factorize + solve a single RHS) -- kept for
-// call sites that only ever need one solve against a given matrix.
-[[nodiscard]] inline std::vector<double> SolveLinear(ConstDenseMatrixView A, const std::vector<double>& b) {
-    return LuSolve(LuFactorize(A), b);
-}
+// ---------------------------------------------------- the panel system ----
+// Everything a solve is posed on: lifting surfaces carrying horseshoe
+// vortices, and body surfaces carrying sources. Either list may be empty.
+//
+// There is ONE set of equations, not two treatments joined together. Every
+// unknown is a singularity strength, every equation is flow tangency at a
+// control point, and the whole thing is
+//
+//     [ A_vv  A_vs ] [ Gamma ]   [ w_v - Vkin . n_v ]
+//     [ A_sv  A_ss ] [ sigma ] = [ w_s - Vkin . n_s ]
+//
+// where A_xy is the normal velocity induced at an x control point by unit
+// strength on a y element, and w is the normal velocity the boundary
+// condition prescribes -- zero for any solid surface, nonzero only where a
+// panel transpires (the open base carrying propeller efflux, see
+// Lattice::SourcePanel).
+//
+// The blocking is emergent, not written out: unknowns are indexed vortices
+// first then sources, so the four blocks are just regions of one matrix
+// filled by one loop. A wing-only case is Sources.empty(), which makes the
+// system exactly A_vv Gamma = -Vkin . n_v -- the same equations, with the
+// source rows and columns absent rather than skipped by a branch. That is
+// why there is no separate wing-only path to keep in step.
+struct PanelSystem {
+    std::vector<Panel> Vortices;
+    std::vector<SourcePanel> Sources;
+
+    [[nodiscard]] int VortexCount() const { return static_cast<int>(Vortices.size()); }
+    [[nodiscard]] int SourceCount() const { return static_cast<int>(Sources.size()); }
+    [[nodiscard]] int UnknownCount() const { return VortexCount() + SourceCount(); }
+    [[nodiscard]] bool IsVortex(int index) const { return index < VortexCount(); }
+
+    [[nodiscard]] const Vec3& ControlPoint(int equation) const {
+        return IsVortex(equation) ? Vortices[static_cast<std::size_t>(equation)].ControlPoint
+                                  : Sources[static_cast<std::size_t>(equation - VortexCount())].ControlPoint;
+    }
+    [[nodiscard]] const Vec3& Normal(int equation) const {
+        return IsVortex(equation) ? Vortices[static_cast<std::size_t>(equation)].Normal
+                                  : Sources[static_cast<std::size_t>(equation - VortexCount())].Normal;
+    }
+    // Zero for a solid surface; a lifting panel is always solid.
+    [[nodiscard]] double PrescribedNormalVelocity(int equation) const {
+        return IsVortex(equation)
+                   ? 0.0
+                   : Sources[static_cast<std::size_t>(equation - VortexCount())].PrescribedNormalVelocity;
+    }
+
+    // Velocity at `point` from unit strength on element `index`.
+    [[nodiscard]] Vec3 UnitVelocity(int index, const Vec3& point, double trailLength) const {
+        if (IsVortex(index))
+            return HorseshoeVelocity(point, Vortices[static_cast<std::size_t>(index)], 1.0, trailLength);
+        return SourcePanelVelocity(point, Sources[static_cast<std::size_t>(index - VortexCount())]);
+    }
+
+    // One entry of the influence matrix.
+    [[nodiscard]] double NormalInfluence(int equation, int element, double trailLength) const {
+        // A source panel's own control point lies exactly on its sheet,
+        // where the induced velocity is indeterminate. The value there is
+        // analytic (see SourceInfluence.h), so it is substituted rather
+        // than evaluated.
+        if (equation == element && !IsVortex(element)) return SourceSelfInfluence;
+        return Dot(UnitVelocity(element, ControlPoint(equation), trailLength), Normal(equation));
+    }
+};
 
 // A geometry-only factorization: the influence matrix depends solely on
 // panel positions/normals, never on alpha/beta/rates/externalField, so
 // this is what you build ONCE and reuse across many flight conditions
 // (see ComputeDerivatives() below for the motivating case).
 struct PreparedSystem {
-    std::vector<Panel> Panels;
+    PanelSystem System;
     double TrailLength = 0.0;
     LUFactorization Factorization;
 };
 
-[[nodiscard]] inline PreparedSystem Prepare(const std::vector<Panel>& panels, double trailLength) {
-    int N = static_cast<int>(panels.size());
+[[nodiscard]] inline PreparedSystem Prepare(const PanelSystem& system, double trailLength) {
+    const int N = system.UnknownCount();
     std::vector<double> aStorage(static_cast<std::size_t>(N) * N, 0.0);
     DenseMatrixView Amat(aStorage.data(), N, N);
-    for (int i = 0; i < N; ++i) {
-        const Vec3& cp = panels[i].ControlPoint;
-        for (int j = 0; j < N; ++j) {
-            Vec3 v = HorseshoeVelocity(cp, panels[j], 1.0, trailLength);
-            Amat[i, j] = Dot(v, panels[i].Normal);
-        }
-    }
+    for (int i = 0; i < N; ++i)
+        for (int j = 0; j < N; ++j)
+            Amat[i, j] = system.NormalInfluence(i, j, trailLength);
+
     PreparedSystem sys;
-    sys.Panels = panels;
+    sys.System = system;
     sys.TrailLength = trailLength;
     sys.Factorization = LuFactorize(Amat);
     return sys;
+}
+
+// Wing-only convenience. This is not a second code path: it states the
+// reduction literally, by posing the same system with no source panels.
+[[nodiscard]] inline PreparedSystem Prepare(const std::vector<Panel>& panels, double trailLength) {
+    return Prepare(PanelSystem{panels, {}}, trailLength);
 }
 
 // Core solver, RHS/force part: takes an already-factorized system and just
@@ -332,8 +415,11 @@ struct PreparedSystem {
 [[nodiscard]] inline SolveResult SolveWithSystem(const PreparedSystem& sys, const FreestreamConditions& fc,
                                     const ReferenceGeometry& ref,
                                     const std::function<Vec3(const Vec3&)>& externalField = nullptr) {
-    const std::vector<Panel>& panels = sys.Panels;
-    int N = static_cast<int>(panels.size());
+    const PanelSystem& system = sys.System;
+    const std::vector<Panel>& panels = system.Vortices;
+    const std::vector<SourcePanel>& bodies = system.Sources;
+    int N = system.VortexCount();
+    int NB = system.SourceCount();
     double trail = sys.TrailLength;
 
     double alpha = DegToRad(fc.alphaDeg);
@@ -349,10 +435,31 @@ struct PreparedSystem {
         return v;
     };
 
-    std::vector<double> rhs(N, 0.0);
-    for (int i = 0; i < N; ++i) rhs[i] = -Dot(kinematicVelocity(panels[i].ControlPoint), panels[i].Normal);
+    // One right-hand side for both row types: the normal velocity the
+    // boundary condition prescribes, less what the oncoming flow already
+    // supplies. A solid surface prescribes zero, so a wing-only system's
+    // rows are exactly -Vkin.n as before.
+    const int unknowns = system.UnknownCount();
+    std::vector<double> rhs(static_cast<std::size_t>(unknowns), 0.0);
+    for (int i = 0; i < unknowns; ++i)
+        rhs[static_cast<std::size_t>(i)] = system.PrescribedNormalVelocity(i) -
+                                           Dot(kinematicVelocity(system.ControlPoint(i)), system.Normal(i));
 
-    std::vector<double> gamma = LuSolve(sys.Factorization, rhs);
+    const std::vector<double> strengths = LuSolve(sys.Factorization, rhs);
+    // Vortices first, then sources -- the ordering the blocking assumes.
+    std::vector<double> gamma(strengths.begin(), strengths.begin() + N);
+    std::vector<double> sigma(strengths.begin() + N, strengths.end());
+
+    // Velocity induced by the body's sources at an arbitrary point. Empty
+    // when there is no body, which is what collapses the coupled system
+    // back to the pure lifting-surface one.
+    auto bodyInducedVelocity = [&](const Vec3& p) {
+        Vec3 v(0, 0, 0);
+        for (int k = 0; k < NB; ++k)
+            v = v + SourcePanelVelocity(p, bodies[static_cast<std::size_t>(k)]) *
+                        sigma[static_cast<std::size_t>(k)];
+        return v;
+    };
 
     // --- near-field forces & moments ---
     double rho = fc.rho;
@@ -364,10 +471,12 @@ struct PreparedSystem {
     Vec3 totalMoment(0, 0, 0);
     SolveResult res;
     res.gamma = gamma;
-    res.Stations.resize(N);
+    std::vector<double> panelLift(N, 0.0);
 
     double S = 0.0;
-    for (auto& p : panels) S += p.Area;
+    // Reference area is PLANFORM area -- the coefficient convention (see
+    // Panel::Area vs Panel::PlanformArea).
+    for (auto& p : panels) S += p.PlanformArea;
     if (ref.Area > 0.0) S = ref.Area; // caller override (e.g. wing-only area for a multi-surface aircraft)
     res.ReferenceArea = S;
     res.ReferenceChord = (ref.Chord > 0.0) ? ref.Chord : (S > 0.0 ? S / std::max(GeometryEps, Two) : UnitFallbackLength);
@@ -383,27 +492,103 @@ struct PreparedSystem {
                 vind = vind + HorseshoeVelocity(mid, panels[j], gamma[j], trail);
             }
         }
-        Vec3 Vlocal = kinematicVelocity(mid) + vind;
+        // The body's sources are part of the flow the bound vortex sits in,
+        // so they enter Kutta-Joukowski here too -- this is the wing-body
+        // interference (upwash/blockage) acting on the lifting surface.
+        Vec3 Vlocal = kinematicVelocity(mid) + vind + bodyInducedVelocity(mid);
         Vec3 dl = panels[i].B - panels[i].A;
         Vec3 F = Cross(Vlocal, dl) * (rho * gamma[i]); // Kutta-Joukowski, rho * gamma * (V x dl)
         totalForce = totalForce + F;
         totalMoment = totalMoment + Cross(mid - fc.RefPoint, F);
 
-        StationResult sr;
-        sr.y = mid.y;
-        sr.gamma = gamma[i];
-        sr.LiftPerSpan = Dot(F, liftDir) / panels[i].SpanwiseWidth;
-        double qLocal = Half * rho * fc.Vinf * fc.Vinf;
-        double localChord = panels[i].Area / panels[i].SpanwiseWidth;
-        sr.cl_local = (qLocal > CoeffDenomEps && localChord > CoeffDenomEps) ? sr.LiftPerSpan / (qLocal * localChord) : 0.0;
-        sr.Surface = panels[i].Surface;
-        sr.PanelIndex = i;
-        res.Stations[i] = sr;
+        panelLift[i] = Dot(F, liftDir);
 
         const std::string& sname = panels[i].Surface;
         res.LiftBySurface[sname] += Dot(F, liftDir);
         res.DragBySurface[sname] += Dot(F, dragDir);
-        res.AreaBySurface[sname] += panels[i].Area;
+        res.AreaBySurface[sname] += panels[i].PlanformArea;
+    }
+
+    // --- body surface pressure ---
+    // A source panel carries no bound circulation, so Kutta-Joukowski says
+    // nothing about it; its force is the pressure integral over its face.
+    // On a closed body the net force very nearly cancels -- that is
+    // d'Alembert, and a large residual here means the panelling is too
+    // coarse rather than that the body is producing lift. The MOMENT does
+    // not cancel: that is the Munk moment, the dominant effect a fuselage
+    // has on an airframe's stability, and it is why the body is modelled
+    // at all.
+    const double qInf = Half * rho * fc.Vinf * fc.Vinf;
+    for (int k = 0; k < NB; ++k) {
+        const SourcePanel& body = bodies[static_cast<std::size_t>(k)];
+        // A permeable face still shaped the flow through its boundary
+        // condition, but there is no wall there for pressure to push on.
+        // See Lattice::SourcePanel::Permeable.
+        if (body.Permeable) continue;
+        Vec3 vind(0, 0, 0);
+        for (int j = 0; j < N; ++j)
+            vind = vind + HorseshoeVelocity(body.ControlPoint, panels[j], gamma[j], trail);
+        for (int m = 0; m < NB; ++m) {
+            if (m == k) {
+                // The panel's own contribution at its centroid is purely
+                // normal; the in-plane part cancels by symmetry.
+                vind = vind + body.Normal * (sigma[static_cast<std::size_t>(m)] * SourceSelfInfluence);
+            } else {
+                vind = vind + SourcePanelVelocity(body.ControlPoint, bodies[static_cast<std::size_t>(m)]) *
+                                  sigma[static_cast<std::size_t>(m)];
+            }
+        }
+        const Vec3 Vlocal = kinematicVelocity(body.ControlPoint) + vind;
+
+        const double speedRatio = (fc.Vinf > CoeffDenomEps) ? Vlocal.Norm() / fc.Vinf : 0.0;
+        const double cp = 1.0 - speedRatio * speedRatio;
+        // Pressure acts inward along the surface normal.
+        const Vec3 F = body.Normal * (-cp * qInf * body.Area);
+        totalForce = totalForce + F;
+        totalMoment = totalMoment + Cross(body.ControlPoint - fc.RefPoint, F);
+
+        const std::string& sname = body.Surface;
+        res.LiftBySurface[sname] += Dot(F, liftDir);
+        res.DragBySurface[sname] += Dot(F, dragDir);
+    }
+
+    // --- collapse the lattice into spanwise stations ---
+    // A chordwise stack of panels sharing a StripIndex is ONE spanwise
+    // station: its circulation is the sum of the stack's horseshoe
+    // strengths, its lift the sum of theirs, and the chord that
+    // nondimensionalizes cl_local is the whole section chord (the stack's
+    // areas summed over the strip width) -- not one panel's slice of it.
+    // A negative StripIndex keeps a panel its own station, so a
+    // single-row lattice reports exactly as it did before.
+    std::map<int, std::vector<int>> strips;
+    for (int i = 0; i < N; ++i) {
+        int key = (panels[i].StripIndex >= 0) ? panels[i].StripIndex : -(i + 1);
+        strips[key].push_back(i);
+    }
+
+    double qLocal = Half * rho * fc.Vinf * fc.Vinf;
+    res.Stations.reserve(strips.size());
+    for (const auto& [key, members] : strips) {
+        const Panel& first = panels[members.front()];
+        StationResult sr;
+        sr.y = Half * (first.A.y + first.B.y);
+        sr.Surface = first.Surface;
+        sr.PanelIndex = members.front();
+
+        double lift = 0.0;
+        double area = 0.0;
+        for (int i : members) {
+            sr.gamma += gamma[i];
+            lift += panelLift[i];
+            area += panels[i].PlanformArea;
+        }
+        double width = first.SpanwiseWidth;
+        sr.LiftPerSpan = (width > GeometryEps) ? lift / width : 0.0;
+        double sectionChord = (width > GeometryEps) ? area / width : 0.0;
+        sr.cl_local = (qLocal > CoeffDenomEps && sectionChord > CoeffDenomEps)
+                          ? sr.LiftPerSpan / (qLocal * sectionChord)
+                          : 0.0;
+        res.Stations.push_back(sr);
     }
 
     res.L = Dot(totalForce, liftDir);
@@ -456,7 +641,7 @@ struct PreparedSystem {
     for (auto& p : panels) p.Surface = "wing";
     double trail = (wp.TrailLength > 0.0) ? wp.TrailLength : 50.0 * wp.Span;
     double S = 0.0;
-    for (auto& p : panels) S += p.Area;
+    for (auto& p : panels) S += p.PlanformArea;
     ReferenceGeometry ref;
     ref.Area = S;
     ref.Span = wp.Span;
@@ -546,4 +731,4 @@ struct PreparedSystem {
     return d;
 }
 
-} // namespace Aeolion::VLM
+} // namespace Aeolion::Solver

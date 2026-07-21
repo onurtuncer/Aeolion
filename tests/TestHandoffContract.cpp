@@ -7,8 +7,6 @@
 
 using Aeolion::Geometry::ContractError;
 using Aeolion::Geometry::ControlSurfaceBinding;
-using Aeolion::Geometry::SectionParameterization;
-using Aeolion::Geometry::WakeModel;
 
 namespace {
 
@@ -81,7 +79,6 @@ void TestParsesFixture() {
 
     Check(contract.AirfoilSections.size() == 5, "5 airfoil sections");
     for (const auto& section : contract.AirfoilSections) {
-        Check(section.Parameterization == SectionParameterization::CST, "section is CST-parameterized");
         Check(section.CoefficientsUpper.size() == 6, "6 upper CST coefficients");
         Check(section.CoefficientsLower.size() == 6, "6 lower CST coefficients");
     }
@@ -108,7 +105,6 @@ void TestParsesFixture() {
 
     Check(contract.Mesh.ChordwisePanels == 8, "chordwise panel count");
     Check(contract.Mesh.SpanwisePanelsPerSection == 6, "spanwise panel count per section");
-    Check(contract.Mesh.Wake == WakeModel::Frozen, "wake model");
 
     Check(contract.Propulsion.BladeStations.size() == 13, "13 blade stations");
     CheckClose(contract.Propulsion.DiskRadius, 0.1015, "disk radius");
@@ -264,6 +260,73 @@ void TestOptionalBlocks() {
     }
 }
 
+// --- schema 1.4.0: body, blade count, deflection limits --------------------
+// The 1.4.0 document adds three blocks that older ones lack. Because the
+// parser tolerates unknown keys for forward compatibility, an unwired block
+// parses SILENTLY -- so these checks are what distinguish "understood" from
+// "ignored".
+void TestSchema140Blocks() {
+    const auto contract = Aeolion::Geometry::LoadHandoff(FixturePath("1.4.0"));
+
+    Check(contract.Body.IsPresent(), "1.4.0 carries a body");
+    CheckClose(contract.Body.Length, 0.49099, "body length");
+    Check(contract.Body.Stations.size() == 25, "25 body stations");
+    CheckClose(contract.Body.Stations.front().x, 0.0, "nose at x=0");
+    CheckClose(contract.Body.Stations.front().Radius, 0.0, "sharp nose");
+    CheckClose(contract.Body.Stations.back().x, -0.49099, "tail x");
+    // The tail does NOT close: this body is truncated at the duct exit, and
+    // anything that panels it has to cope with an open base.
+    CheckClose(contract.Body.Stations.back().Radius, 0.0406, "open base radius");
+
+    Check(contract.Propulsion.BladeCount == 3, "blade count comes from n_blades");
+
+    const auto& aileron = contract.ControlSurfaces.front();
+    Check(aileron.Binding == ControlSurfaceBinding::Wing, "aileron binds to the wing");
+    CheckClose(aileron.Limits.MinDeg, -20.0, "aileron min deflection");
+    CheckClose(aileron.Limits.MaxDeg, 20.0, "aileron max deflection");
+    Check(!aileron.Limits.HasSoftLimit, "the aileron states no soft limit");
+
+    const auto& vane = contract.ControlSurfaces[1];
+    Check(vane.Binding == ControlSurfaceBinding::DuctJet, "vane binds to the duct jet");
+    Check(vane.Limits.HasSoftLimit, "the vane states a soft limit");
+    CheckClose(vane.Limits.SoftLimitDeg, 15.0, "vane soft limit");
+
+    // Older documents must keep parsing, with the new fields simply absent.
+    const auto older = Aeolion::Geometry::LoadHandoff(FixturePath("1.0.0"));
+    Check(!older.Body.IsPresent(), "1.0.0 has no body");
+    Check(older.Propulsion.BladeCount == 0, "1.0.0 states no blade count");
+    Check(!older.ControlSurfaces.front().Limits.HasSoftLimit, "1.0.0 states no soft limit");
+}
+
+// Every invariant the 1.4.0 blocks rely on gets a negative test, same as the
+// rest of the contract.
+void TestRejectsMalformed140() {
+    const auto rejects = [](const std::string& what, auto mutate) {
+        nlohmann::json root = JsonAt(FixturePath("1.4.0"));
+        mutate(root);
+        try {
+            (void)Aeolion::Geometry::ParseHandoff(root);
+            std::cerr << "FAIL: expected rejection -- " << what << "\n";
+            ++g_Failures;
+        } catch (const ContractError&) {
+        }
+    };
+
+    rejects("a body whose x does not decrease nose to tail",
+            [](auto& root) { root["body"]["stations"][3]["x"] = 0.5; });
+    rejects("a negative body radius", [](auto& root) { root["body"]["stations"][3]["radius"] = -0.01; });
+    rejects("a body length disagreeing with its stations",
+            [](auto& root) { root["body"]["length"] = 0.6; });
+    rejects("a body with one station", [](auto& root) {
+        root["body"]["stations"] = nlohmann::json::array({root["body"]["stations"][0]});
+    });
+    rejects("a single-bladed propeller", [](auto& root) { root["propulsion_bemt"]["n_blades"] = 1; });
+    rejects("deflection limits whose max does not exceed min",
+            [](auto& root) { root["control_surfaces"][0]["deflection_limits_deg"]["max"] = -30.0; });
+    rejects("a soft limit outside the hard stops",
+            [](auto& root) { root["control_surfaces"][1]["deflection_soft_limit_deg"] = 25.0; });
+}
+
 void TestRejectsMalformed() {
     CheckRejects("a future schema major version",
                  [](auto& root) { root["schema_version"] = "2.0.0"; });
@@ -304,6 +367,12 @@ void TestRejectsMalformed() {
                  [](auto& root) { root["airfoil_sections"] = nlohmann::json::array(); });
     CheckRejects("a non-CST parameterization",
                  [](auto& root) { root["airfoil_sections"][0]["parameterization"] = "bspline"; });
+    // 'relaxed' is a legal schema value that this solver cannot honour, so
+    // it must be refused rather than silently solved with a frozen wake.
+    CheckRejects("a relaxed wake, which is not implemented",
+                 [](auto& root) { root["mesh_topology"]["wake_model"] = "relaxed"; });
+    CheckRejects("an unknown wake model",
+                 [](auto& root) { root["mesh_topology"]["wake_model"] = "banana"; });
     CheckRejects("too few CST coefficients",
                  [](auto& root) { root["airfoil_sections"][0]["coefficients_upper"] = {0.1, 0.2, 0.3}; });
     CheckRejects("too many CST coefficients", [](auto& root) {
@@ -373,6 +442,8 @@ int main() {
     TestNormalizesHingeAxis();
     TestToleratesUnknownKeys();
     TestOptionalBlocks();
+    TestSchema140Blocks();
+    TestRejectsMalformed140();
     TestRejectsMalformed();
     TestRejectsMalformedJson();
 

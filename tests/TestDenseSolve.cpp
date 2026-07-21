@@ -1,11 +1,11 @@
 // TestSolverBackend.cpp -- sanity check for the LAPACK/OpenBLAS dense
 // linear-algebra backend: run a representative solve plus a derivatives
 // sweep and confirm the results are finite and physically sane.
-#include "Aeolion/VLM/VLM.h"
+#include "Aeolion/Solver/Solver.h"
 #include <iostream>
 #include <iomanip>
 
-using namespace Aeolion::VLM;
+using namespace Aeolion::Solver;
 
 int main() {
     WingParams wp;
@@ -34,6 +34,6 @@ int main() {
     // basic sanity: finite, non-negative induced drag
     bool ok = std::isfinite(res.CL) && std::isfinite(res.CDi) && res.CDi >= 0.0;
     if (!ok) { std::cerr << "FAIL: non-finite or negative-CDi result\n"; return 1; }
-    std::cout << "PASS: TestSolverBackend\n";
+    std::cout << "PASS: TestDenseSolve\n";
     return 0;
 }

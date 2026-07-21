@@ -8,8 +8,18 @@ function(aeolion_add_test name)
     add_test(NAME ${name} COMMAND ${name})
 endfunction()
 
-aeolion_add_test(TestVLMCore)
+aeolion_add_test(TestSolverCore)
 aeolion_add_test(TestBEMT)
 aeolion_add_test(TestPropVane)
-aeolion_add_test(TestSolverBackend)
+aeolion_add_test(TestDenseSolve)
 aeolion_add_test(TestHandoffContract)
+
+aeolion_add_test(TestSourcePanel)
+
+aeolion_add_test(TestPanelBuilder)
+aeolion_add_test(TestBodyPanels)
+aeolion_add_test(TestAirframe)
+# These exercise compiled code rather than headers alone.
+target_link_libraries(TestPanelBuilder PRIVATE aeolion_panelbuilder)
+target_link_libraries(TestBodyPanels PRIVATE aeolion_panelbuilder)
+target_link_libraries(TestAirframe PRIVATE aeolion_panelbuilder)

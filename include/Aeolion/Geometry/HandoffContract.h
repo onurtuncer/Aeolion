@@ -24,11 +24,13 @@
 
 #include "Aeolion/Math/Vec3.h"
 #include "Aeolion/Geometry/AirfoilSection.h"
+#include "Aeolion/Geometry/BodyGeometry.h"
 #include "Aeolion/Geometry/ControlSurface.h"
 #include "Aeolion/Geometry/MeshTopology.h"
 #include "Aeolion/Geometry/PlanformStation.h"
 #include "Aeolion/Geometry/PropulsionSpec.h"
-#include "Aeolion/VLM/WingParams.h"
+#include "Aeolion/Geometry/WingPlacement.h"
+#include "Aeolion/Solver/WingParams.h"
 
 #include <charconv>
 #include <cmath>
@@ -57,6 +59,12 @@ inline constexpr std::size_t MaxCstCoefficients = 8;
 
 inline constexpr std::size_t MinPlanformStations = 2;
 inline constexpr std::size_t MinBladeStations = 2;
+inline constexpr std::size_t MinBodyStations = 2;
+
+// The body's stated length must agree with the span its stations actually
+// cover; a mismatch means one of the two is stale and there is no way to
+// tell which, so the contract is rejected rather than silently trusting one.
+inline constexpr double BodyLengthConsistencyTolerance = 1e-6;
 
 inline constexpr double EtaMin = 0.0;
 inline constexpr double EtaMax = 1.0;
@@ -74,6 +82,8 @@ struct HandoffContract {
     std::vector<ControlSurface> ControlSurfaces;
     MeshTopology Mesh;
     PropulsionSpec Propulsion;
+    BodyGeometry Body;      // absent before schema 1.4.0; check Body.IsPresent()
+    WingPlacement Placement; // absent before schema 1.5.0; check Placement.IsStated
 };
 
 // Thrown for every rejected contract; the message names the offending field.
@@ -225,9 +235,15 @@ inline void RequireSpanningEtaSequence(const std::vector<double>& etas, std::str
     return axis.Normalized(); // direction is all that matters; magnitude is not part of the contract
 }
 
-[[nodiscard]] inline WakeModel ParseWakeModel(const std::string& name, std::string_view where) {
-    if (name == "frozen") return WakeModel::Frozen;
-    if (name == "relaxed") return WakeModel::Relaxed;
+// The solver trails its wake along +x and has no relaxed-wake iteration, so
+// "relaxed" is refused outright. Accepting it and solving a frozen wake
+// anyway would answer a question the caller did not ask, and nothing in the
+// result would reveal the substitution.
+inline void RequireSupportedWakeModel(const std::string& name, std::string_view where) {
+    if (name == "frozen") return;
+    if (name == "relaxed")
+        throw ContractError(std::format(
+            "{}.wake_model: 'relaxed' is not implemented; this solver trails a frozen wake only", where));
     throw ContractError(std::format("{}.wake_model: unknown model '{}'", where, name));
 }
 
@@ -252,6 +268,69 @@ inline void RequireSpanningEtaSequence(const std::vector<double>& etas, std::str
     if (name == "vane") return ControlSurfaceBinding::DuctJet;
     throw ContractError(std::format(
         "{}.name: '{}' has no known surface binding; emit an explicit 'surface' field", where, name));
+}
+
+// Travel limits arrived in schema 1.4.0. Older documents omit them, leaving
+// the limits zeroed -- a caller must therefore check for a degenerate range
+// rather than assume every contract states one.
+[[nodiscard]] inline DeflectionLimits ParseDeflectionLimits(const nlohmann::json& node, std::string_view where) {
+    DeflectionLimits limits;
+    if (!node.contains("deflection_limits_deg")) return limits;
+
+    const auto& block = Object(node, "deflection_limits_deg", where);
+    const auto blockWhere = std::format("{}.deflection_limits_deg", where);
+    limits.MinDeg = Number(block, "min", blockWhere);
+    limits.MaxDeg = Number(block, "max", blockWhere);
+    if (!(limits.MaxDeg > limits.MinDeg))
+        throw ContractError(std::format("{}: max ({}) must exceed min ({})", blockWhere, limits.MaxDeg,
+                                        limits.MinDeg));
+
+    if (node.contains("deflection_soft_limit_deg")) {
+        limits.HasSoftLimit = true;
+        limits.SoftLimitDeg = Number(node, "deflection_soft_limit_deg", where);
+        RequirePositive(limits.SoftLimitDeg, std::format("{}.deflection_soft_limit_deg", where));
+        // A soft limit outside the mechanical stops is not a conservative
+        // bound at all -- it would authorize travel the hardware cannot make.
+        if (limits.SoftLimitDeg > limits.MaxDeg || -limits.SoftLimitDeg < limits.MinDeg)
+            throw ContractError(std::format(
+                "{}.deflection_soft_limit_deg: +/-{} lies outside the hard limits [{}, {}]", where,
+                limits.SoftLimitDeg, limits.MinDeg, limits.MaxDeg));
+    }
+    return limits;
+}
+
+// The body of revolution (schema 1.4.0+). Stations run nose to tail, which
+// in the contract's x-forward frame means x strictly DECREASING.
+[[nodiscard]] inline BodyGeometry ParseBody(const nlohmann::json& node) {
+    BodyGeometry body;
+    body.Length = Number(node, "length", "body");
+    RequirePositive(body.Length, "body.length");
+
+    const auto& stations = Array(node, "stations", "body");
+    if (stations.size() < MinBodyStations)
+        throw ContractError(std::format("body.stations: expected at least {} stations, got {}", MinBodyStations,
+                                        stations.size()));
+
+    for (std::size_t i = 0; i < stations.size(); ++i) {
+        const auto where = std::format("body.stations[{}]", i);
+        BodyStation station;
+        station.x = Number(stations[i], "x", where);
+        station.Radius = Number(stations[i], "radius", where);
+        // Zero is legitimate at a sharp nose or a closed tail; negative is not.
+        if (station.Radius < 0.0)
+            throw ContractError(std::format("{}.radius must not be negative, got {}", where, station.Radius));
+        if (i > 0 && !(station.x < body.Stations.back().x))
+            throw ContractError(std::format("{}: x must strictly decrease nose to tail, but {} follows {}", where,
+                                            station.x, body.Stations.back().x));
+        body.Stations.push_back(station);
+    }
+
+    const double covered = body.Stations.front().x - body.Stations.back().x;
+    if (std::fabs(covered - body.Length) > BodyLengthConsistencyTolerance * body.Length)
+        throw ContractError(std::format(
+            "body.length {} disagrees with the {} its stations span; one of the two is stale", body.Length,
+            covered));
+    return body;
 }
 
 } // namespace Detail
@@ -307,6 +386,18 @@ inline void RequireSpanningEtaSequence(const std::vector<double>& etas, std::str
             contract.Stations.push_back(station);
         }
         RequireSpanningEtaSequence(etas, "planform.stations");
+
+        // Optional: absent before schema 1.5.0. Without it the wing and the
+        // body have no stated relationship at all (see WingPlacement.h).
+        if (planform.contains("placement")) {
+            const auto& placement = Object(planform, "placement", "planform");
+            const auto& anchor = Object(placement, "root_leading_edge", "planform.placement");
+            contract.Placement.IsStated = true;
+            contract.Placement.RootLeadingEdge =
+                Math::Vec3(Number(anchor, "x", "planform.placement.root_leading_edge"),
+                           Number(anchor, "y", "planform.placement.root_leading_edge"),
+                           Number(anchor, "z", "planform.placement.root_leading_edge"));
+        }
     }
 
     // --- airfoil sections -------------------------------------------------
@@ -324,7 +415,6 @@ inline void RequireSpanningEtaSequence(const std::vector<double>& etas, std::str
                                                 parameterization));
 
             AirfoilSection section;
-            section.Parameterization = SectionParameterization::CST;
             section.Eta = Number(sections[i], "eta", where);
             section.CoefficientsUpper = Coefficients(sections[i], "coefficients_upper", where);
             section.CoefficientsLower = Coefficients(sections[i], "coefficients_lower", where);
@@ -352,6 +442,7 @@ inline void RequireSpanningEtaSequence(const std::vector<double>& etas, std::str
             surface.EtaStart = Number(surfaces[i], "eta_start", where);
             surface.EtaEnd = Number(surfaces[i], "eta_end", where);
             surface.HingeAxis = HingeAxis(surfaces[i], where);
+            surface.Limits = ParseDeflectionLimits(surfaces[i], where);
             // Forward-compatible with schema 1.1.0's explicit 'surface' field:
             // honour it when present, fall back to the 1.0.0 name convention.
             surface.Binding = surfaces[i].contains("surface")
@@ -375,7 +466,7 @@ inline void RequireSpanningEtaSequence(const std::vector<double>& etas, std::str
         const auto& mesh = Object(root, "mesh_topology", "$");
         contract.Mesh.ChordwisePanels = Integer(mesh, "chordwise_panels", "mesh_topology");
         contract.Mesh.SpanwisePanelsPerSection = Integer(mesh, "spanwise_panels_per_section", "mesh_topology");
-        contract.Mesh.Wake = ParseWakeModel(String(mesh, "wake_model", "mesh_topology"), "mesh_topology");
+        RequireSupportedWakeModel(String(mesh, "wake_model", "mesh_topology"), "mesh_topology");
         if (contract.Mesh.ChordwisePanels < 1)
             throw ContractError(std::format("mesh_topology.chordwise_panels must be >= 1, got {}",
                                             contract.Mesh.ChordwisePanels));
@@ -383,6 +474,10 @@ inline void RequireSpanningEtaSequence(const std::vector<double>& etas, std::str
             throw ContractError(std::format("mesh_topology.spanwise_panels_per_section must be >= 1, got {}",
                                             contract.Mesh.SpanwisePanelsPerSection));
     }
+
+    // --- body -------------------------------------------------------------
+    // Optional: absent before schema 1.4.0, and a flying wing has none.
+    if (root.contains("body")) contract.Body = ParseBody(Object(root, "body", "$"));
 
     // --- propulsion -------------------------------------------------------
     // Optional: an unpowered glider has no propeller block.
@@ -392,6 +487,15 @@ inline void RequireSpanningEtaSequence(const std::vector<double>& etas, std::str
         contract.Propulsion.ReferenceRpm = Number(propulsion, "reference_rpm", "propulsion_bemt");
         RequirePositive(contract.Propulsion.DiskRadius, "propulsion_bemt.disk_radius");
         RequirePositive(contract.Propulsion.ReferenceRpm, "propulsion_bemt.reference_rpm");
+
+        // Blade count arrived in 1.4.0; older documents leave it zero for the
+        // consumer to supply, as they always had to.
+        if (propulsion.contains("n_blades")) {
+            contract.Propulsion.BladeCount = Integer(propulsion, "n_blades", "propulsion_bemt");
+            if (contract.Propulsion.BladeCount < 2)
+                throw ContractError(std::format("propulsion_bemt.n_blades must be >= 2, got {}",
+                                                contract.Propulsion.BladeCount));
+        }
 
         const auto& stations = Array(propulsion, "blade_stations", "propulsion_bemt");
         if (stations.size() < MinBladeStations)
@@ -421,7 +525,7 @@ inline void RequireSpanningEtaSequence(const std::vector<double>& etas, std::str
     return contract;
 }
 
-// --- bridge to the parametric single-trapezoid VLM wing -------------------
+// --- bridge to the parametric single-trapezoid solver wing -----------------
 // BuildWing() models ONE linearly-tapered, linearly-twisted trapezoid, which
 // is strictly less expressive than the contract's per-station planform. This
 // reduction therefore refuses anything it cannot represent exactly rather than
@@ -433,7 +537,7 @@ inline void RequireSpanningEtaSequence(const std::vector<double>& etas, std::str
 // this is the honest narrow path.
 inline constexpr double TrapezoidFitTolerance = 1e-9;
 
-[[nodiscard]] inline VLM::WingParams ToWingParams(const HandoffContract& contract) {
+[[nodiscard]] inline Solver::WingParams ToWingParams(const HandoffContract& contract) {
     const auto& stations = contract.Stations;
     const PlanformStation& root = stations.front();
     const PlanformStation& tip = stations.back();
@@ -461,7 +565,7 @@ inline constexpr double TrapezoidFitTolerance = 1e-9;
         throw ContractError(std::format("planform.stations[0].twist: root incidence {} is not representable",
                                         root.TwistDeg));
 
-    VLM::WingParams wing;
+    Solver::WingParams wing;
     wing.Span = contract.Span;
     wing.RootChord = root.Chord;
     wing.TipChord = tip.Chord;

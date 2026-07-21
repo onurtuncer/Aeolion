@@ -10,7 +10,7 @@
 // --- reference frame ------------------------------------------------------
 // HingeAxis is expressed in the contract's own frame. For
 // "aetherion_body_frd" that is x-forward / y-right / z-down, which is NOT the
-// VLM convention (x aft, y right, z up). Per ADR-0016 the contract states its
+// solver's convention (x aft, y right, z up). Per ADR-0016 the contract states its
 // frame once and the consumer converts explicitly at ingest, so nothing here
 // is auto-rotated.
 //
@@ -31,7 +31,7 @@
 namespace Aeolion::Geometry {
 
 // Which body a control surface is hinged to. This determines whether the
-// surface belongs in the VLM lattice at all, and what its eta band measures.
+// surface belongs in the solver's lattice at all, and what its eta band measures.
 enum class ControlSurfaceBinding {
     // Hinged to the wing planform. Eta is the semi-span fraction, directly
     // comparable to PlanformStation::Eta.
@@ -45,6 +45,18 @@ enum class ControlSurfaceBinding {
     DuctJet,
 };
 
+// Travel limits, in degrees about the hinge axis. The hard limits are the
+// mechanical stops. The soft limit, where present, is the smaller angle a
+// controller should respect in normal operation -- it exists because a vane
+// can be driven to its stop but should not be, so a trim/allocation routine
+// wanting a usable range should read SoftLimitDeg and not MaxDeg.
+struct DeflectionLimits {
+    double MinDeg = 0.0;
+    double MaxDeg = 0.0;
+    bool HasSoftLimit = false;
+    double SoftLimitDeg = 0.0; // symmetric: usable range is +/- this
+};
+
 struct ControlSurface {
     std::string Name;
     double ChordFraction = 0.0; // fraction of local chord aft of the hinge, 0..1
@@ -52,6 +64,7 @@ struct ControlSurface {
     double EtaEnd = 0.0;
     Math::Vec3 HingeAxis{0.0, 1.0, 0.0}; // unit vector, contract reference frame
     ControlSurfaceBinding Binding = ControlSurfaceBinding::Wing;
+    DeflectionLimits Limits;
 };
 
 } // namespace Aeolion::Geometry

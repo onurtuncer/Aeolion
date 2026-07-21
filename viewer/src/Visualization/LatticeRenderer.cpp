@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <map>
 
 namespace Aeolion::Viewer {
 
@@ -96,25 +97,42 @@ void LatticeRenderer::AppendLine(std::vector<float>& lines, const glm::vec3& a, 
                                b.x, b.y, b.z, color.r, color.g, color.b});
 }
 
-void LatticeRenderer::Update(const std::vector<VLM::Panel>& panels, const VLM::SolveResult& result,
+void LatticeRenderer::Update(const std::vector<Solver::Panel>& panels, const Solver::SolveResult& result,
                              const LatticeDisplayOptions& options, double span) {
     const std::size_t n = panels.size();
 
     // --- scalar field per panel (indexed like `panels`, not by station order)
+    // Circulation is per panel, but cl and lift-per-span are per SPANWISE
+    // STATION -- one value for a whole chordwise stack. Those are broadcast
+    // back over every panel sharing the station's strip so a multi-row
+    // lattice colors as coherent spanwise bands rather than leaving all but
+    // the stack's first panel black.
     std::vector<double> field(n, 0.0);
+    auto stripKey = [&](std::size_t panelIndex) {
+        return panels[panelIndex].StripIndex >= 0 ? panels[panelIndex].StripIndex
+                                                  : -static_cast<int>(panelIndex) - 1;
+    };
+    auto broadcastByStrip = [&](auto valueOf) {
+        std::map<int, double> byStrip;
+        for (const auto& station : result.Stations) {
+            if (station.PanelIndex < 0 || static_cast<std::size_t>(station.PanelIndex) >= n) continue;
+            byStrip[stripKey(static_cast<std::size_t>(station.PanelIndex))] = valueOf(station);
+        }
+        for (std::size_t i = 0; i < n; ++i) {
+            const auto found = byStrip.find(stripKey(i));
+            if (found != byStrip.end()) field[i] = found->second;
+        }
+    };
+
     switch (options.Field) {
     case FieldMode::Gamma:
         for (std::size_t i = 0; i < n && i < result.gamma.size(); ++i) field[i] = result.gamma[i];
         break;
     case FieldMode::LocalCl:
-        for (const auto& station : result.Stations)
-            if (station.PanelIndex >= 0 && static_cast<std::size_t>(station.PanelIndex) < n)
-                field[static_cast<std::size_t>(station.PanelIndex)] = station.cl_local;
+        broadcastByStrip([](const Solver::StationResult& s) { return s.cl_local; });
         break;
     case FieldMode::LiftPerSpan:
-        for (const auto& station : result.Stations)
-            if (station.PanelIndex >= 0 && static_cast<std::size_t>(station.PanelIndex) < n)
-                field[static_cast<std::size_t>(station.PanelIndex)] = station.LiftPerSpan;
+        broadcastByStrip([](const Solver::StationResult& s) { return s.LiftPerSpan; });
         break;
     }
 
@@ -138,8 +156,11 @@ void LatticeRenderer::Update(const std::vector<VLM::Panel>& panels, const VLM::S
     std::vector<float> lineVerts;
 
     for (std::size_t i = 0; i < n; ++i) {
-        const VLM::Panel& p = panels[i];
-        double chord = (p.SpanwiseWidth > 0.0) ? p.Area / p.SpanwiseWidth : 0.0;
+        const Solver::Panel& p = panels[i];
+        // The drawn quad is the panel's planform footprint, so it is built
+        // from the projected area -- Area is the curved surface and would
+        // over-length the chord (see Solver::Panel).
+        double chord = (p.SpanwiseWidth > 0.0) ? p.PlanformArea / p.SpanwiseWidth : 0.0;
 
         glm::vec3 a = ToGlm(p.A);
         glm::vec3 b = ToGlm(p.B);

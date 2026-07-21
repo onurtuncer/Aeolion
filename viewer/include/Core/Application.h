@@ -11,7 +11,7 @@
 #include "Renderer/OrbitCamera.h"
 #include "Visualization/LatticeRenderer.h"
 
-#include "Aeolion/VLM/VLM.h"
+#include "Aeolion/Solver/Solver.h"
 
 #include <optional>
 #include <vector>
@@ -39,13 +39,13 @@ private:
     OrbitCamera m_Camera;
     LatticeRenderer m_Lattice;
 
-    VLM::WingParams m_Wing;
-    VLM::FreestreamConditions m_Freestream;
+    Solver::WingParams m_Wing;
+    Solver::FreestreamConditions m_Freestream;
     LatticeDisplayOptions m_Display;
 
-    std::vector<VLM::Panel> m_Panels;
-    VLM::SolveResult m_Result;
-    std::optional<VLM::StabilityDerivatives> m_Derivatives;
+    std::vector<Solver::Panel> m_Panels;
+    Solver::SolveResult m_Result;
+    std::optional<Solver::StabilityDerivatives> m_Derivatives;
 
     bool m_Dirty = true;         // geometry/condition changed -> re-solve + remesh
     bool m_DisplayDirty = false; // display options changed -> remesh only
