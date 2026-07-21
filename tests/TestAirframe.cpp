@@ -22,7 +22,7 @@ namespace {
 namespace PB = Aeolion::PanelBuilder;
 
 std::string FixturePath() {
-    return std::string(AEOLION_TEST_DATA_DIR) + "/AeolionGeometryHandoff-1.4.0.json";
+    return std::string(AEOLION_TEST_DATA_DIR) + "/AeolionGeometryHandoff-1.5.0.json";
 }
 
 // The solver frame is x aft and the contract frame x forward, so a
@@ -74,10 +74,14 @@ void TestCoupledAirframe() {
     std::cout << "  wing control points inside the body: " << buried << " of " << wing.size() << "\n";
 
     // --- the coupled solve --------------------------------------------------
-    double area = 0.0;
-    for (const auto& panel : wing) area += panel.PlanformArea;
+    // GROSS planform area, from the contract's stations -- not the trimmed
+    // panel sum. CL is conventionally referred to the wing extended through
+    // the fuselage to the centreline, so letting the trim shrink the
+    // reference would rescale every coefficient by whatever was cut.
+    const double area = builder.GrossPlanformArea();
     Aeolion::Solver::ReferenceGeometry ref;
     ref.Area = area; ref.Span = contract.Span; ref.Chord = area / contract.Span;
+    std::cout << "  gross planform area " << area << " m^2, trimmed at eta " << builder.TrimEta() << "\n";
     Aeolion::Solver::FreestreamConditions fc;
     fc.Vinf = 25.0; fc.rho = 1.225;
     const double trail = 50.0 * contract.Span;
@@ -144,31 +148,57 @@ void TestCoupledAirframe() {
           "the coupled solve must satisfy its own equations; relative residual " +
               std::to_string(residual / scale));
 
-    std::cout << "  alpha   CL(wing)   CL(w+b)     dCL      Cm(wing)   Cm(w+b)     dCm\n";
+    // --- carryover: does the body pick up the load the trim removed? -------
+    // Trimming deletes the wing's root panels, so a trimmed wing ALONE must
+    // lose lift. The body is what carries that load in reality, so the
+    // coupled answer should come back to roughly what the untrimmed wing
+    // gave. That round trip is the real test of the wing-body coupling: it
+    // is not a comparison against the builder's own arithmetic, and neither
+    // half of it passes on its own.
+    PB::LatticeOptions untrimmedOptions;
+    untrimmedOptions.TrimWingAtBody = false;
+    const auto untrimmedWing = PB::LatticeBuilder(contract, untrimmedOptions).Build();
+    const auto untrimmed =
+        Aeolion::Solver::Prepare(Aeolion::Solver::PanelSystem{untrimmedWing, {}}, trail);
+
+    std::cout << "  alpha  CL untrimmed  CL trimmed  CL trimmed+body   recovery\n";
     double previousDCm = 0.0;
     for (double alphaDeg : {0.0, 4.0, 8.0}) {
         fc.alphaDeg = alphaDeg;
-        const auto alone = Aeolion::Solver::SolveWithSystem(wingOnly, fc, ref);
+        const auto whole = Aeolion::Solver::SolveWithSystem(untrimmed, fc, ref);
+        const auto cut = Aeolion::Solver::SolveWithSystem(wingOnly, fc, ref);
         const auto both = Aeolion::Solver::SolveWithSystem(coupled, fc, ref);
 
-        std::printf("  %5.1f  %9.5f  %9.5f  %+8.5f  %9.5f  %9.5f  %+8.5f\n", alphaDeg, alone.CL, both.CL,
-                    both.CL - alone.CL, alone.Cm, both.Cm, both.Cm - alone.Cm);
+        const double recovery = (both.CL - cut.CL) / (whole.CL - cut.CL);
+        std::printf("  %5.1f  %11.5f  %10.5f  %15.5f  %8.1f%%\n", alphaDeg, whole.CL, cut.CL, both.CL,
+                    100.0 * recovery);
 
         CHECK(std::isfinite(both.CL) && std::isfinite(both.Cm), "the coupled solve must be finite");
-        // The body is a modest perturbation on this airframe, not a rewrite
-        // of the wing's answer: its frontal area is a few percent of the
-        // wing's. A large swing would mean the coupling is wrong, not strong.
-        CHECK(std::fabs(both.CL - alone.CL) < 0.25 * std::max(0.05, std::fabs(alone.CL)),
-              "the body should perturb CL, not dominate it, at alpha=" + std::to_string(alphaDeg));
+        CHECK(cut.CL < whole.CL, "trimming the root must cost lift at alpha=" + std::to_string(alphaDeg));
 
-        if (alphaDeg > 0.0) {
-            // The Munk moment grows with incidence, so the body's pitching
-            // contribution must too -- a body that shifted Cm by a constant
-            // would mean the incidence-dependent part was being missed.
-            CHECK(std::fabs(both.Cm - alone.Cm) > std::fabs(previousDCm),
+        // The body recovers most but NOT all of it -- measured 64% to 75%
+        // over this range, rising with incidence. The shortfall is
+        // structural, not a tuning problem: a source distribution cannot
+        // carry circulation, and lift IS circulation. Sources enforce
+        // tangency and so produce the upwash that loads the exposed wing
+        // harder, which is where the recovered part comes from, but the
+        // bound vorticity that the real wing carries THROUGH the fuselage
+        // has nowhere to live in a source-only body.
+        //
+        // Closing the remaining quarter needs a carry-through vortex
+        // spanning the body at the strength of the innermost exposed strip
+        // -- the classical Pitts/Nielsen/Kaattari treatment -- which is a
+        // constraint between unknowns rather than another panel. Until then
+        // this band records what the model actually does rather than what
+        // slender-body theory says it should.
+        CHECK(recovery > 0.55 && recovery < 0.90,
+              "the body should carry most of the trimmed root load, recovered " +
+                  std::to_string(100.0 * recovery) + "% at alpha=" + std::to_string(alphaDeg));
+
+        if (alphaDeg > 0.0)
+            CHECK(std::fabs(both.Cm - cut.Cm) > std::fabs(previousDCm),
                   "the body's pitching contribution should grow with incidence");
-        }
-        previousDCm = both.Cm - alone.Cm;
+        previousDCm = both.Cm - cut.Cm;
     }
 }
 

@@ -29,6 +29,7 @@
 #include "Aeolion/Geometry/MeshTopology.h"
 #include "Aeolion/Geometry/PlanformStation.h"
 #include "Aeolion/Geometry/PropulsionSpec.h"
+#include "Aeolion/Geometry/WingPlacement.h"
 #include "Aeolion/Solver/WingParams.h"
 
 #include <charconv>
@@ -81,7 +82,8 @@ struct HandoffContract {
     std::vector<ControlSurface> ControlSurfaces;
     MeshTopology Mesh;
     PropulsionSpec Propulsion;
-    BodyGeometry Body; // absent before schema 1.4.0; check Body.IsPresent()
+    BodyGeometry Body;      // absent before schema 1.4.0; check Body.IsPresent()
+    WingPlacement Placement; // absent before schema 1.5.0; check Placement.IsStated
 };
 
 // Thrown for every rejected contract; the message names the offending field.
@@ -384,6 +386,18 @@ inline void RequireSupportedWakeModel(const std::string& name, std::string_view 
             contract.Stations.push_back(station);
         }
         RequireSpanningEtaSequence(etas, "planform.stations");
+
+        // Optional: absent before schema 1.5.0. Without it the wing and the
+        // body have no stated relationship at all (see WingPlacement.h).
+        if (planform.contains("placement")) {
+            const auto& placement = Object(planform, "placement", "planform");
+            const auto& anchor = Object(placement, "root_leading_edge", "planform.placement");
+            contract.Placement.IsStated = true;
+            contract.Placement.RootLeadingEdge =
+                Math::Vec3(Number(anchor, "x", "planform.placement.root_leading_edge"),
+                           Number(anchor, "y", "planform.placement.root_leading_edge"),
+                           Number(anchor, "z", "planform.placement.root_leading_edge"));
+        }
     }
 
     // --- airfoil sections -------------------------------------------------

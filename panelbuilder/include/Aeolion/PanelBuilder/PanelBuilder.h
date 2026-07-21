@@ -150,6 +150,11 @@ inline constexpr double BodyDegenerateArea = 1e-18;
 // enough that a closed body visibly stops satisfying d'Alembert.
 inline constexpr int BodyBaseRadialRings = 4;
 
+// A cut beyond this fraction of semi-span would leave almost no wing; a
+// body that wide means the placement or the radius law is wrong, and
+// returning an empty lattice would be a confusing way to say so.
+inline constexpr double MaxTrimEta = 0.9;
+
 inline constexpr double Two3rds = 2.0 / 3.0; // radial centroid of a triangle spanning the axis to the rim
 
 // Surface tags. The base is tagged apart from the rest of the body because
@@ -230,6 +235,18 @@ struct LatticeOptions {
     // count -- which the dense solve pays for cubically.
     bool IncludeBody = true;
 
+    // Cut the wing lattice off where it enters the fuselage. A lifting
+    // panel whose control point is inside a solid body is not a meaningful
+    // boundary condition, so the default is to trim.
+    //
+    // The cut is at the body radius evaluated at the ROOT LEADING EDGE
+    // station -- a single straight cut rather than one following the body's
+    // curvature down the chord. That is the conventional wing-body
+    // treatment and it is what the placement anchor names, so the two agree
+    // by construction. Requires a stated placement; without one there is no
+    // defined relationship to cut against and nothing is trimmed.
+    bool TrimWingAtBody = true;
+
     // Circumferential divisions around the body. The handoff schema states
     // an axial station list but no azimuthal resolution, so this is the
     // consumer's choice. The body is axisymmetric, but the FLOW around it
@@ -293,6 +310,22 @@ public:
     // degenerate case the solver's blocked system reduces to.
     [[nodiscard]] std::vector<Lattice::SourcePanel> BuildBody() const;
 
+    // Semi-span fraction the wing is trimmed at, or 0 when nothing is
+    // trimmed. Exposed because "how much of the wing did the body eat?" is
+    // a question worth asking without diffing panel counts.
+    [[nodiscard]] double TrimEta() const { return m_TrimEta; }
+
+    // Area of the FULL trapezoidal planform, including the part buried in
+    // the fuselage, computed from the contract's stations rather than by
+    // summing panels.
+    //
+    // This is the reference area coefficients must be normalized by, and it
+    // must NOT follow the trim: CL is conventionally referred to gross
+    // planform area, so letting a trimmed panel sum drive it would rescale
+    // CL by whatever fraction was cut -- a silent redefinition of exactly
+    // the kind Solver::Panel's Area/PlanformArea split exists to prevent.
+    [[nodiscard]] double GrossPlanformArea() const;
+
     // The spanwise panel boundaries this builder will use, in eta. Exposed
     // because "did the mesh land on the control surface edge?" is a
     // question worth being able to ask without rebuilding the lattice.
@@ -346,6 +379,8 @@ private:
     [[nodiscard]] static SpanStation MidStation(const SpanStation& a, const SpanStation& b);
 
     // -- construction-time work, done once --
+    [[nodiscard]] double ComputeTrimEta() const;
+    [[nodiscard]] Solver::Vec3 ComputePlacementOffset() const;
     [[nodiscard]] std::vector<double> ComputeBreakpoints() const;
     [[nodiscard]] std::vector<double> ComputeBoundaryEtas() const;
     [[nodiscard]] std::vector<SpanStation> ComputeSemiSpan() const;
@@ -359,6 +394,8 @@ private:
 
     Geometry::HandoffContract m_Contract;
     LatticeOptions m_Options;
+    Solver::Vec3 m_PlacementOffset{0, 0, 0}; // solver frame, from the contract's root-LE anchor
+    double m_TrimEta = 0.0;                  // semi-span fraction cut away at the body surface
     std::vector<ControlDeflection> m_Deflections;
     std::vector<double> m_BoundaryEtas;
     std::vector<SpanStation> m_SemiSpan;

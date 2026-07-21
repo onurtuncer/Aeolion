@@ -25,8 +25,60 @@ LatticeBuilder::LatticeBuilder(Geometry::HandoffContract contract, LatticeOption
     // Breakpoints and the spanwise march depend only on the contract and
     // the spacing choice, never on a commanded deflection, so they are
     // computed once here rather than per Build().
+    // Order matters. The trim station is a spanwise breakpoint, so it has to
+    // exist before the boundary etas are laid out; the placement offset is a
+    // rigid translation applied afterwards and affects neither.
+    m_TrimEta = ComputeTrimEta();
     m_BoundaryEtas = ComputeBoundaryEtas();
     m_SemiSpan = ComputeSemiSpan();
+    m_PlacementOffset = ComputePlacementOffset();
+}
+
+// Where the wing enters the fuselage, as a semi-span fraction. Zero when
+// there is nothing to trim against.
+double LatticeBuilder::ComputeTrimEta() const {
+    if (!m_Options.TrimWingAtBody) return 0.0;
+    if (!m_Contract.Body.IsPresent() || !m_Contract.Placement.IsStated) return 0.0;
+
+    const double halfSpan = m_Contract.Span * Math::Half;
+    if (halfSpan <= 0.0) return 0.0;
+
+    // The anchor is already in the contract's frame, which is the frame the
+    // body's radius law is stated in -- so no conversion here.
+    const double radius = Geometry::RadiusAt(m_Contract.Body, m_Contract.Placement.RootLeadingEdge.x);
+    const double eta = radius / halfSpan;
+    // A body wider than the wing would leave nothing to solve; refuse to
+    // trim it all away rather than return an empty lattice.
+    return (eta < MaxTrimEta) ? eta : 0.0;
+}
+
+// Rigid translation putting the root leading edge where the contract says.
+// The lattice is otherwise built with the root quarter chord at the origin.
+Solver::Vec3 LatticeBuilder::ComputePlacementOffset() const {
+    if (!m_Contract.Placement.IsStated || m_SemiSpan.empty()) return Solver::Vec3(0, 0, 0);
+
+    const Math::Vec3& anchor = m_Contract.Placement.RootLeadingEdge;
+    // Contract frame is x-forward / z-down, the solver x-aft / z-up: the
+    // same 180-degree rotation about y used for hinge axes and body stations.
+    const Solver::Vec3 target(-anchor.x, anchor.y, -anchor.z);
+
+    // Where the untranslated root leading edge currently sits. Camber
+    // vanishes at psi = 0, so the leading edge is on the chord line.
+    const SpanStation& root = m_SemiSpan.front();
+    const SectionFrame frame = FrameAt(root, 1.0);
+    const Solver::Vec3 current = Solver::Vec3(root.QuarterChordX, 0.0, root.QuarterChordZ) -
+                                 frame.ChordDir * (Math::QuarterChord * root.Chord);
+    return target - current;
+}
+
+double LatticeBuilder::GrossPlanformArea() const {
+    const auto& stations = m_Contract.Stations;
+    const double halfSpan = m_Contract.Span * Math::Half;
+    double half = 0.0;
+    for (std::size_t i = 0; i + 1 < stations.size(); ++i)
+        half += Math::Half * (stations[i].Chord + stations[i + 1].Chord) *
+                (stations[i + 1].Eta - stations[i].Eta) * halfSpan;
+    return 2.0 * half; // both semi-spans
 }
 
 LatticeBuilder& LatticeBuilder::Deflect(const ControlDeflection& deflection) {
@@ -177,6 +229,10 @@ std::vector<double> LatticeBuilder::ComputeBreakpoints() const {
         insertIfDistinct(surface.EtaStart);
         insertIfDistinct(surface.EtaEnd);
     }
+    // The fuselage cut is a breakpoint like any other: a panel edge must
+    // land exactly on it, or the trim would fall wherever the mesh happened
+    // to put a boundary -- the same artifact control surface edges had.
+    insertIfDistinct(m_TrimEta);
     std::ranges::sort(points);
     return points;
 }
@@ -327,7 +383,7 @@ Solver::Vec3 LatticeBuilder::SurfacePoint(const SpanStation& station, double sig
     const Solver::Vec3 quarterChordPoint(station.QuarterChordX, sign * station.y, station.QuarterChordZ);
     const double camber = Geometry::CamberAt(m_Contract.AirfoilSections, station.Eta, psi);
     return quarterChordPoint + frame.ChordDir * ((psi - Math::QuarterChord) * station.Chord) +
-           frame.UpDir * (camber * station.Chord);
+           frame.UpDir * (camber * station.Chord) + m_PlacementOffset;
 }
 
 // `inner`/`outer` are two adjacent semi-span stations (inner has the smaller
@@ -402,10 +458,21 @@ std::vector<Solver::Panel> LatticeBuilder::Build() const {
     panels.reserve((m_SemiSpan.size() - 1) * 2 * static_cast<std::size_t>(rows));
 
     int stripIndex = 0;
-    for (std::size_t k = 0; k + 1 < m_SemiSpan.size(); ++k) // left semi-span
+    // Strips inboard of the fuselage cut are dropped WHOLE. Trimming part
+    // of a chordwise stack would leave the solver reporting a sectional cl
+    // over a section chord that no longer exists (see Panel::StripIndex).
+    const auto buried = [this](const SpanStation& inner, const SpanStation& outer) {
+        return m_TrimEta > 0.0 && Math::Half * (inner.Eta + outer.Eta) < m_TrimEta;
+    };
+
+    for (std::size_t k = 0; k + 1 < m_SemiSpan.size(); ++k) { // left semi-span
+        if (buried(m_SemiSpan[k], m_SemiSpan[k + 1])) continue;
         EmitStrip(m_SemiSpan[k], m_SemiSpan[k + 1], -1.0, stripIndex++, panels);
-    for (std::size_t k = 0; k + 1 < m_SemiSpan.size(); ++k) // right semi-span
+    }
+    for (std::size_t k = 0; k + 1 < m_SemiSpan.size(); ++k) { // right semi-span
+        if (buried(m_SemiSpan[k], m_SemiSpan[k + 1])) continue;
         EmitStrip(m_SemiSpan[k], m_SemiSpan[k + 1], +1.0, stripIndex++, panels);
+    }
 
     std::ranges::sort(panels, {}, [](const Solver::Panel& p) { return p.A.y; });
     return panels;
