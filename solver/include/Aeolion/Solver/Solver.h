@@ -256,7 +256,21 @@ struct LUFactorization {
     std::vector<double> Flat; // row-major N*N (== column-major A^T), overwritten in place with L/U by dgetrf
     std::vector<int> Ipiv;
     bool NearSingular = false;
-    double MinPivotRatio = 1.0; // diagonal-vs-scale heuristic, for a quick eyeballed diagnostic (see also SingularAtIndex)
+    // Smallest LU pivot divided by the largest entry ANYWHERE in A.
+    //
+    // Only meaningful when A's entries are commensurable, which is true of a
+    // pure lifting-surface system and false of a mixed one. A horseshoe's
+    // normal influence per unit circulation has units of 1/length; a source
+    // panel's per unit strength is dimensionless. On a wing-body system the
+    // vortex columns therefore dwarf the source columns -- measured at 149:1
+    // on the reference airframe -- and this ratio collapses by about that
+    // factor while the solve stays exact (relative residual 2e-15).
+    //
+    // So: do not read this as a conditioning number for a coupled system.
+    // Check the residual of A x - b instead, which is what TestAirframe
+    // asserts. See also SingularAtIndex, which is dgetrf's own verdict and
+    // carries no such caveat.
+    double MinPivotRatio = 1.0;
     int SingularAtIndex = 0; // dgetrf's INFO: >0 means U(info,info) is exactly zero -- 0 = fully nonsingular
 };
 

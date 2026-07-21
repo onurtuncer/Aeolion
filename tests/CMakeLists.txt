@@ -18,6 +18,8 @@ aeolion_add_test(TestSourcePanel)
 
 aeolion_add_test(TestPanelBuilder)
 aeolion_add_test(TestBodyPanels)
+aeolion_add_test(TestAirframe)
 # These exercise compiled code rather than headers alone.
 target_link_libraries(TestPanelBuilder PRIVATE aeolion_panelbuilder)
 target_link_libraries(TestBodyPanels PRIVATE aeolion_panelbuilder)
+target_link_libraries(TestAirframe PRIVATE aeolion_panelbuilder)
