@@ -25,24 +25,11 @@ std::string FixturePath() {
     return std::string(AEOLION_TEST_DATA_DIR) + "/AeolionGeometryHandoff-1.4.0.json";
 }
 
-// Radius of the body of revolution at a solver-frame axial position, or 0
-// outside its extent. Linear between stations, as the contract states.
-double BodyRadiusAt(const Aeolion::Geometry::BodyGeometry& body, double x) {
-    const auto& stations = body.Stations;
-    if (stations.empty()) return 0.0;
-    // Stations run nose to tail with contract x decreasing; solver x = -x.
-    const double nose = -stations.front().x;
-    const double tail = -stations.back().x;
-    if (x < nose || x > tail) return 0.0;
-    for (std::size_t i = 0; i + 1 < stations.size(); ++i) {
-        const double x0 = -stations[i].x;
-        const double x1 = -stations[i + 1].x;
-        if (x >= x0 && x <= x1) {
-            const double t = (x1 - x0 > 0.0) ? (x - x0) / (x1 - x0) : 0.0;
-            return stations[i].Radius + (stations[i + 1].Radius - stations[i].Radius) * t;
-        }
-    }
-    return 0.0;
+// The solver frame is x aft and the contract frame x forward, so a
+// solver-frame position is negated before asking the contract's own radius
+// law (Geometry::RadiusAt).
+double BodyRadiusAtSolverX(const Aeolion::Geometry::BodyGeometry& body, double solverX) {
+    return Aeolion::Geometry::RadiusAt(body, -solverX);
 }
 
 void TestCoupledAirframe() {
@@ -82,7 +69,7 @@ void TestCoupledAirframe() {
     for (const auto& panel : wing) {
         const double radius = std::sqrt(panel.ControlPoint.y * panel.ControlPoint.y +
                                         panel.ControlPoint.z * panel.ControlPoint.z);
-        if (radius < BodyRadiusAt(contract.Body, panel.ControlPoint.x)) ++buried;
+        if (radius < BodyRadiusAtSolverX(contract.Body, panel.ControlPoint.x)) ++buried;
     }
     std::cout << "  wing control points inside the body: " << buried << " of " << wing.size() << "\n";
 

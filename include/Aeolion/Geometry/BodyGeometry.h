@@ -21,6 +21,7 @@
 // do about that base; the contract's job is only to state it faithfully.
 #pragma once
 
+#include <cstddef>
 #include <vector>
 
 namespace Aeolion::Geometry {
@@ -36,5 +37,33 @@ struct BodyGeometry {
 
     [[nodiscard]] bool IsPresent() const { return !Stations.empty(); }
 };
+
+// The body's radius law: its radius at an arbitrary axial position, in the
+// CONTRACT's frame (x forward, so the body occupies [-Length, 0]). Linear
+// between stations, which is the interpolation the contract itself
+// specifies -- the same rule PlanformStation.h states for the planform.
+//
+// Returns 0 outside the body's extent, so "is this point inside the body?"
+// reduces to comparing a radius against this without a separate bounds
+// test. That question is what trimming a wing lattice at the fuselage
+// surface is made of, which is why this lives here rather than being
+// re-derived by each consumer.
+[[nodiscard]] inline double RadiusAt(const BodyGeometry& body, double contractX) {
+    const auto& stations = body.Stations;
+    if (stations.empty()) return 0.0;
+    // Stations run nose to tail, so x DECREASES along the list.
+    if (contractX > stations.front().x || contractX < stations.back().x) return 0.0;
+
+    for (std::size_t i = 0; i + 1 < stations.size(); ++i) {
+        const double near = stations[i].x;
+        const double far = stations[i + 1].x;
+        if (contractX <= near && contractX >= far) {
+            const double span = near - far;
+            const double t = (span > 0.0) ? (near - contractX) / span : 0.0;
+            return stations[i].Radius + (stations[i + 1].Radius - stations[i].Radius) * t;
+        }
+    }
+    return 0.0;
+}
 
 } // namespace Aeolion::Geometry
