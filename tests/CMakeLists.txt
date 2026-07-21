@@ -10,6 +10,7 @@ endfunction()
 
 aeolion_add_test(TestSolverCore)
 aeolion_add_test(TestBEMT)
+aeolion_add_test(TestPropContract)
 aeolion_add_test(TestPropVane)
 aeolion_add_test(TestDenseSolve)
 aeolion_add_test(TestHandoffContract)
