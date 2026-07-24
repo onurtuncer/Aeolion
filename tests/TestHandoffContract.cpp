@@ -327,6 +327,85 @@ void TestRejectsMalformed140() {
             [](auto& root) { root["control_surfaces"][1]["deflection_soft_limit_deg"] = 25.0; });
 }
 
+// --- schema 1.8.0: duct, moment reference point, blade airfoil sections,
+// rotation axis --------------------------------------------------------
+// Same rationale as TestSchema140Blocks: unknown-key tolerance means an
+// unwired block parses silently, so these checks are what distinguish
+// "understood" from "ignored".
+void TestSchema180Blocks() {
+    const auto contract = Aeolion::Geometry::LoadHandoff(FixturePath("1.8.0"));
+
+    Check(contract.Duct.IsStated, "1.8.0 carries a duct");
+    CheckClose(contract.Duct.Chord, 0.09135, "duct chord");
+    CheckClose(contract.Duct.InnerDiameter, 0.209, "duct inner diameter");
+    CheckClose(contract.Duct.OuterDiameter, 0.225, "duct outer diameter");
+    CheckClose(contract.Duct.Center.x, -0.46787, "duct center x");
+    CheckClose(contract.Duct.Center.y, 0.0, "duct center y");
+    CheckClose(contract.Duct.Center.z, 0.0, "duct center z");
+
+    Check(contract.MomentReferencePointStated, "1.8.0 carries a moment reference point");
+    CheckClose(contract.MomentReferencePoint.x, -0.2423, "moment reference point x");
+    CheckClose(contract.MomentReferencePoint.y, 0.0, "moment reference point y");
+    CheckClose(contract.MomentReferencePoint.z, 0.0, "moment reference point z");
+
+    CheckClose(contract.Propulsion.RotationAxis.x, 1.0, "rotation axis x");
+    CheckClose(contract.Propulsion.RotationAxis.y, 0.0, "rotation axis y");
+    CheckClose(contract.Propulsion.RotationAxis.z, 0.0, "rotation axis z");
+
+    Check(contract.Propulsion.BladeAirfoilSections.size() == 13, "13 blade airfoil sections");
+    CheckClose(contract.Propulsion.BladeAirfoilSections.front().RadiusFraction, 0.42,
+              "first blade airfoil section r/R matches the hub cutout");
+    CheckClose(contract.Propulsion.BladeAirfoilSections.back().RadiusFraction, 1.0,
+              "last blade airfoil section r/R reaches the tip");
+    for (const auto& section : contract.Propulsion.BladeAirfoilSections) {
+        Check(section.CoefficientsUpper.size() == 6, "6 upper CST coefficients per blade section");
+        Check(section.CoefficientsLower.size() == 6, "6 lower CST coefficients per blade section");
+    }
+
+    // Older documents must keep parsing, with the new fields simply absent.
+    const auto older = Aeolion::Geometry::LoadHandoff(FixturePath("1.5.0"));
+    Check(!older.Duct.IsStated, "1.5.0 has no duct");
+    Check(!older.MomentReferencePointStated, "1.5.0 has no moment reference point");
+    Check(older.Propulsion.BladeAirfoilSections.empty(), "1.5.0 states no blade airfoil sections");
+    CheckClose(older.Propulsion.RotationAxis.x, 0.0, "1.5.0 states no rotation axis");
+    CheckClose(older.Propulsion.RotationAxis.y, 0.0, "1.5.0 states no rotation axis");
+    CheckClose(older.Propulsion.RotationAxis.z, 0.0, "1.5.0 states no rotation axis");
+}
+
+void TestRejectsMalformed180() {
+    const auto rejects = [](const std::string& what, auto mutate) {
+        nlohmann::json root = JsonAt(FixturePath("1.8.0"));
+        mutate(root);
+        try {
+            (void)Aeolion::Geometry::ParseHandoff(root);
+            std::cerr << "FAIL: expected rejection -- " << what << "\n";
+            ++g_Failures;
+        } catch (const ContractError&) {
+        }
+    };
+
+    rejects("a non-positive duct chord", [](auto& root) { root["duct"]["chord"] = 0.0; });
+    rejects("a non-positive duct inner diameter", [](auto& root) { root["duct"]["inner_diameter"] = 0.0; });
+    rejects("a duct outer diameter not exceeding the inner diameter",
+            [](auto& root) { root["duct"]["outer_diameter"] = root["duct"]["inner_diameter"]; });
+    rejects("a duct with no placement", [](auto& root) { root["duct"].erase("placement"); });
+
+    rejects("a zero rotation axis",
+            [](auto& root) { root["propulsion_bemt"]["rotation_axis"] = {0.0, 0.0, 0.0}; });
+    rejects("a two-component rotation axis",
+            [](auto& root) { root["propulsion_bemt"]["rotation_axis"] = {1.0, 0.0}; });
+
+    rejects("a non-CST blade airfoil parameterization",
+            [](auto& root) { root["propulsion_bemt"]["airfoil_sections"][0]["parameterization"] = "bspline"; });
+    rejects("mismatched upper/lower blade CST order", [](auto& root) {
+        root["propulsion_bemt"]["airfoil_sections"][0]["coefficients_lower"] = {0.1, 0.2, 0.3, 0.4};
+    });
+    rejects("out-of-order blade airfoil section r/R",
+            [](auto& root) { root["propulsion_bemt"]["airfoil_sections"][1]["r_over_R"] = 0.1; });
+    rejects("a blade airfoil section r/R above the tip",
+            [](auto& root) { root["propulsion_bemt"]["airfoil_sections"][0]["r_over_R"] = 1.5; });
+}
+
 void TestRejectsMalformed() {
     CheckRejects("a future schema major version",
                  [](auto& root) { root["schema_version"] = "2.0.0"; });
@@ -444,6 +523,8 @@ int main() {
     TestOptionalBlocks();
     TestSchema140Blocks();
     TestRejectsMalformed140();
+    TestSchema180Blocks();
+    TestRejectsMalformed180();
     TestRejectsMalformed();
     TestRejectsMalformedJson();
 

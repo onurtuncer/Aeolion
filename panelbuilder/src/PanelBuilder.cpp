@@ -656,6 +656,120 @@ std::vector<Lattice::SourcePanel> LatticeBuilder::BuildBody() const {
 }
 
 
+// --- duct ---------------------------------------------------------------
+// The duct is disjoint from the fuselage (see Geometry/DuctGeometry.h) and,
+// unlike it, is hollow all the way through: the bore is where the propeller
+// and its slipstream sit, so nothing caps it. What DOES need panels is the
+// material of the ring itself -- modeled here as two concentric cylinders
+// (outer wall, inner bore wall) joined by flat annuli at the leading and
+// trailing edges, since the schema states only a chord and an inner/outer
+// diameter, not a shaped duct-lip profile.
+//
+// FRAME. Same 180-degree-about-y conversion as BuildBody(): contract x
+// forward, solver x aft. The duct's leading edge is the LARGER contract x
+// (further forward), which is the SMALLER solver x, so axial marching below
+// runs leading -> trailing exactly as BuildBody() runs nose -> tail.
+//
+// WINDING. Each wall's outward normal faces away from the material: radially
+// outward for the outer wall, radially INWARD (toward the axis) for the
+// bore wall, forward for the leading cap, aft for the trailing cap --
+// mirroring BuildBody()'s aft-facing base cap.
+std::vector<Lattice::SourcePanel> LatticeBuilder::BuildDuct() const {
+    std::vector<Lattice::SourcePanel> panels;
+    if (!m_Options.IncludeDuct) return panels;
+
+    const Geometry::DuctGeometry& duct = m_Contract.Duct;
+    if (!duct.IsStated) return panels;
+
+    const int sectors = m_Options.DuctCircumferentialPanels;
+    if (sectors < MinDuctSectors) return panels;
+    const int axialPanels = std::max(1, m_Options.DuctAxialPanels);
+
+    const double rInner = duct.InnerDiameter * Math::Half;
+    const double rOuter = duct.OuterDiameter * Math::Half;
+
+    const double xLeadSolver = -(duct.Center.x + duct.Chord * Math::Half);
+    const double xTrailSolver = -(duct.Center.x - duct.Chord * Math::Half);
+    const double yOffset = duct.Center.y;
+    const double zOffset = -duct.Center.z;
+
+    const auto surfacePoint = [&](double x, double r, double angle) {
+        return Solver::Vec3(x, yOffset + r * std::cos(angle), zOffset + r * std::sin(angle));
+    };
+
+    // Identical corner-order fixup to BuildBody()'s finishPanel.
+    const auto finishPanel = [&](Lattice::SourcePanel& panel, const Solver::Vec3& outwardHint) {
+        Solver::Vec3 normal = Solver::Cross(panel.Corners[2] - panel.Corners[0],
+                                            panel.Corners[3] - panel.Corners[1]);
+        if (Solver::Dot(normal, outwardHint) < 0.0) {
+            std::swap(panel.Corners[1], panel.Corners[3]);
+            normal = normal * -1.0;
+        }
+        panel.Area = Math::Half * Solver::Cross(panel.Corners[2] - panel.Corners[0],
+                                                panel.Corners[3] - panel.Corners[1])
+                                      .Norm();
+        panel.Normal = normal.Normalized();
+    };
+
+    const auto centroidOf = [](const std::array<Solver::Vec3, 4>& corners) {
+        Solver::Vec3 centroid(0, 0, 0);
+        for (const Solver::Vec3& corner : corners) centroid = centroid + corner * 0.25;
+        return centroid;
+    };
+
+    // --- cylindrical walls ---------------------------------------------------
+    const auto emitCylinder = [&](double radius, bool facingOutward, const char* surfaceName) {
+        for (int a = 0; a < axialPanels; ++a) {
+            const double xNear = xLeadSolver + (xTrailSolver - xLeadSolver) * a / axialPanels;
+            const double xFar = xLeadSolver + (xTrailSolver - xLeadSolver) * (a + 1) / axialPanels;
+
+            for (int j = 0; j < sectors; ++j) {
+                const double angle0 = Math::Two * std::numbers::pi * j / sectors;
+                const double angle1 = Math::Two * std::numbers::pi * (j + 1) / sectors;
+
+                Lattice::SourcePanel panel;
+                panel.Corners = {surfacePoint(xNear, radius, angle0), surfacePoint(xFar, radius, angle0),
+                                 surfacePoint(xFar, radius, angle1), surfacePoint(xNear, radius, angle1)};
+
+                const double midAngle = Math::Half * (angle0 + angle1);
+                const Solver::Vec3 radial(0.0, std::cos(midAngle), std::sin(midAngle));
+                finishPanel(panel, facingOutward ? radial : radial * -1.0);
+
+                panel.ControlPoint = centroidOf(panel.Corners);
+                panel.Surface = surfaceName;
+                panel.StationIndex = a;
+                if (panel.Area > BodyDegenerateArea) panels.push_back(panel);
+            }
+        }
+    };
+    emitCylinder(rOuter, true, DuctOuterSurfaceName);
+    emitCylinder(rInner, false, DuctInnerSurfaceName);
+
+    // --- end caps: annuli from rInner to rOuter -----------------------------
+    const auto emitCap = [&](double x, const Solver::Vec3& outward, const char* surfaceName,
+                             int stationIndex) {
+        for (int j = 0; j < sectors; ++j) {
+            const double angle0 = Math::Two * std::numbers::pi * j / sectors;
+            const double angle1 = Math::Two * std::numbers::pi * (j + 1) / sectors;
+
+            Lattice::SourcePanel panel;
+            panel.Corners = {surfacePoint(x, rInner, angle0), surfacePoint(x, rOuter, angle0),
+                             surfacePoint(x, rOuter, angle1), surfacePoint(x, rInner, angle1)};
+            finishPanel(panel, outward);
+
+            panel.ControlPoint = centroidOf(panel.Corners);
+            panel.Surface = surfaceName;
+            panel.StationIndex = stationIndex;
+            if (panel.Area > BodyDegenerateArea) panels.push_back(panel);
+        }
+    };
+    emitCap(xLeadSolver, Solver::Vec3(-1.0, 0.0, 0.0), DuctLeadingCapSurfaceName, 0);
+    emitCap(xTrailSolver, Solver::Vec3(1.0, 0.0, 0.0), DuctTrailingCapSurfaceName, axialPanels);
+
+    return panels;
+}
+
+
 // --- base efflux ------------------------------------------------------------
 int ApplyBaseEfflux(std::vector<Lattice::SourcePanel>& body,
                     const std::function<Math::Vec3(const Math::Vec3&)>& slipstream,

@@ -27,6 +27,7 @@
 #include "Aeolion/Geometry/AirfoilSection.h"
 #include "Aeolion/Geometry/BodyGeometry.h"
 #include "Aeolion/Geometry/ControlSurface.h"
+#include "Aeolion/Geometry/DuctGeometry.h"
 #include "Aeolion/Geometry/MeshTopology.h"
 #include "Aeolion/Geometry/PlanformStation.h"
 #include "Aeolion/Geometry/PropulsionSpec.h"
@@ -70,7 +71,7 @@ inline constexpr double BodyLengthConsistencyTolerance = 1e-6;
 inline constexpr double EtaMin = 0.0;
 inline constexpr double EtaMax = 1.0;
 inline constexpr double EtaEndpointTolerance = 1e-12; // eta[0]==0 / eta[n]==1 slack
-inline constexpr double MinHingeAxisNorm = 1e-9;
+inline constexpr double MinAxisNorm = 1e-9; // below this, a stated axis vector is treated as degenerate.
 
 /** Fully parsed, validated content of an aeolion_geometry.json handoff. */
 struct HandoffContract {
@@ -86,6 +87,9 @@ struct HandoffContract {
     PropulsionSpec Propulsion;
     BodyGeometry Body;      ///< Absent before schema 1.4.0; check Body.IsPresent().
     WingPlacement Placement; ///< Absent before schema 1.5.0; check Placement.IsStated.
+    DuctGeometry Duct;       ///< Absent before schema 1.8.0; check Duct.IsStated. Disjoint from Body.
+    Math::Vec3 MomentReferencePoint{0.0, 0.0, 0.0}; ///< Absent before schema 1.8.0; check MomentReferencePointStated.
+    bool MomentReferencePointStated = false;
 };
 
 /** Thrown for every rejected contract; the message names the offending field. */
@@ -223,16 +227,23 @@ inline void RequireSpanningEtaSequence(const std::vector<double>& etas, std::str
     return digest;
 }
 
-[[nodiscard]] inline Math::Vec3 HingeAxis(const nlohmann::json& node, std::string_view where) {
-    const auto& array = Array(node, "hinge_axis", where);
+// Reads a 3-element numeric array field into a Vec3, unnormalized. Shared by
+// every axis-shaped field the contract carries (hinge axes, the propeller's
+// rotation axis) so the "3 components, all numeric" check is written once.
+[[nodiscard]] inline Math::Vec3 Vec3Array(const nlohmann::json& node, const std::string& key,
+                                          std::string_view where) {
+    const auto& array = Array(node, key, where);
     if (array.size() != 3)
-        throw ContractError(std::format("{}.hinge_axis: expected 3 components, got {}", where, array.size()));
+        throw ContractError(std::format("{}.{}: expected 3 components, got {}", where, key, array.size()));
     for (std::size_t i = 0; i < 3; ++i)
         if (!array[i].is_number())
-            throw ContractError(std::format("{}.hinge_axis[{}]: expected a number", where, i));
+            throw ContractError(std::format("{}.{}[{}]: expected a number", where, key, i));
+    return Math::Vec3(array[0].get<double>(), array[1].get<double>(), array[2].get<double>());
+}
 
-    const Math::Vec3 axis(array[0].get<double>(), array[1].get<double>(), array[2].get<double>());
-    if (axis.Norm() < MinHingeAxisNorm)
+[[nodiscard]] inline Math::Vec3 HingeAxis(const nlohmann::json& node, std::string_view where) {
+    const Math::Vec3 axis = Vec3Array(node, "hinge_axis", where);
+    if (axis.Norm() < MinAxisNorm)
         throw ContractError(std::format("{}.hinge_axis: must not be the zero vector", where));
     return axis.Normalized(); // direction is all that matters; magnitude is not part of the contract
 }
@@ -333,6 +344,29 @@ inline void RequireSupportedWakeModel(const std::string& name, std::string_view 
             "body.length {} disagrees with the {} its stations span; one of the two is stale", body.Length,
             covered));
     return body;
+}
+
+// The duct (schema 1.8.0+): a single annular ring, disjoint from the main
+// body -- see DuctGeometry.h for why this replaced the open-tail convention.
+[[nodiscard]] inline DuctGeometry ParseDuct(const nlohmann::json& node) {
+    DuctGeometry duct;
+    duct.IsStated = true;
+    duct.Chord = Number(node, "chord", "duct");
+    RequirePositive(duct.Chord, "duct.chord");
+    duct.InnerDiameter = Number(node, "inner_diameter", "duct");
+    RequirePositive(duct.InnerDiameter, "duct.inner_diameter");
+    duct.OuterDiameter = Number(node, "outer_diameter", "duct");
+    RequirePositive(duct.OuterDiameter, "duct.outer_diameter");
+    if (!(duct.OuterDiameter > duct.InnerDiameter))
+        throw ContractError(std::format("duct.outer_diameter ({}) must exceed duct.inner_diameter ({})",
+                                        duct.OuterDiameter, duct.InnerDiameter));
+
+    const auto& placement = Object(node, "placement", "duct");
+    const auto& center = Object(placement, "center", "duct.placement");
+    duct.Center = Math::Vec3(Number(center, "x", "duct.placement.center"),
+                             Number(center, "y", "duct.placement.center"),
+                             Number(center, "z", "duct.placement.center"));
+    return duct;
 }
 
 } // namespace Detail
@@ -482,6 +516,21 @@ inline void RequireSupportedWakeModel(const std::string& name, std::string_view 
     // Optional: absent before schema 1.4.0, and a flying wing has none.
     if (root.contains("body")) contract.Body = ParseBody(Object(root, "body", "$"));
 
+    // --- duct ---------------------------------------------------------
+    // Optional: absent before schema 1.8.0, and an unducted propeller has
+    // none. Disjoint from `body` -- see DuctGeometry.h.
+    if (root.contains("duct")) contract.Duct = ParseDuct(Object(root, "duct", "$"));
+
+    // --- moment reference point ---------------------------------------
+    // Optional: absent before schema 1.8.0.
+    if (root.contains("moment_reference_point")) {
+        const auto& mrp = Object(root, "moment_reference_point", "$");
+        contract.MomentReferencePointStated = true;
+        contract.MomentReferencePoint = Math::Vec3(Number(mrp, "x", "moment_reference_point"),
+                                                    Number(mrp, "y", "moment_reference_point"),
+                                                    Number(mrp, "z", "moment_reference_point"));
+    }
+
     // --- propulsion -------------------------------------------------------
     // Optional: an unpowered glider has no propeller block.
     if (root.contains("propulsion_bemt")) {
@@ -522,6 +571,49 @@ inline void RequireSupportedWakeModel(const std::string& name, std::string_view 
                                                 station.RadiusFraction,
                                                 contract.Propulsion.BladeStations.back().RadiusFraction));
             contract.Propulsion.BladeStations.push_back(station);
+        }
+
+        // RotationAxis arrived in schema 1.8.0; older documents leave it the
+        // zero vector, same as the rest of this block's 1.8.0 additions.
+        if (propulsion.contains("rotation_axis")) {
+            const Math::Vec3 axis = Vec3Array(propulsion, "rotation_axis", "propulsion_bemt");
+            if (axis.Norm() < MinAxisNorm)
+                throw ContractError("propulsion_bemt.rotation_axis: must not be the zero vector");
+            contract.Propulsion.RotationAxis = axis.Normalized();
+        }
+
+        // Blade airfoil shape arrived in schema 1.8.0; older documents state
+        // only chord/twist per station, with no section shape at all. Sections
+        // are keyed by r_over_R rather than eta -- radial position along the
+        // blade, not semi-span position along the wing -- so they are not
+        // parsed as AirfoilSection/RequireSpanningEtaSequence: unlike the wing,
+        // a blade need not have a section at r/R = 0 (the hub cutout starts it
+        // higher) or r/R = 1.
+        if (propulsion.contains("airfoil_sections")) {
+            const auto& sections = Array(propulsion, "airfoil_sections", "propulsion_bemt");
+            for (std::size_t i = 0; i < sections.size(); ++i) {
+                const auto where = std::format("propulsion_bemt.airfoil_sections[{}]", i);
+                const auto parameterization = String(sections[i], "parameterization", where);
+                if (parameterization != "CST")
+                    throw ContractError(std::format("{}.parameterization: expected 'CST', got '{}'", where,
+                                                    parameterization));
+
+                BladeAirfoilSection section;
+                section.RadiusFraction = Number(sections[i], "r_over_R", where);
+                RequireInRange(section.RadiusFraction, 0.0, 1.0, std::format("{}.r_over_R", where));
+                section.CoefficientsUpper = Coefficients(sections[i], "coefficients_upper", where);
+                section.CoefficientsLower = Coefficients(sections[i], "coefficients_lower", where);
+                if (section.CoefficientsUpper.size() != section.CoefficientsLower.size())
+                    throw ContractError(std::format(
+                        "{}: upper and lower surfaces must share a CST order, got {} and {} coefficients", where,
+                        section.CoefficientsUpper.size(), section.CoefficientsLower.size()));
+                if (i > 0 &&
+                    !(section.RadiusFraction > contract.Propulsion.BladeAirfoilSections.back().RadiusFraction))
+                    throw ContractError(std::format(
+                        "{}: r_over_R must strictly increase, but {} follows {}", where, section.RadiusFraction,
+                        contract.Propulsion.BladeAirfoilSections.back().RadiusFraction));
+                contract.Propulsion.BladeAirfoilSections.push_back(std::move(section));
+            }
         }
     }
 

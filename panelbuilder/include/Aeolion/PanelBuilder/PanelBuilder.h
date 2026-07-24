@@ -162,6 +162,17 @@ inline constexpr double Two3rds = 2.0 / 3.0; // radial centroid of a triangle sp
 inline constexpr const char* BodySurfaceName = "fuselage";
 inline constexpr const char* BodyBaseSurfaceName = "fuselage_base";
 
+// Fewest azimuthal divisions that still describe a closed duct ring rather
+// than a sliver -- same reasoning as MinBodySectors.
+inline constexpr int MinDuctSectors = 3;
+
+// Surface tags for the duct's four faces: the outer wall, the inner bore
+// wall the slipstream passes through, and the two annular end caps.
+inline constexpr const char* DuctOuterSurfaceName = "duct_outer";
+inline constexpr const char* DuctInnerSurfaceName = "duct_inner";
+inline constexpr const char* DuctLeadingCapSurfaceName = "duct_leading_cap";
+inline constexpr const char* DuctTrailingCapSurfaceName = "duct_trailing_cap";
+
 // Fewest panels any sub-interval may receive when a section's budget is
 // split at a breakpoint.
 inline constexpr int MinPanelsPerSubInterval = 1;
@@ -284,6 +295,25 @@ struct LatticeOptions {
      * to resolve it circumferentially rather than treat it as rings.
      */
     int BodyCircumferentialPanels = 16;
+
+    /**
+     * Whether to panel the duct at all. Cheap relative to the fuselage, but
+     * still not free, and a contract with no `duct` block builds an empty
+     * list regardless of this flag.
+     */
+    bool IncludeDuct = true;
+
+    /** Circumferential divisions around the duct, same role as BodyCircumferentialPanels. */
+    int DuctCircumferentialPanels = 16;
+
+    /**
+     * Axial divisions along the duct's chord, on the two cylindrical walls
+     * only (the end caps are a single radial band -- see BuildDuct()). The
+     * duct schema states a single chord, not a station list like the
+     * fuselage, so how finely to resolve that chord axially is this
+     * consumer's choice rather than the producer's.
+     */
+    int DuctAxialPanels = 4;
 };
 
 // --- base efflux ------------------------------------------------------------
@@ -358,6 +388,16 @@ public:
      * degenerate case the solver's blocked system reduces to.
      */
     [[nodiscard]] std::vector<Lattice::SourcePanel> BuildBody() const;
+
+    /**
+     * The duct as source panels: two concentric cylinders (an outer wall and
+     * an inner bore wall, straight-walled over the stated chord -- see
+     * Geometry::DuctGeometry.h for what the schema does and does not carry),
+     * capped front and back by annuli. Disjoint from BuildBody()'s fuselage,
+     * with its own surface tags. Empty when the contract carries no duct or
+     * LatticeOptions::IncludeDuct is false.
+     */
+    [[nodiscard]] std::vector<Lattice::SourcePanel> BuildDuct() const;
 
     /**
      * Semi-span fraction the wing is trimmed at, or 0 when nothing is
