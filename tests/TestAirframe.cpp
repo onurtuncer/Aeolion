@@ -25,6 +25,10 @@ std::string FixturePath() {
     return std::string(AEOLION_TEST_DATA_DIR) + "/AeolionGeometryHandoff-1.5.0.json";
 }
 
+std::string FixturePath180() {
+    return std::string(AEOLION_TEST_DATA_DIR) + "/AeolionGeometryHandoff-1.8.0.json";
+}
+
 // The solver frame is x aft and the contract frame x forward, so a
 // solver-frame position is negated before asking the contract's own radius
 // law (Geometry::RadiusAt).
@@ -225,10 +229,80 @@ void TestCoupledAirframe() {
     }
 }
 
+// The viewer's Application keeps ONE LatticeBuilder alive for the whole
+// session and, on every frame a control-surface slider changes,
+// ClearDeflections()s + Deflect()s + Build()s it again, re-solving the SAME
+// cached fuselage/duct source panels each time (see
+// viewer/src/Core/Application.cpp::Resolve()). TestPanelBuilder.cpp already
+// proves a single Deflect().Build() moves the WING lattice; this checks the
+// pattern the viewer actually runs -- repeated rebuilds of one builder,
+// solved coupled with the body and the duct -- because that repetition is
+// exactly what was untested before the viewer started doing it every frame.
+void TestControlDeflectionMovesCoupledSolve() {
+    const auto contract = Aeolion::Geometry::LoadHandoff(FixturePath180());
+
+    std::size_t aileronIndex = contract.ControlSurfaces.size();
+    for (std::size_t i = 0; i < contract.ControlSurfaces.size(); ++i)
+        if (contract.ControlSurfaces[i].Name == "aileron") { aileronIndex = i; break; }
+    CHECK(aileronIndex < contract.ControlSurfaces.size(), "the 1.8.0 fixture should carry an aileron");
+
+    PB::LatticeBuilder builder(contract);
+    const auto body = builder.BuildBody();
+    const auto duct = builder.BuildDuct();
+    CHECK(!body.empty(), "the 1.8.0 fixture should produce body panels");
+    CHECK(!duct.empty(), "the 1.8.0 fixture should produce duct panels");
+    std::vector<Aeolion::Lattice::SourcePanel> sources = body;
+    sources.insert(sources.end(), duct.begin(), duct.end());
+
+    const double area = builder.GrossPlanformArea();
+    Aeolion::Solver::ReferenceGeometry ref;
+    ref.Area = area; ref.Span = contract.Span; ref.Chord = area / contract.Span;
+    Aeolion::Solver::FreestreamConditions fc;
+    fc.Vinf = 25.0; fc.rho = 1.225; fc.alphaDeg = 4.0;
+    const double trail = 50.0 * contract.Span;
+
+    const auto solve = [&](const std::vector<Aeolion::Lattice::Panel>& wing) {
+        const auto prepared =
+            Aeolion::Solver::Prepare(Aeolion::Solver::PanelSystem{wing, sources}, trail);
+        return Aeolion::Solver::SolveWithSystem(prepared, fc, ref);
+    };
+
+    // Three states on the SAME builder instance, in sequence -- exactly what
+    // Application::Resolve() runs across consecutive frames as a slider moves.
+    const auto neutral = solve(builder.Build());
+
+    builder.Deflect(PB::Antisymmetric(aileronIndex, 10.0));
+    const auto deflected = solve(builder.Build());
+
+    std::cout << "control deflection: neutral CL=" << neutral.CL << " Croll=" << neutral.Croll
+              << "  deflected CL=" << deflected.CL << " Croll=" << deflected.Croll << "\n";
+
+    // An antisymmetric aileron command must roll the coupled airframe...
+    CHECK(std::fabs(deflected.Croll - neutral.Croll) > 1e-3,
+          "deflecting the aileron through the cached LatticeBuilder must move the coupled Croll, got neutral=" +
+              std::to_string(neutral.Croll) + " deflected=" + std::to_string(deflected.Croll));
+    // ...without changing how much lift the coupled airframe makes overall.
+    CHECK(std::fabs(deflected.CL - neutral.CL) < 0.02 * std::fabs(neutral.CL) + 1e-6,
+          "an antisymmetric aileron deflection should leave total coupled CL essentially unchanged, got neutral=" +
+              std::to_string(neutral.CL) + " deflected=" + std::to_string(deflected.CL));
+
+    // ClearDeflections() on the same builder must reproduce the ORIGINAL
+    // neutral answer exactly -- state must not leak between Build() calls,
+    // since Application::Resolve() calls ClearDeflections() before every
+    // Deflect() precisely to prevent that.
+    builder.ClearDeflections();
+    const auto cleared = solve(builder.Build());
+    CHECK(std::fabs(cleared.CL - neutral.CL) < 1e-12,
+          "ClearDeflections() must exactly reproduce the neutral CL");
+    CHECK(std::fabs(cleared.Croll - neutral.Croll) < 1e-12,
+          "ClearDeflections() must exactly reproduce the neutral Croll");
+}
+
 } // namespace
 
 int main() {
     TestCoupledAirframe();
+    TestControlDeflectionMovesCoupledSolve();
 
     if (failures == 0) { std::cout << "PASS: TestAirframe\n"; return 0; }
     std::cerr << failures << " check(s) failed in TestAirframe\n";

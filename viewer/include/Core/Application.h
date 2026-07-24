@@ -13,6 +13,7 @@
 #include "Visualization/LatticeRenderer.h"
 
 #include "Aeolion/Geometry/HandoffContract.h"
+#include "Aeolion/PanelBuilder/PanelBuilder.h"
 #include "Aeolion/Solver/Solver.h"
 
 #include <optional>
@@ -53,24 +54,37 @@ private:
     Solver::FreestreamConditions m_Freestream;
     LatticeDisplayOptions m_Display;
 
-    // Handoff-geometry mode: the lattice is built once from the contract
-    // (it does not respond to the Planform sliders, which drive m_Wing
-    // instead) and cached here; only the freestream re-solves per frame.
+    // Handoff-geometry mode: the geometry comes from the contract (it does
+    // not respond to the Planform sliders, which drive m_Wing instead)
+    // rather than being rebuilt from scratch. The builder itself is kept
+    // (not just its Build() output) so a control-surface deflection can
+    // re-run Build() cheaply without re-deriving the planform march.
     bool m_UseHandoff = false;
     Geometry::HandoffContract m_Contract;
+    std::optional<PanelBuilder::LatticeBuilder> m_LatticeBuilder;
     std::vector<Lattice::SourcePanel> m_BodyPanels;
     std::vector<Lattice::SourcePanel> m_DuctPanels;
     // Fuselage + duct combined: what the solve and the renderer actually
     // consume. Cached once alongside m_BodyPanels/m_DuctPanels (kept
     // separate for the per-surface panel-count readout in DrawUI()) rather
     // than reassembled every Resolve(), same as the rest of handoff mode's
-    // "build once, only the freestream re-solves per frame" caching.
+    // "build once, only the freestream re-solves per frame" caching. Neither
+    // fuselage nor duct move with a control deflection, so both stay fixed
+    // for the contract's lifetime, unlike m_Panels.
     std::vector<Lattice::SourcePanel> m_SourcePanels;
     double m_ReferenceArea = 0.0;
     double m_ReferenceSpan = 0.0;
     double m_TrimEta = 0.0;
     Solver::Vec3 m_SceneCenter{0.0, 0.0, 0.0};
     double m_SceneRadius = 1.0;
+
+    // Commanded deflection per HandoffContract::ControlSurfaces index, in
+    // degrees; only meaningful where Binding == Wing (see DrawUI() and
+    // Resolve()). Sized to m_Contract.ControlSurfaces on every LoadHandoff(),
+    // and indexed the same way LatticeBuilder::ControlDeflection is, so a
+    // slider maps directly onto Deflect() without a lookup.
+    std::vector<double> m_RightDeflectionDeg;
+    std::vector<double> m_LeftDeflectionDeg;
 
     std::string m_ScreenshotPath;
 

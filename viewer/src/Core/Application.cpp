@@ -29,6 +29,11 @@ constexpr int DefaultWindowHeight = 900;
 constexpr float RotateDegPerPixel = 0.25f;
 constexpr float CameraFrameDistanceFactor = 1.4f; // orbit distance = this * span when framing
 
+// Deflection slider range used when a control surface states no
+// deflection_limits_deg (schema < 1.4.0, where MinDeg == MaxDeg == 0 means
+// "not stated" rather than "cannot move" -- see ControlSurface.h).
+constexpr double DefaultDeflectionLimitDeg = 30.0;
+
 // ImGui sliders for the solver's double-typed parameters.
 bool SliderD(const char* label, double* value, double min, double max, const char* format = "%.3f") {
     return ImGui::SliderScalar(label, ImGuiDataType_Double, value, &min, &max, format);
@@ -99,16 +104,22 @@ Application::~Application() {
 
 void Application::LoadHandoff(const std::string& geometryPath) {
     m_Contract = Geometry::LoadHandoff(geometryPath);
-    PanelBuilder::LatticeBuilder builder(m_Contract);
-    m_Panels = builder.Build();
-    m_BodyPanels = builder.BuildBody();
-    m_DuctPanels = builder.BuildDuct();
+    m_LatticeBuilder.emplace(m_Contract);
+    m_Panels = m_LatticeBuilder->Build();
+    m_BodyPanels = m_LatticeBuilder->BuildBody();
+    m_DuctPanels = m_LatticeBuilder->BuildDuct();
     m_SourcePanels = m_BodyPanels;
     m_SourcePanels.insert(m_SourcePanels.end(), m_DuctPanels.begin(), m_DuctPanels.end());
-    m_ReferenceArea = builder.GrossPlanformArea();
+    m_ReferenceArea = m_LatticeBuilder->GrossPlanformArea();
     m_ReferenceSpan = m_Contract.Span;
-    m_TrimEta = builder.TrimEta();
+    m_TrimEta = m_LatticeBuilder->TrimEta();
     m_UseHandoff = true;
+
+    // Fresh contract, fresh commands: indices from a previous handoff would
+    // otherwise dangle against this one's (possibly shorter, differently
+    // ordered) ControlSurfaces list.
+    m_RightDeflectionDeg.assign(m_Contract.ControlSurfaces.size(), 0.0);
+    m_LeftDeflectionDeg.assign(m_Contract.ControlSurfaces.size(), 0.0);
 
     // Bounding sphere of the whole airframe (wing + fuselage + duct), for
     // framing -- the wing's own span alone would leave the fuselage's
@@ -147,8 +158,22 @@ void Application::Resolve() {
     double trail;
 
     if (m_UseHandoff) {
-        // Geometry is fixed once loaded (no Planform sliders in this mode);
-        // only the freestream changes, so re-solve the same panel lists.
+        // The planform itself is fixed once loaded (no Planform sliders in
+        // this mode), but a control-surface deflection reshapes the wing
+        // panels, so those are rebuilt from the cached LatticeBuilder every
+        // Resolve() -- cheap relative to the solve, since it skips the
+        // spanwise march (done once in LoadHandoff()) and only redoes the
+        // per-Build() chordwise/hinge work.
+        m_LatticeBuilder->ClearDeflections();
+        for (std::size_t i = 0; i < m_Contract.ControlSurfaces.size(); ++i) {
+            if (m_Contract.ControlSurfaces[i].Binding != Geometry::ControlSurfaceBinding::Wing) continue;
+            const double rightDeg = m_RightDeflectionDeg[i];
+            const double leftDeg = m_LeftDeflectionDeg[i];
+            if (rightDeg != 0.0 || leftDeg != 0.0)
+                m_LatticeBuilder->Deflect({i, rightDeg, leftDeg});
+        }
+        m_Panels = m_LatticeBuilder->Build();
+
         ref.Area = m_ReferenceArea;
         ref.Span = m_ReferenceSpan;
         ref.Chord = m_ReferenceArea / m_ReferenceSpan;
@@ -214,6 +239,35 @@ void Application::DrawUI() {
             ImGui::Text("body panels: %zu", m_BodyPanels.size());
             ImGui::Text("duct panels: %zu", m_DuctPanels.size());
             ImGui::Text("trimmed at eta: %.3f", m_TrimEta);
+        }
+        if (ImGui::CollapsingHeader("Control surfaces", ImGuiTreeNodeFlags_DefaultOpen)) {
+            bool any = false;
+            for (std::size_t i = 0; i < m_Contract.ControlSurfaces.size(); ++i) {
+                const Geometry::ControlSurface& surface = m_Contract.ControlSurfaces[i];
+                // Duct-jet vanes never enter the wing lattice (their eta is a
+                // duct-exit radius fraction, not a semi-span fraction -- see
+                // ControlSurface.h) and PanelBuilder builds no vane panels for
+                // them, so there is nothing here to deflect.
+                if (surface.Binding != Geometry::ControlSurfaceBinding::Wing) continue;
+                any = true;
+
+                // Hard limits where the contract states them (schema >= 1.4.0);
+                // a generous default otherwise, since MinDeg == MaxDeg == 0
+                // means "not stated", not "cannot move".
+                const bool hasLimits = surface.Limits.MaxDeg > surface.Limits.MinDeg;
+                const double lo = hasLimits ? surface.Limits.MinDeg : -DefaultDeflectionLimitDeg;
+                const double hi = hasLimits ? surface.Limits.MaxDeg : DefaultDeflectionLimitDeg;
+
+                ImGui::PushID(static_cast<int>(i));
+                ImGui::Text("%s (eta %.2f-%.2f)", surface.Name.c_str(), surface.EtaStart, surface.EtaEnd);
+                // Same Right/Left addressing as PanelBuilder::ControlDeflection:
+                // equal angles give a flap/elevator, opposite an aileron, and
+                // nothing stops any other combination.
+                m_Dirty |= SliderD("Right [deg]", &m_RightDeflectionDeg[i], lo, hi, "%.1f");
+                m_Dirty |= SliderD("Left [deg]", &m_LeftDeflectionDeg[i], lo, hi, "%.1f");
+                ImGui::PopID();
+            }
+            if (!any) ImGui::TextDisabled("(no wing-bound control surfaces)");
         }
     } else if (ImGui::CollapsingHeader("Planform", ImGuiTreeNodeFlags_DefaultOpen)) {
         m_Dirty |= SliderD("Span [m]", &m_Wing.Span, 0.5, 12.0);
