@@ -102,21 +102,25 @@ void Application::LoadHandoff(const std::string& geometryPath) {
     PanelBuilder::LatticeBuilder builder(m_Contract);
     m_Panels = builder.Build();
     m_BodyPanels = builder.BuildBody();
+    m_DuctPanels = builder.BuildDuct();
+    m_SourcePanels = m_BodyPanels;
+    m_SourcePanels.insert(m_SourcePanels.end(), m_DuctPanels.begin(), m_DuctPanels.end());
     m_ReferenceArea = builder.GrossPlanformArea();
     m_ReferenceSpan = m_Contract.Span;
     m_TrimEta = builder.TrimEta();
     m_UseHandoff = true;
 
-    // Bounding sphere of the whole airframe (wing + body), for framing --
-    // the wing's own span alone would leave the fuselage's nose/tail cut off
-    // whenever the wing is placed near one end of the body.
+    // Bounding sphere of the whole airframe (wing + fuselage + duct), for
+    // framing -- the wing's own span alone would leave the fuselage's
+    // nose/tail (or a duct sitting aft of it) cut off whenever the wing is
+    // placed near one end of the body.
     Solver::Vec3 lo(1e30, 1e30, 1e30), hi(-1e30, -1e30, -1e30);
     auto accumulate = [&](const Solver::Vec3& p) {
         lo = Solver::Vec3(std::min(lo.x, p.x), std::min(lo.y, p.y), std::min(lo.z, p.z));
         hi = Solver::Vec3(std::max(hi.x, p.x), std::max(hi.y, p.y), std::max(hi.z, p.z));
     };
     for (const auto& panel : m_Panels) { accumulate(panel.A); accumulate(panel.B); }
-    for (const auto& panel : m_BodyPanels)
+    for (const auto& panel : m_SourcePanels)
         for (const auto& corner : panel.Corners) accumulate(corner);
 
     m_SceneCenter = (lo + hi) * 0.5;
@@ -150,7 +154,7 @@ void Application::Resolve() {
         ref.Chord = m_ReferenceArea / m_ReferenceSpan;
         trail = Solver::DefaultTrailSpanFactor * m_ReferenceSpan;
 
-        const Solver::PanelSystem system{m_Panels, m_BodyPanels};
+        const Solver::PanelSystem system{m_Panels, m_SourcePanels};
         const Solver::PreparedSystem prepared = Solver::Prepare(system, trail);
         m_Result = Solver::SolveWithSystem(prepared, m_Freestream, ref);
     } else {
@@ -208,6 +212,7 @@ void Application::DrawUI() {
             ImGui::Text("schema: %s", m_Contract.SchemaVersion.c_str());
             ImGui::Text("wing panels: %zu", m_Panels.size());
             ImGui::Text("body panels: %zu", m_BodyPanels.size());
+            ImGui::Text("duct panels: %zu", m_DuctPanels.size());
             ImGui::Text("trimmed at eta: %.3f", m_TrimEta);
         }
     } else if (ImGui::CollapsingHeader("Planform", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -334,7 +339,7 @@ void Application::Run(int maxFrames) {
         }
         if (m_DisplayDirty) {
             double span = m_UseHandoff ? m_SceneRadius : m_Wing.Span;
-            m_Lattice.Update(m_Panels, m_Result, m_Display, span, m_BodyPanels);
+            m_Lattice.Update(m_Panels, m_Result, m_Display, span, m_SourcePanels);
             m_DisplayDirty = false;
         }
 

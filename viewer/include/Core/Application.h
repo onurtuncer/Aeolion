@@ -59,6 +59,13 @@ private:
     bool m_UseHandoff = false;
     Geometry::HandoffContract m_Contract;
     std::vector<Lattice::SourcePanel> m_BodyPanels;
+    std::vector<Lattice::SourcePanel> m_DuctPanels;
+    // Fuselage + duct combined: what the solve and the renderer actually
+    // consume. Cached once alongside m_BodyPanels/m_DuctPanels (kept
+    // separate for the per-surface panel-count readout in DrawUI()) rather
+    // than reassembled every Resolve(), same as the rest of handoff mode's
+    // "build once, only the freestream re-solves per frame" caching.
+    std::vector<Lattice::SourcePanel> m_SourcePanels;
     double m_ReferenceArea = 0.0;
     double m_ReferenceSpan = 0.0;
     double m_TrimEta = 0.0;

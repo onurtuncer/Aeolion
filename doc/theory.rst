@@ -7,15 +7,20 @@ compose into a single wing-body-propeller solve. Notation follows the
 ``Vinf``, ``gamma``, ``rho``, ``Vec3.x/y/z``).
 
 .. figure:: _static/viewer_airframe.png
-   :alt: aeolion_viewer rendering of the wing and fuselage lattice for a real geometry handoff
+   :alt: aeolion_viewer rendering of the wing, fuselage, and duct lattice for a real geometry handoff
    :width: 100%
 
-   ``aeolion_viewer`` rendering the coupled wing + fuselage lattice built by
-   ``PanelBuilder::LatticeBuilder`` from the real 1.5.0 geometry handoff
-   fixture (``tests/Data/AeolionGeometryHandoff-1.5.0.json``): 352 wing
-   panels (colored by circulation :math:`\gamma`) and 448 fuselage source
-   panels (tan), solved at :math:`\alpha=5^\circ`. The wing root leading
-   edge is placed at the contract's stated anchor
+   ``aeolion_viewer`` rendering the coupled wing + fuselage + duct lattice
+   built by ``PanelBuilder::LatticeBuilder`` from the real 1.8.0 geometry
+   handoff fixture (``tests/Data/AeolionGeometryHandoff-1.8.0.json``): 352
+   wing panels (colored by circulation :math:`\gamma`), 448 fuselage source
+   panels (tan), and 160 duct source panels (tan, the ring aft of the
+   fuselage) -- all one coupled potential-flow solve, at
+   :math:`\alpha=5^\circ`. The duct is disjoint from the fuselage
+   (``Geometry::DuctGeometry``, schema >= 1.8.0), paneled as two concentric
+   cylinders capped front and back (``LatticeBuilder::BuildDuct()``), bore
+   left open for the propeller/slipstream. The wing root leading edge is
+   placed at the contract's stated anchor
    (``planform.placement.root_leading_edge``, schema >= 1.5.0), about 42%
    aft of the nose; the body's local radius there still trims
    :math:`\eta=0.092` of the wing root, restored by the carry-through

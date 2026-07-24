@@ -8,11 +8,12 @@ viewer visualizes the lattice and the live solve. Built incrementally and
 validated against closed-form theory at each stage rather than assumed
 correct — see "Validation" below.
 
-![aeolion_viewer rendering the wing + fuselage lattice for a real geometry handoff, colored by circulation, with the solved coefficients shown live](doc/_static/viewer_airframe.png)
+![aeolion_viewer rendering the wing + fuselage + duct lattice for a real geometry handoff, colored by circulation, with the solved coefficients shown live](doc/_static/viewer_airframe.png)
 
-*`aeolion_viewer` rendering the coupled wing + fuselage lattice built by
-`PanelBuilder::LatticeBuilder` from a real geometry handoff (352 wing
-panels colored by circulation `gamma`, 448 fuselage source panels). See
+*`aeolion_viewer` rendering the coupled wing + fuselage + duct lattice built
+by `PanelBuilder::LatticeBuilder` from a real geometry handoff (352 wing
+panels colored by circulation `gamma`, 448 fuselage source panels, 160 duct
+source panels -- all one coupled potential-flow solve). See
 [doc/theory.rst](doc/theory.rst) for the math and
 [doc/_static/viewer_airframe.png](doc/_static/viewer_airframe.png) full-size.*
 
@@ -40,9 +41,10 @@ panelbuilder/                    aeolion_panelbuilder (STATIC library)
                                  the one component with compiled sources
                                                     (Aeolion::PanelBuilder)
   include/Aeolion/PanelBuilder/
-    PanelBuilder.h     LatticeBuilder: builds the solver's wing lattice AND
-                        the fuselage's source-panel mesh from a parsed
-                        handoff -- CST camber surface, spanwise + chordwise
+    PanelBuilder.h     LatticeBuilder: builds the solver's wing lattice, the
+                        fuselage's source-panel mesh, AND the (disjoint)
+                        duct's source-panel mesh from a parsed handoff --
+                        CST camber surface, spanwise + chordwise
                         discretization, deflected control surfaces,
                         wing/body trim + carry-through, breakpoints on
                         every surface edge
@@ -88,8 +90,10 @@ include/Aeolion/     header-only library (the rest of the toolkit)
     ControlSurface.h     hinged surface + which body it binds to
     MeshTopology.h       requested lattice discretization
     PropulsionSpec.h     propeller blade geometry for a BEMT run
-    BodyGeometry.h       fuselage/duct body of revolution (axial x radius
+    BodyGeometry.h       fuselage body of revolution (axial x radius
                           stations)
+    DuctGeometry.h        the duct: a single annular ring (chord, inner/outer
+                           diameter, center), disjoint from the fuselage
     WingPlacement.h       where the wing sits relative to the body
   DragEstimate/                                   (Aeolion::DragEstimate)
     DragEstimate.h     viscous CD0: flat-plate skin friction + form factor
@@ -113,13 +117,15 @@ tests/                 regression suite, wired into ctest
                                  field, on-sheet jump, source-panelled sphere
   TestBodyPanels.cpp            fuselage panelling: closure, d'Alembert,
                                  Munk moment, frame convention
+  TestDuctPanels.cpp            duct panelling: closure, enclosed annulus
+                                 volume, d'Alembert, frame convention
   TestHandoffContract.cpp       JSON handoff parsing, contract invariants,
                                  surface binding, trapezoid reduction
   TestPanelBuilder.cpp          camber lifts at zero incidence, chordwise
                                  rows, control deflection, mesh lands on
                                  control surface edges
   TestAirframe.cpp              the whole chain coupled: real handoff ->
-                                 wing + fuselage lattice -> solve
+                                 wing + fuselage + duct lattice -> solve
 
 cmake/                build modules (CompilerWarnings, LapackBackend) + vcpkg triplets
 
