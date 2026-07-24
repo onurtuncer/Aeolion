@@ -44,6 +44,7 @@
 #include <algorithm>
 #include <stdexcept>
 #include <numbers>
+#include "Aeolion/BEMT/PropGeometry.h"
 #include "Aeolion/Math/Vec3.h"
 #include "Aeolion/Math/Constants.h"
 
@@ -80,6 +81,22 @@ inline constexpr double MomentumDiskFactor = 4.0; // 4*pi*r*rho*Uax*vi*F (thrust
 inline constexpr double EndpointClampFraction = 1e-4; // clamp radius this fraction of span inboard of hub/tip
 inline constexpr double MinSinPhi             = 1e-4; // floor on |sin(phi)| in the loss denominator
 inline constexpr double MinLossFactor         = 1e-3; // floor so the momentum solve never divides by ~0
+
+// A station this close to the hub or the tip (as a fraction of blade span)
+// is treated as a BOUNDARY station carrying no load, rather than iterated.
+//
+// This is Prandtl's own statement, not a numerical dodge: the loss factor
+// goes to zero at both ends because the tip and hub vortices relieve the
+// loading there, so a blade element at the boundary produces nothing. The
+// momentum balance is correspondingly degenerate -- it divides by that
+// vanishing factor -- so asking the fixed point to satisfy it means asking
+// for an infinite induced velocity, which the clamps turn into a limit
+// cycle rather than an answer.
+//
+// This is not a rare case. A geometry contract states its blade from the
+// hub cutout to the tip (Geometry::PropulsionSpec), so the FIRST station of
+// every contract-derived propeller lands exactly on the hub.
+inline constexpr double BoundaryStationFraction = 1e-3;
 
 // --- fixed-point iteration guards & seeds ---------------------------------
 inline constexpr double SmallVelocity        = 1e-4; // floor on axial velocity in the momentum denominator
@@ -130,26 +147,20 @@ inline void EvalPolar(const Polar& p, double alphaDeg, double& cl, double& cd) {
     cd = p.cd0 + p.kCd * cl * cl;
 }
 
-// -------------------------------------------------------- Blade geometry
-struct BladeStation {
-    double r;         // radial position [m]
-    double Chord;     // local chord [m]
-    double TwistDeg;  // local geometric pitch angle [deg] (blade chordline
-                       // angle relative to the rotor plane)
-};
-
-struct PropGeometry {
-    int NBlades = 2;
-    double Radius = 0.15;     // tip radius [m]
-    double HubRadius = 0.02;  // hub radius [m]
-    std::vector<BladeStation> Stations; // sorted by increasing r, spans [HubRadius, Radius]
-    int RotationSign = 1;     // +1 or -1: sense of blade rotation about the prop axis (right-hand rule about +thrust axis)
-};
+// Blade geometry lives in BEMT/PropGeometry.h so that describing a
+// propeller does not require including this solver.
 
 // -------------------------------------------------------------- Solving
 struct StationResult {
     double r = 0, vi = 0, wi = 0, phiDeg = 0, alphaDeg = 0, cl = 0, cd = 0;
     double dT_dr = 0, dQ_dr = 0;
+
+    // Per-station convergence. Result::Converged is the AND of these, which
+    // on its own cannot say whether one awkward station failed or the whole
+    // blade did -- and those call for very different responses.
+    bool Converged = true;
+    int Iterations = 0;
+    double Residual = 0.0; // last |change| in induced velocity [m/s]
 };
 
 struct Result {
@@ -190,13 +201,32 @@ struct Result {
     res.omega = rpm * Two * std::numbers::pi / SecondsPerMinute;
     double omega = res.omega;
 
+    const double bladeSpan = std::max(geom.Radius - geom.HubRadius, Tiny);
+
     for (const auto& st : geom.Stations) {
         double r = st.r;
+
+        // Boundary station: unloaded by the tip/hub relief, so there is
+        // nothing to solve. Recording it as converged is honest -- the
+        // answer is known, not merely unreached.
+        if (r <= geom.HubRadius + BoundaryStationFraction * bladeSpan ||
+            r >= geom.Radius - BoundaryStationFraction * bladeSpan) {
+            StationResult boundary;
+            boundary.r = r;
+            boundary.phiDeg = RadToDeg(std::atan2(Vinf, omega * r));
+            boundary.alphaDeg = st.TwistDeg - boundary.phiDeg;
+            res.Stations.push_back(boundary);
+            continue;
+        }
+
         double vi = AxialInductionSeed * std::fabs(omega) * geom.Radius + AxialInductionFloor; // seed, refined by iteration
         double wi = SwirlInductionSeed * std::fabs(omega) * r;
         bool ok = false;
+        int used = 0;
+        double residual = 0.0;
 
         for (int iter = 0; iter < maxIter; ++iter) {
+            used = iter + 1;
             double Uax = Vinf + vi;
             double Ut = omega * r - wi;
             double phi = std::atan2(Uax, Ut);
@@ -227,6 +257,7 @@ struct Result {
                                       MaxSwirlInductionFactor * std::fabs(omega) * r);
 
             double dv = viNew - vi, dw = wiNew - wi;
+            residual = std::max(std::fabs(dv), std::fabs(dw));
             vi += relax * dv;
             wi += relax * dw;
 
@@ -247,6 +278,7 @@ struct Result {
         double Urel2 = Uax * Uax + Ut * Ut;
 
         StationResult sr;
+        sr.Converged = ok; sr.Iterations = used; sr.Residual = residual;
         sr.r = r; sr.vi = vi; sr.wi = wi; sr.phiDeg = RadToDeg(phi); sr.alphaDeg = alphaDeg;
         sr.cl = cl; sr.cd = cd;
         sr.dT_dr = Half * rho * Urel2 * geom.NBlades * st.Chord * Cn;
@@ -262,6 +294,37 @@ struct Result {
     }
     res.Power = res.Torque * std::fabs(omega);
     return res;
+}
+
+// ------------------------------------------------------ Performance metrics
+// The two hard bounds a propeller result must respect. Both are ratios of
+// an ideal power to the power actually absorbed, so both are <= 1 for any
+// physically sensible answer -- they are thermodynamic constraints, not
+// tuning targets. TestBEMT checks exactly this, and it is how two real
+// sign/scale bugs were caught during development.
+
+// Figure of merit: hover efficiency, ideal momentum-theory induced power
+// over shaft power. Meaningful only at (or near) zero forward speed.
+[[nodiscard]] inline double FigureOfMerit(const Result& result, double rho = SeaLevelDensity) {
+    if (result.Power <= Tiny || result.Thrust <= 0.0) return 0.0;
+    const double diskArea = std::numbers::pi * result.Geom.Radius * result.Geom.Radius;
+    const double idealPower = result.Thrust * std::sqrt(result.Thrust / (Two * rho * diskArea));
+    return idealPower / result.Power;
+}
+
+// Propulsive efficiency in forward flight: useful power out (thrust times
+// airspeed) over shaft power in. Zero in hover by definition, since a
+// stationary propeller does no useful work however much thrust it makes.
+[[nodiscard]] inline double PropulsiveEfficiency(const Result& result, double Vinf) {
+    if (result.Power <= Tiny || result.Thrust <= 0.0 || Vinf <= 0.0) return 0.0;
+    return result.Thrust * Vinf / result.Power;
+}
+
+// Disk loading [N/m^2] -- thrust per unit disk area, the quantity that sets
+// induced velocity and therefore hover efficiency.
+[[nodiscard]] inline double DiskLoading(const Result& result) {
+    const double diskArea = std::numbers::pi * result.Geom.Radius * result.Geom.Radius;
+    return (diskArea > Tiny) ? result.Thrust / diskArea : 0.0;
 }
 
 // --------------------------------------------------------- Slipstream field

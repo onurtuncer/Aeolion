@@ -23,6 +23,7 @@
 #pragma once
 
 #include "Aeolion/Math/Vec3.h"
+#include "Aeolion/BEMT/PropGeometry.h"
 #include "Aeolion/Geometry/AirfoilSection.h"
 #include "Aeolion/Geometry/BodyGeometry.h"
 #include "Aeolion/Geometry/ControlSurface.h"
@@ -577,6 +578,53 @@ inline constexpr double TrapezoidFitTolerance = 1e-9;
     // Spacing is not part of the schema; the lattice keeps its uniform default.
     wing.CosineSpacing = false;
     return wing;
+}
+
+// --- bridge to the BEMT propeller --------------------------------------
+// PropulsionSpec states radii as fractions of the disk radius, because that
+// is the form the blade is designed in; BEMT::PropGeometry wants metres,
+// because that is the form the momentum balance is written in. This is that
+// conversion, and it is the only place it should happen.
+//
+// The hub radius is the innermost blade station: the contract defines the
+// blade only outboard of it (see PropulsionSpec.h), so that station IS the
+// cutout rather than a point on a blade that continues inward.
+//
+// rotationSign is a parameter rather than contract data. Which way a
+// propeller turns is an installation choice, not a property of the blade,
+// and getting it wrong flips the slipstream's swirl -- which is exactly
+// what a downstream control vane responds to.
+//
+// Blade count came into the schema at 1.4.0. Older contracts leave it zero,
+// so the caller must supply one; that is refused loudly here rather than
+// silently defaulting, because a wrong blade count scales thrust roughly
+// linearly and would look like a plausible answer.
+inline constexpr int MinBladeCount = 2;
+
+[[nodiscard]] inline BEMT::PropGeometry ToPropGeometry(const PropulsionSpec& spec, int rotationSign = 1,
+                                                       int bladeCountOverride = 0) {
+    if (spec.BladeStations.size() < MinBladeStations)
+        throw ContractError("propulsion_bemt: no blade stations to build a propeller from");
+    Detail::RequirePositive(spec.DiskRadius, "propulsion_bemt.disk_radius");
+
+    const int blades = (bladeCountOverride > 0) ? bladeCountOverride : spec.BladeCount;
+    if (blades < MinBladeCount)
+        throw ContractError(std::format(
+            "propulsion_bemt: blade count {} is unusable; this contract states none (schema < 1.4.0), "
+            "so the caller must supply one",
+            blades));
+    if (rotationSign != 1 && rotationSign != -1)
+        throw ContractError(std::format("rotationSign must be +1 or -1, got {}", rotationSign));
+
+    BEMT::PropGeometry prop;
+    prop.NBlades = blades;
+    prop.Radius = spec.DiskRadius;
+    prop.HubRadius = spec.BladeStations.front().RadiusFraction * spec.DiskRadius;
+    prop.RotationSign = rotationSign;
+    prop.Stations.reserve(spec.BladeStations.size());
+    for (const BladeStationSpec& station : spec.BladeStations)
+        prop.Stations.push_back({station.RadiusFraction * spec.DiskRadius, station.Chord, station.TwistDeg});
+    return prop;
 }
 
 [[nodiscard]] inline HandoffContract LoadHandoff(const std::string& path) {
