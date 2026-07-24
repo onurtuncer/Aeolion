@@ -117,9 +117,14 @@ inline constexpr double FarWakeDiametersAuto = Two;  // auto development length 
 // or an optional table lookup (e.g. from measured or CFD section data) --
 // set UseTable=true and fill TableAlphaDeg/TableCl/TableCd (sorted by
 // alpha) to use real section data instead.
+/**
+ * Section lift/drag polar: analytic default (smooth-saturating lift curve +
+ * parabolic drag polar), or a table lookup when UseTable is set (fill
+ * TableAlphaDeg/TableCl/TableCd, sorted by alpha, with real section data).
+ */
 struct Polar {
-    double cl_alpha = ThinAirfoilClAlpha; // per rad, thin-airfoil default
-    double alpha0Deg = 0.0;     // zero-lift angle
+    double cl_alpha = ThinAirfoilClAlpha; ///< Per rad, thin-airfoil default.
+    double alpha0Deg = 0.0;     ///< Zero-lift angle.
     double clMax = DefaultClMax;
     double cd0 = DefaultCd0;
     double kCd = DefaultKCd;
@@ -128,6 +133,7 @@ struct Polar {
     std::vector<double> TableAlphaDeg, TableCl, TableCd;
 };
 
+/** Evaluate a Polar at alphaDeg, writing the resulting cl/cd. */
 inline void EvalPolar(const Polar& p, double alphaDeg, double& cl, double& cd) {
     if (p.UseTable && p.TableAlphaDeg.size() >= 2) {
         const auto& A = p.TableAlphaDeg;
@@ -151,18 +157,22 @@ inline void EvalPolar(const Polar& p, double alphaDeg, double& cl, double& cd) {
 // propeller does not require including this solver.
 
 // -------------------------------------------------------------- Solving
+/** BEMT solution at one radial blade station. */
 struct StationResult {
     double r = 0, vi = 0, wi = 0, phiDeg = 0, alphaDeg = 0, cl = 0, cd = 0;
     double dT_dr = 0, dQ_dr = 0;
 
-    // Per-station convergence. Result::Converged is the AND of these, which
-    // on its own cannot say whether one awkward station failed or the whole
-    // blade did -- and those call for very different responses.
+    /**
+     * Per-station convergence. Result::Converged is the AND of these, which
+     * on its own cannot say whether one awkward station failed or the whole
+     * blade did -- and those call for very different responses.
+     */
     bool Converged = true;
     int Iterations = 0;
-    double Residual = 0.0; // last |change| in induced velocity [m/s]
+    double Residual = 0.0; ///< Last |change| in induced velocity [m/s].
 };
 
+/** Full BEMT solve result: per-station breakdown plus integrated thrust/torque/power. */
 struct Result {
     std::vector<StationResult> Stations;
     double Thrust = 0, Torque = 0, Power = 0;
@@ -171,6 +181,7 @@ struct Result {
     bool Converged = true;
 };
 
+/** Prandtl tip/hub loss factor F at radius rIn and inflow angle phi. */
 [[nodiscard]] inline double TipHubLoss(const PropGeometry& g, double rIn, double phi) {
     // The Prandtl loss factor is *designed* to go to exactly zero right at
     // the tip and hub -- correct for the physical loading, but a singular
@@ -192,6 +203,10 @@ struct Result {
     return std::clamp(Ftip * Fhub, MinLossFactor, UnitClampHi);
 }
 
+/**
+ * Solve the hover-safe BEMT fixed point for every radial station of geom,
+ * at rotor speed rpm and freestream Vinf, then integrate thrust/torque/power.
+ */
 [[nodiscard]] inline Result Solve(const PropGeometry& geom, const Polar& polar, double rpm, double Vinf,
                      double rho = SeaLevelDensity, int maxIter = DefaultMaxIter,
                      double tol = DefaultTolerance, double relax = DefaultRelaxation) {
@@ -303,8 +318,10 @@ struct Result {
 // tuning targets. TestBEMT checks exactly this, and it is how two real
 // sign/scale bugs were caught during development.
 
-// Figure of merit: hover efficiency, ideal momentum-theory induced power
-// over shaft power. Meaningful only at (or near) zero forward speed.
+/**
+ * Figure of merit: hover efficiency, ideal momentum-theory induced power
+ * over shaft power. Meaningful only at (or near) zero forward speed.
+ */
 [[nodiscard]] inline double FigureOfMerit(const Result& result, double rho = SeaLevelDensity) {
     if (result.Power <= Tiny || result.Thrust <= 0.0) return 0.0;
     const double diskArea = std::numbers::pi * result.Geom.Radius * result.Geom.Radius;
@@ -312,16 +329,20 @@ struct Result {
     return idealPower / result.Power;
 }
 
-// Propulsive efficiency in forward flight: useful power out (thrust times
-// airspeed) over shaft power in. Zero in hover by definition, since a
-// stationary propeller does no useful work however much thrust it makes.
+/**
+ * Propulsive efficiency in forward flight: useful power out (thrust times
+ * airspeed) over shaft power in. Zero in hover by definition, since a
+ * stationary propeller does no useful work however much thrust it makes.
+ */
 [[nodiscard]] inline double PropulsiveEfficiency(const Result& result, double Vinf) {
     if (result.Power <= Tiny || result.Thrust <= 0.0 || Vinf <= 0.0) return 0.0;
     return result.Thrust * Vinf / result.Power;
 }
 
-// Disk loading [N/m^2] -- thrust per unit disk area, the quantity that sets
-// induced velocity and therefore hover efficiency.
+/**
+ * Disk loading [N/m^2] -- thrust per unit disk area, the quantity that sets
+ * induced velocity and therefore hover efficiency.
+ */
 [[nodiscard]] inline double DiskLoading(const Result& result) {
     const double diskArea = std::numbers::pi * result.Geom.Radius * result.Geom.Radius;
     return (diskArea > Tiny) ? result.Thrust / diskArea : 0.0;
@@ -344,12 +365,19 @@ struct Result {
 // roughly constant with downstream distance (no development ramp) --
 // viscous mixing will erode it further downstream than this model
 // accounts for, so don't trust this far aft of the disk.
+/**
+ * Callable slipstream velocity field, meant to be passed as
+ * Solver::Solve()'s externalField callback: returns the induced velocity
+ * perturbation (axial + swirl) at a global point P, to be added on top of
+ * the vane surface's own freestream.
+ */
 struct SlipstreamField {
     Result BEMTResult;
     Vec3 HubCenter{0, 0, 0};
-    Vec3 AxisDir{1, 0, 0}; // unit vector, thrust direction
-    double DevelopmentLength = -1.0; // <0 => auto (1 prop diameter)
+    Vec3 AxisDir{1, 0, 0}; ///< Unit vector, thrust direction.
+    double DevelopmentLength = -1.0; ///< <0 => auto (1 prop diameter).
 
+    /** Induced velocity perturbation at global point P. */
     [[nodiscard]] Vec3 operator()(const Vec3& P) const {
         Vec3 rel = P - HubCenter;
         double x = Dot(rel, AxisDir);

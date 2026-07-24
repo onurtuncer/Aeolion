@@ -28,8 +28,9 @@ namespace Aeolion::Geometry {
 inline constexpr double CstN1 = 0.5;
 inline constexpr double CstN2 = 1.0;
 
+/** CST section shape at a spanwise station. */
 struct AirfoilSection {
-    double Eta = 0.0; // normalized semi-span position, 0..1
+    double Eta = 0.0; ///< Normalized semi-span position, 0..1.
     std::vector<double> CoefficientsUpper;
     std::vector<double> CoefficientsLower;
 };

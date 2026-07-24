@@ -30,39 +30,49 @@
 
 namespace Aeolion::Geometry {
 
-// Which body a control surface is hinged to. This determines whether the
-// surface belongs in the solver's lattice at all, and what its eta band measures.
+/**
+ * Which body a control surface is hinged to. This determines whether the
+ * surface belongs in the solver's lattice at all, and what its eta band
+ * measures.
+ */
 enum class ControlSurfaceBinding {
-    // Hinged to the wing planform. Eta is the semi-span fraction, directly
-    // comparable to PlanformStation::Eta.
+    /**
+     * Hinged to the wing planform. Eta is the semi-span fraction, directly
+     * comparable to PlanformStation::Eta.
+     */
     Wing,
-    // An all-moving plate inside the duct jet at the duct exit -- NOT a
-    // lifting surface, and it must never be bound to the wing lattice. Eta is
-    // the duct-exit RADIUS fraction, a different quantity that happens to
-    // share the name. These are characterized separately (vane CFD ->
-    // DAVE-ML); the geometry rides along in the contract so the jet can be
-    // modelled directly if the solver chooses to.
+    /**
+     * An all-moving plate inside the duct jet at the duct exit -- NOT a
+     * lifting surface, and it must never be bound to the wing lattice. Eta is
+     * the duct-exit RADIUS fraction, a different quantity that happens to
+     * share the name. These are characterized separately (vane CFD ->
+     * DAVE-ML); the geometry rides along in the contract so the jet can be
+     * modelled directly if the solver chooses to.
+     */
     DuctJet,
 };
 
-// Travel limits, in degrees about the hinge axis. The hard limits are the
-// mechanical stops. The soft limit, where present, is the smaller angle a
-// controller should respect in normal operation -- it exists because a vane
-// can be driven to its stop but should not be, so a trim/allocation routine
-// wanting a usable range should read SoftLimitDeg and not MaxDeg.
+/**
+ * Travel limits, in degrees about the hinge axis. The hard limits are the
+ * mechanical stops. The soft limit, where present, is the smaller angle a
+ * controller should respect in normal operation -- it exists because a vane
+ * can be driven to its stop but should not be, so a trim/allocation routine
+ * wanting a usable range should read SoftLimitDeg and not MaxDeg.
+ */
 struct DeflectionLimits {
     double MinDeg = 0.0;
     double MaxDeg = 0.0;
     bool HasSoftLimit = false;
-    double SoftLimitDeg = 0.0; // symmetric: usable range is +/- this
+    double SoftLimitDeg = 0.0; ///< Symmetric: usable range is +/- this.
 };
 
+/** A hinged control surface bound to a wing or a duct-jet vane stack. */
 struct ControlSurface {
     std::string Name;
-    double ChordFraction = 0.0; // fraction of local chord aft of the hinge, 0..1
-    double EtaStart = 0.0;      // interpretation depends on Binding
+    double ChordFraction = 0.0; ///< Fraction of local chord aft of the hinge, 0..1.
+    double EtaStart = 0.0;      ///< Interpretation depends on Binding.
     double EtaEnd = 0.0;
-    Math::Vec3 HingeAxis{0.0, 1.0, 0.0}; // unit vector, contract reference frame
+    Math::Vec3 HingeAxis{0.0, 1.0, 0.0}; ///< Unit vector, contract reference frame.
     ControlSurfaceBinding Binding = ControlSurfaceBinding::Wing;
     DeflectionLimits Limits;
 };

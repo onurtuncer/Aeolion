@@ -111,12 +111,14 @@ namespace Detail {
 } // namespace Detail
 
 // --- one surface of one section -------------------------------------------
+/** CST surface ordinate y(psi)/c for one surface (upper or lower). */
 [[nodiscard]] inline double SurfaceOrdinate(const std::vector<double>& coefficients, double psi) {
     if (coefficients.empty()) return 0.0;
     const double p = Detail::ClampPsi(psi);
     return Detail::ClassFunction(p) * Detail::ShapeFunction(coefficients, p);
 }
 
+/** d(SurfaceOrdinate)/d(psi) for one surface (upper or lower). */
 [[nodiscard]] inline double SurfaceSlope(const std::vector<double>& coefficients, double psi) {
     if (coefficients.empty()) return 0.0;
     const double p = Detail::ClampPsi(psi);
@@ -125,11 +127,13 @@ namespace Detail {
 }
 
 // --- camber line of one section -------------------------------------------
+/** Mean-line ordinate (y_upper + y_lower) / 2 at chordwise fraction psi. */
 [[nodiscard]] inline double SectionCamber(const AirfoilSection& section, double psi) {
     return Math::Half * (SurfaceOrdinate(section.CoefficientsUpper, psi) +
                          SurfaceOrdinate(section.CoefficientsLower, psi));
 }
 
+/** d(SectionCamber)/d(psi), the camber-line slope used for panel normals. */
 [[nodiscard]] inline double SectionCamberSlope(const AirfoilSection& section, double psi) {
     return Math::Half * (SurfaceSlope(section.CoefficientsUpper, psi) +
                          SurfaceSlope(section.CoefficientsLower, psi));
@@ -171,6 +175,7 @@ struct SectionBracket {
 
 } // namespace Detail
 
+/** Camber-line ordinate at an arbitrary span station, interpolated between bracketing sections. */
 [[nodiscard]] inline double CamberAt(const std::vector<AirfoilSection>& sections, double eta, double psi) {
     if (sections.empty()) return 0.0; // no section data -> flat plate
     const Detail::SectionBracket bracket = Detail::BracketByEta(sections, eta);
@@ -179,6 +184,7 @@ struct SectionBracket {
     return low + (high - low) * bracket.Weight;
 }
 
+/** Camber-line slope at an arbitrary span station, interpolated between bracketing sections. */
 [[nodiscard]] inline double CamberSlopeAt(const std::vector<AirfoilSection>& sections, double eta, double psi) {
     if (sections.empty()) return 0.0;
     const Detail::SectionBracket bracket = Detail::BracketByEta(sections, eta);
@@ -207,6 +213,7 @@ struct SectionBracket {
 // converges fast for every real section.
 inline constexpr int CamberArcQuadratureIntervals = 16; // even, for Simpson
 
+/** Arc length of the camber line between psiStart and psiEnd, as a fraction of chord. */
 [[nodiscard]] inline double CamberArcLengthFraction(const std::vector<AirfoilSection>& sections, double eta,
                                                     double psiStart, double psiEnd) {
     if (sections.empty()) return psiEnd - psiStart; // flat plate: arc length is the chord fraction

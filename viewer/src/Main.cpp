@@ -1,26 +1,38 @@
 // Main.cpp
 //
-// Entry point. `aeolion_viewer [--frames N]` -- the optional flag renders
-// N frames and exits, used as a headless-ish smoke test in CI/builds.
+// Entry point. `aeolion_viewer [--frames N] [--geometry FILE] [--screenshot FILE]`
+// --frames renders N frames and exits, used as a headless-ish smoke test in
+// CI/builds. --geometry loads an aeolion_geometry.json handoff (wing +
+// fuselage) instead of the parametric single-wing demo. --screenshot
+// captures the last rendered frame to a binary PPM file; meant to be paired
+// with a small --frames so the window closes itself once the capture is
+// written (a couple of frames lets ImGui settle its first-use layout).
 
 #include "Core/Application.h"
 
 #include <charconv>
 #include <cstdio>
+#include <string>
 #include <string_view>
 
 int main(int argc, char** argv) {
     int maxFrames = -1;
+    std::string geometryPath;
+    std::string screenshotPath;
     for (int i = 1; i < argc; ++i) {
         std::string_view arg = argv[i];
         if (arg == "--frames" && i + 1 < argc) {
             std::string_view value = argv[++i];
             std::from_chars(value.data(), value.data() + value.size(), maxFrames);
+        } else if (arg == "--geometry" && i + 1 < argc) {
+            geometryPath = argv[++i];
+        } else if (arg == "--screenshot" && i + 1 < argc) {
+            screenshotPath = argv[++i];
         }
     }
 
     try {
-        Aeolion::Viewer::Application app;
+        Aeolion::Viewer::Application app(geometryPath, screenshotPath);
         app.Run(maxFrames);
     } catch (const std::exception& e) {
         std::fprintf(stderr, "aeolion_viewer: fatal: %s\n", e.what());

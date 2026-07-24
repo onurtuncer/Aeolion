@@ -1,7 +1,8 @@
 // Core/Application.h
 //
 // The viewer application: owns the window, ImGui lifetime, orbit camera,
-// the solver state (WingParams + FreestreamConditions), and the lattice
+// the solver state (WingParams + FreestreamConditions, or a loaded
+// Geometry::HandoffContract's wing + fuselage lattice), and the lattice
 // renderer. Each frame: consume input, re-solve if a parameter changed,
 // draw the scene, draw the UI.
 
@@ -11,16 +12,23 @@
 #include "Renderer/OrbitCamera.h"
 #include "Visualization/LatticeRenderer.h"
 
+#include "Aeolion/Geometry/HandoffContract.h"
 #include "Aeolion/Solver/Solver.h"
 
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace Aeolion::Viewer {
 
 class Application {
 public:
-    Application();
+    // geometryPath: if non-empty, loads an aeolion_geometry.json handoff
+    // (wing lattice + fuselage source panels via PanelBuilder::LatticeBuilder)
+    // instead of the parametric single-wing demo. screenshotPath: if
+    // non-empty, captures the framebuffer to a binary PPM file on the last
+    // rendered frame -- meant to be paired with a small, finite maxFrames.
+    explicit Application(const std::string& geometryPath = "", const std::string& screenshotPath = "");
     ~Application();
 
     Application(const Application&) = delete;
@@ -34,6 +42,8 @@ private:
     void Resolve();
     void FrameView();
     void DrawUI();
+    void LoadHandoff(const std::string& geometryPath);
+    void CaptureScreenshot() const;
 
     Window m_Window;
     OrbitCamera m_Camera;
@@ -42,6 +52,20 @@ private:
     Solver::WingParams m_Wing;
     Solver::FreestreamConditions m_Freestream;
     LatticeDisplayOptions m_Display;
+
+    // Handoff-geometry mode: the lattice is built once from the contract
+    // (it does not respond to the Planform sliders, which drive m_Wing
+    // instead) and cached here; only the freestream re-solves per frame.
+    bool m_UseHandoff = false;
+    Geometry::HandoffContract m_Contract;
+    std::vector<Lattice::SourcePanel> m_BodyPanels;
+    double m_ReferenceArea = 0.0;
+    double m_ReferenceSpan = 0.0;
+    double m_TrimEta = 0.0;
+    Solver::Vec3 m_SceneCenter{0.0, 0.0, 0.0};
+    double m_SceneRadius = 1.0;
+
+    std::string m_ScreenshotPath;
 
     std::vector<Solver::Panel> m_Panels;
     Solver::SolveResult m_Result;

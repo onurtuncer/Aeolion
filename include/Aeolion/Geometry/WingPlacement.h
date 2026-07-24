@@ -21,9 +21,10 @@
 
 namespace Aeolion::Geometry {
 
+/** Where the wing sits relative to the body, anchored at the root leading edge. */
 struct WingPlacement {
     bool IsStated = false;
-    Math::Vec3 RootLeadingEdge{0.0, 0.0, 0.0}; // [m], contract frame
+    Math::Vec3 RootLeadingEdge{0.0, 0.0, 0.0}; ///< [m], contract frame.
 };
 
 } // namespace Aeolion::Geometry

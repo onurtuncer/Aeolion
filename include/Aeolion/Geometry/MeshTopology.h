@@ -11,9 +11,10 @@ namespace Aeolion::Geometry {
 // there is nothing for a consumer to branch on. A contract asking for a
 // relaxed wake is REJECTED rather than quietly solved with a frozen one --
 // see the parser. Store a wake model here only when more than one exists.
+/** Requested lattice discretization. */
 struct MeshTopology {
     int ChordwisePanels = 0;
-    int SpanwisePanelsPerSection = 0; // panels between each adjacent station pair
+    int SpanwisePanelsPerSection = 0; ///< Panels between each adjacent station pair.
 };
 
 } // namespace Aeolion::Geometry

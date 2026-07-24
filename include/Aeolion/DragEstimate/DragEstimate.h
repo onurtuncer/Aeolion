@@ -84,17 +84,21 @@ inline constexpr double DefaultFineness        = 6.0;
 inline constexpr double IsolatedInterference   = 1.0;
 inline constexpr double DefaultMiscFraction    = 0.03;
 
+/** Ambient air properties for a drag estimate; defaults to sea-level ISA. */
 struct AirProperties {
-    double rho = SeaLevelDensity;   // [kg/m^3] -- sea-level ISA by default
-    double mu = SeaLevelViscosity;  // [Pa*s]   -- sea-level ISA dynamic viscosity
+    double rho = SeaLevelDensity;   ///< [kg/m^3] -- sea-level ISA by default.
+    double mu = SeaLevelViscosity;  ///< [Pa*s]   -- sea-level ISA dynamic viscosity.
 };
 
+/** Reynolds number for the given freestream speed and characteristic length. */
 [[nodiscard]] inline double ReynoldsNumber(double Vinf, double charLength, const AirProperties& air) {
     return air.rho * Vinf * charLength / air.mu;
 }
 
-// Turbulent flat-plate skin friction, Prandtl-Schlichting correlation, with
-// an optional Frankl-Voishel compressibility correction.
+/**
+ * Turbulent flat-plate skin friction, Prandtl-Schlichting correlation, with
+ * an optional Frankl-Voishel compressibility correction.
+ */
 [[nodiscard]] inline double CfTurbulent(double Re, double mach = 0.0) {
     if (Re < MinReynolds) return 0.0;
     double cf = SchlichtingCoeff / std::pow(std::log10(Re), SchlichtingLogExp);
@@ -102,31 +106,35 @@ struct AirProperties {
     return cf;
 }
 
-// Laminar flat-plate skin friction (Blasius).
+/** Laminar flat-plate skin friction (Blasius). */
 [[nodiscard]] inline double CfLaminar(double Re) {
     if (Re < MinReynolds) return 0.0;
     return BlasiusCoeff / std::sqrt(Re);
 }
 
-// Simple engineering blend between laminar and turbulent Cf, weighted by
-// the fraction of the run assumed laminar before transition. This is an
-// approximation (not the rigorous laminar-run-subtracted method) but is
-// adequate for conceptual estimates. laminarFraction=0 (fully turbulent)
-// is the conservative default -- most real surfaces trip well forward of
-// the ideal transition point due to roughness, insects, rivets, etc.
-// Genuinely smooth/glider-polished laminar-flow airfoils might justify
-// 0.3-0.5; a rough or heavily-riveted metal surface should use 0.
+/**
+ * Simple engineering blend between laminar and turbulent Cf, weighted by
+ * the fraction of the run assumed laminar before transition. This is an
+ * approximation (not the rigorous laminar-run-subtracted method) but is
+ * adequate for conceptual estimates. laminarFraction=0 (fully turbulent)
+ * is the conservative default -- most real surfaces trip well forward of
+ * the ideal transition point due to roughness, insects, rivets, etc.
+ * Genuinely smooth/glider-polished laminar-flow airfoils might justify
+ * 0.3-0.5; a rough or heavily-riveted metal surface should use 0.
+ */
 [[nodiscard]] inline double CfMixed(double Re, double laminarFraction, double mach = 0.0) {
     laminarFraction = std::clamp(laminarFraction, 0.0, 1.0);
     if (laminarFraction <= 0.0) return CfTurbulent(Re, mach);
     return laminarFraction * CfLaminar(Re) + (1.0 - laminarFraction) * CfTurbulent(Re, mach);
 }
 
-// Airfoil-like (wing/tail) form factor: thickness + sweep effect on
-// pressure drag, beyond flat-plate friction. xcMaxThickness is the
-// chordwise location of maximum thickness (~0.3 for most conventional
-// airfoils, ~0.4-0.5 for laminar-flow sections); sweepDeg is the sweep of
-// the max-thickness line (quarter-chord sweep is a fine approximation).
+/**
+ * Airfoil-like (wing/tail) form factor: thickness + sweep effect on
+ * pressure drag, beyond flat-plate friction. xcMaxThickness is the
+ * chordwise location of maximum thickness (~0.3 for most conventional
+ * airfoils, ~0.4-0.5 for laminar-flow sections); sweepDeg is the sweep of
+ * the max-thickness line (quarter-chord sweep is a fine approximation).
+ */
 [[nodiscard]] inline double FormFactorAirfoil(double thicknessRatio, double xcMaxThickness, double sweepDeg) {
     double tc = thicknessRatio;
     double xm = std::max(xcMaxThickness, FormThicknessFloor);
@@ -135,32 +143,37 @@ struct AirProperties {
     return base * std::pow(std::cos(sweep), FormSweepExp);
 }
 
-// Body-like (fuselage, pod, boom) form factor from fineness ratio
-// f = length / equivalent_diameter.
+/**
+ * Body-like (fuselage, pod, boom) form factor from fineness ratio
+ * f = length / equivalent_diameter.
+ */
 [[nodiscard]] inline double FormFactorBody(double fineness) {
     double f = std::max(fineness, BodyFinenessFloor);
     return 1.0 + BodyCubeCoeff / (f * f * f) + f / BodyLinearDivisor;
 }
 
+/** One wetted component of the viscous-drag buildup. */
 struct ComponentSpec {
     std::string Name;
-    double Swet = 0.0;           // wetted area [m^2]
-    double CharLength = 0.0;     // Reynolds-number reference length [m] (chord, or fuselage length)
-    bool IsBody = false;         // true: use FormFactorBody (needs fineness); false: FormFactorAirfoil (needs thickness/sweep)
+    double Swet = 0.0;           ///< Wetted area [m^2].
+    double CharLength = 0.0;     ///< Reynolds-number reference length [m] (chord, or fuselage length).
+    bool IsBody = false;         ///< true: use FormFactorBody (needs fineness); false: FormFactorAirfoil (needs thickness/sweep).
     double ThicknessRatio = DefaultThicknessRatio;
     double xcMaxThickness = DefaultMaxThicknessLoc;
     double SweepDeg = 0.0;
     double Fineness = DefaultFineness;
-    double Q = IsolatedInterference; // interference factor (1.0 = isolated; 1.03-1.08 typical for a wing/tail-fuselage junction)
+    double Q = IsolatedInterference; ///< Interference factor (1.0 = isolated; 1.03-1.08 typical for a wing/tail-fuselage junction).
     double LaminarFraction = 0.0;
 };
 
+/** Per-component breakdown produced by EstimateComponent(). */
 struct ComponentResult {
     std::string Name;
     double Re = 0.0, Cf = 0.0, FF = 0.0, Q = 0.0, Swet = 0.0;
-    double CD0_contribution = 0.0; // already divided by Sref
+    double CD0_contribution = 0.0; ///< Already divided by Sref.
 };
 
+/** Skin-friction + form-factor + interference buildup for one component. */
 [[nodiscard]] inline ComponentResult EstimateComponent(const ComponentSpec& c, double Vinf, double Sref,
                                           const AirProperties& air, double mach = 0.0) {
     ComponentResult r;
@@ -174,13 +187,15 @@ struct ComponentResult {
     return r;
 }
 
+/** Full component-buildup result across every ComponentSpec passed to EstimateCD0(). */
 struct BuildupResult {
     std::vector<ComponentResult> Components;
-    double CD0_clean = 0.0;   // sum of component contributions, before misc allowance
+    double CD0_clean = 0.0;   ///< Sum of component contributions, before misc allowance.
     double MiscFraction = 0.0;
-    double CD0 = 0.0;         // CD0_clean * (1 + MiscFraction) -- use this one
+    double CD0 = 0.0;         ///< CD0_clean * (1 + MiscFraction) -- use this one.
 };
 
+/** Run the full component-buildup viscous CD0 estimate over specs. */
 [[nodiscard]] inline BuildupResult EstimateCD0(const std::vector<ComponentSpec>& specs, double Vinf, double Sref,
                                   const AirProperties& air, double miscFraction = DefaultMiscFraction, double mach = 0.0) {
     BuildupResult res;

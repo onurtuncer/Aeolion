@@ -1,5 +1,5 @@
 # ------------------------------------------------------------------------------
-# Copyright (c) 2025-2026, Onur Tuncer, PhD, Istanbul Technical University
+# Copyright (c) 2025-2026, Onur Tuncer, PhD
 #
 # SPDX-License-Identifier: MIT
 # License-Filename: LICENSE
@@ -8,32 +8,14 @@
 # Configuration file for the Sphinx documentation builder.
 
 import os
-import sys
-
-# Step 1: Add parent directory to sys.path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-# Step 2: Import the function
-from get_project_name import get_project_name
-
-# Step 3: Compute absolute path to CMakeLists.txt
-cmake_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'CMakeLists.txt'))
-
-# Step 4: Call the function
-project_name = get_project_name(cmake_path)
-print(f"Project name from top level: {project_name}")
 
 # -- Project information -----------------------------------------------------
 
-version_txt = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'version.txt'))
-with open(version_txt, 'r', encoding='utf-8') as _f:
-    _project_version = _f.read().strip()
-
-project = project_name
+project = 'Aeolion'
 author = 'Onur Tuncer, PhD'
 copyright = '2025-2026, Onur Tuncer, PhD'
-version = _project_version
-release = _project_version
+version = '0.1.0'
+release = version
 
 # -- General configuration ---------------------------------------------------
 
@@ -76,28 +58,6 @@ add_function_parentheses = True
 
 # Optional: helpful print for debugging
 print("Breathe expects Doxygen XML at:", breathe_projects[project])
-
-# -- MathJax macros ----------------------------------------------------------
-
-mathjax3_config = {
-    "tex": {
-        "macros": {
-            "SO":     r"\mathrm{SO}",
-            "SE":     r"\mathrm{SE}",
-            "so":     r"\mathfrak{so}",
-            "R":      r"\mathbb{R}",
-            "Exp":    r"\mathrm{Exp}",
-            "Log":    r"\mathrm{Log}",
-            "Lie":    [r"\mathfrak{#1}", 1],
-            "dexp":   r"\mathrm{dexp}",
-            "ad":     r"\operatorname{ad}",
-            "norm":   [r"\left\lVert #1 \right\rVert", 1],
-            "twist":  r"\boldsymbol{\mathcal{T}}",
-            "wrench": r"\boldsymbol{\mathcal{W}}",
-            "coloneqq": r"\mathrel{:=}",
-        }
-    }
-}
 
 # -- BibTeX references -------------------------------------------------------
 

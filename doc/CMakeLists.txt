@@ -1,5 +1,5 @@
 # ------------------------------------------------------------------------------
-# Project: Aetherion Copyright (c) 2025, Onur Tuncer, PhD, Istanbul Technical University
+# Project: Aeolion Copyright (c) 2025-2026, Onur Tuncer, PhD
 #
 # SPDX-License-Identifier: MIT License-Filename: LICENSE
 # ------------------------------------------------------------------------------
@@ -11,27 +11,17 @@ set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${CMAKE_CURRENT_SOURCE_DIR}/../cmake
 find_package(Doxygen REQUIRED)
 find_package(Sphinx REQUIRED)
 
-set(PROJECT_DOC_NAME ${CMAKE_CURRENT_PROJECT_NAME}_Docs)
+set(PROJECT_DOC_NAME ${CMAKE_PROJECT_NAME}_Docs)
 
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/tikz)
-
-set(PROJECT_DOC_NAME ${CMAKE_CURRENT_PROJECT_NAME}_Docs)
-
-set(PROJECT_PUBLIC_HEADER_DIR "${PROJECT_SOURCE_DIR}/Aetherion")
-
+# Header-only modules under include/Aeolion/, plus the Solver and
+# PanelBuilder top-level components, which each keep their own include/.
 file(
   GLOB_RECURSE
   PROJECT_PUBLIC_HEADERS
-  ${PROJECT_PUBLIC_HEADER_DIR}/*.h
-  ${PROJECT_PUBLIC_HEADER_DIR}/*.hpp)
+  ${PROJECT_SOURCE_DIR}/include/Aeolion/*.h
+  ${PROJECT_SOURCE_DIR}/solver/include/Aeolion/*.h
+  ${PROJECT_SOURCE_DIR}/panelbuilder/include/Aeolion/*.h)
 
-set(DOXYGEN_INPUT_DIR ${PROJECT_SOURCE_DIR}/Aetherion)
-set(DOXYGEN_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/doxygen)
-set(DOXYGEN_INDEX_FILE ${DOXYGEN_OUTPUT_DIR}/xml/index.xml)
-set(DOXYFILE_IN ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile.in)
-set(DOXYFILE_OUT ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile)
-
-set(DOXYGEN_INPUT_DIR ${PROJECT_SOURCE_DIR}/Aetherion)
 set(DOXYGEN_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/doxygen)
 set(DOXYGEN_INDEX_FILE ${DOXYGEN_OUTPUT_DIR}/xml/index.xml)
 set(DOXYFILE_IN ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile.in)
@@ -76,7 +66,7 @@ add_custom_command(
   COMMENT "Generating ${PROJECT_DOC_NAME} documentation with Sphinx")
 
 # Nice named target so we can run the job easily
-add_custom_target(${PROJECT_DOC_NAME}_Sphinx ALL DEPENDS ${SPHINX_INDEX_FILE} tikz_figures)
+add_custom_target(${PROJECT_DOC_NAME}_Sphinx ALL DEPENDS ${SPHINX_INDEX_FILE})
 
 include(GNUInstallDirs)
 install(DIRECTORY ${SPHINX_BUILD} DESTINATION ${CMAKE_INSTALL_DOCDIR})

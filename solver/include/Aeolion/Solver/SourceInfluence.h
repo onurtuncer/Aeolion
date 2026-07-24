@@ -59,13 +59,13 @@ inline constexpr double InvFourPiSource = 1.0 / (4.0 * std::numbers::pi);
 // sheet itself. Outward, and exactly half the strength.
 inline constexpr double SourceSelfInfluence = 0.5;
 
-// The panel's local orthonormal frame: E1/E2 span the panel plane, E3 is the
-// outward normal.
+/** The panel's local orthonormal frame: E1/E2 span the panel plane, E3 is the outward normal. */
 struct SourcePanelFrame {
-    Vec3 Origin; // panel centroid
+    Vec3 Origin; ///< Panel centroid.
     Vec3 E1, E2, E3;
 };
 
+/** Build a SourcePanelFrame for panel. */
 [[nodiscard]] inline SourcePanelFrame MakeSourcePanelFrame(const SourcePanel& panel) {
     SourcePanelFrame frame;
     frame.Origin = panel.ControlPoint;
@@ -103,8 +103,10 @@ namespace Detail {
 
 } // namespace Detail
 
-// Velocity at `point` induced by `panel` carrying UNIT source strength.
-// Multiply by the panel's sigma for the physical velocity.
+/**
+ * Velocity at `point` induced by `panel` carrying UNIT source strength.
+ * Multiply by the panel's sigma for the physical velocity.
+ */
 [[nodiscard]] inline Vec3 SourcePanelVelocity(const Vec3& point, const SourcePanel& panel) {
     const SourcePanelFrame frame = MakeSourcePanelFrame(panel);
 
@@ -170,9 +172,11 @@ namespace Detail {
            frame.E3 * (w * InvFourPiSource);
 }
 
-// Normal-velocity influence coefficient: the normal component, at
-// `target`'s control point, of the velocity induced by unit source strength
-// on `source`. One entry of the body block of the influence matrix.
+/**
+ * Normal-velocity influence coefficient: the normal component, at
+ * `target`'s control point, of the velocity induced by unit source strength
+ * on `source`. One entry of the body block of the influence matrix.
+ */
 [[nodiscard]] inline double SourceNormalInfluence(const SourcePanel& target, const SourcePanel& source) {
     // A panel's own control point lies exactly on its sheet, where the solid
     // angle is indeterminate. The answer there is analytic.

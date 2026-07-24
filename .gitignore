@@ -10,6 +10,9 @@ aircraft.json
 # ImGui layout state written by aeolion_viewer at runtime
 imgui.ini
 
+# Sphinx/Doxygen documentation build output
+doc/_build/
+
 # vcpkg
 vcpkg_installed/
 

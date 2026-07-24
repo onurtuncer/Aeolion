@@ -72,22 +72,23 @@ inline constexpr double EtaMax = 1.0;
 inline constexpr double EtaEndpointTolerance = 1e-12; // eta[0]==0 / eta[n]==1 slack
 inline constexpr double MinHingeAxisNorm = 1e-9;
 
+/** Fully parsed, validated content of an aeolion_geometry.json handoff. */
 struct HandoffContract {
-    std::string SchemaVersion;  // as written, e.g. "1.0.0"
-    std::string DesignId;       // 64 hex chars, "sha256:" prefix stripped
-    std::string ReferenceFrame; // e.g. "aetherion_body_frd" (x-fwd, y-right, z-down)
+    std::string SchemaVersion;  ///< As written, e.g. "1.0.0".
+    std::string DesignId;       ///< 64 hex chars, "sha256:" prefix stripped.
+    std::string ReferenceFrame; ///< e.g. "aetherion_body_frd" (x-fwd, y-right, z-down).
 
-    double Span = 0.0; // [m], full tip-to-tip
+    double Span = 0.0; ///< [m], full tip-to-tip.
     std::vector<PlanformStation> Stations;
     std::vector<AirfoilSection> AirfoilSections;
     std::vector<ControlSurface> ControlSurfaces;
     MeshTopology Mesh;
     PropulsionSpec Propulsion;
-    BodyGeometry Body;      // absent before schema 1.4.0; check Body.IsPresent()
-    WingPlacement Placement; // absent before schema 1.5.0; check Placement.IsStated
+    BodyGeometry Body;      ///< Absent before schema 1.4.0; check Body.IsPresent().
+    WingPlacement Placement; ///< Absent before schema 1.5.0; check Placement.IsStated.
 };
 
-// Thrown for every rejected contract; the message names the offending field.
+/** Thrown for every rejected contract; the message names the offending field. */
 class ContractError : public std::invalid_argument {
 public:
     explicit ContractError(const std::string& message) : std::invalid_argument(message) {}
@@ -336,6 +337,7 @@ inline void RequireSupportedWakeModel(const std::string& name, std::string_view 
 
 } // namespace Detail
 
+/** Parse and strictly validate an already-loaded handoff document; throws ContractError on any violation. */
 [[nodiscard]] inline HandoffContract ParseHandoff(const nlohmann::json& root) {
     using namespace Detail;
 
@@ -538,6 +540,12 @@ inline void RequireSupportedWakeModel(const std::string& name, std::string_view 
 // this is the honest narrow path.
 inline constexpr double TrapezoidFitTolerance = 1e-9;
 
+/**
+ * Reduce a per-station planform to the parametric solver's single trapezoid.
+ * Throws ContractError if the planform is not exactly one linearly-tapered,
+ * linearly-twisted trapezoid (sweep/dihedral constant, chord/twist linear in
+ * eta, zero root incidence).
+ */
 [[nodiscard]] inline Solver::WingParams ToWingParams(const HandoffContract& contract) {
     const auto& stations = contract.Stations;
     const PlanformStation& root = stations.front();
@@ -601,6 +609,11 @@ inline constexpr double TrapezoidFitTolerance = 1e-9;
 // linearly and would look like a plausible answer.
 inline constexpr int MinBladeCount = 2;
 
+/**
+ * Convert a contract's fraction-of-disk-radius blade stations to the metres
+ * BEMT::PropGeometry expects. bladeCountOverride is required for contracts
+ * older than schema 1.4.0, which carry no blade count of their own.
+ */
 [[nodiscard]] inline BEMT::PropGeometry ToPropGeometry(const PropulsionSpec& spec, int rotationSign = 1,
                                                        int bladeCountOverride = 0) {
     if (spec.BladeStations.size() < MinBladeStations)
@@ -627,6 +640,7 @@ inline constexpr int MinBladeCount = 2;
     return prop;
 }
 
+/** Read and parse a handoff document from disk. */
 [[nodiscard]] inline HandoffContract LoadHandoff(const std::string& path) {
     std::ifstream input(path);
     if (!input) throw std::runtime_error("cannot open geometry handoff: " + path);

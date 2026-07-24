@@ -13,19 +13,21 @@ namespace Aeolion::Math {
 // --- dimensionless factors that recur in formulae -------------------------
 inline constexpr double Half           = 0.5;
 inline constexpr double Two            = 2.0;
-inline constexpr double QuarterChord   = 0.25; // x/c of the bound vortex line
-inline constexpr double ThreeQuarterChord = 0.75; // x/c of the control point
+inline constexpr double QuarterChord   = 0.25;      ///< x/c of the bound vortex line
+inline constexpr double ThreeQuarterChord = 0.75;   ///< x/c of the control point
 
 // --- angle conversion -----------------------------------------------------
 inline constexpr double DegreesPerHalfTurn = 180.0;
 inline constexpr double SecondsPerMinute   = 60.0;
 
+/** Degrees to radians. */
 [[nodiscard]] constexpr double DegToRad(double deg) { return deg * std::numbers::pi / DegreesPerHalfTurn; }
+/** Radians to degrees. */
 [[nodiscard]] constexpr double RadToDeg(double rad) { return rad * DegreesPerHalfTurn / std::numbers::pi; }
 
 // --- generic numerical guards ---------------------------------------------
-inline constexpr double Tiny       = 1e-9;   // "practically zero" length/area guard
-inline constexpr double UnitClampLo = -1.0;  // acos/asin argument clamp
+inline constexpr double Tiny       = 1e-9;   ///< "practically zero" length/area guard
+inline constexpr double UnitClampLo = -1.0;  ///< acos/asin argument clamp
 inline constexpr double UnitClampHi = 1.0;
 
 } // namespace Aeolion::Math

@@ -88,9 +88,11 @@ inline constexpr double DefaultBetaStepDeg  = 0.5;    // central-difference step
 inline constexpr double DefaultRateStepFraction = 0.002; // central-difference rate step, as a fraction of Vinf/length
 
 // --------------------------------------------- finite vortex segment -----
-// Biot-Savart induced velocity at point P from a straight vortex filament
-// running P1 -> P2 with circulation strength gamma. A small viscous-core
-// cutoff regularizes the singularity on the filament itself.
+/**
+ * Biot-Savart induced velocity at point P from a straight vortex filament
+ * running P1 -> P2 with circulation strength gamma. A small viscous-core
+ * cutoff regularizes the singularity on the filament itself.
+ */
 [[nodiscard]] inline Vec3 SegmentVelocity(const Vec3& P, const Vec3& P1, const Vec3& P2, double gamma) {
     Vec3 r1 = P - P1;
     Vec3 r2 = P - P2;
@@ -110,14 +112,17 @@ inline constexpr double DefaultRateStepFraction = 0.002; // central-difference r
     return c * K;
 }
 
+/** Linearly-tapered local chord at absolute spanwise coordinate yAbs. */
 [[nodiscard]] inline double ChordAt(const WingParams& w, double yAbs) {
     double eta = yAbs / (w.Span * Half);
     return w.RootChord + (w.TipChord - w.RootChord) * eta;
 }
 
-// Builds the panel lattice for a single trapezoidal, linearly-twisted,
-// swept, dihedral wing. Trailing legs are aligned with the global +x axis
-// (standard small-to-moderate AoA simplification).
+/**
+ * Builds the panel lattice for a single trapezoidal, linearly-twisted,
+ * swept, dihedral wing. Trailing legs are aligned with the global +x axis
+ * (standard small-to-moderate AoA simplification).
+ */
 [[nodiscard]] inline std::vector<Panel> BuildWing(const WingParams& w) {
     if (w.NPanelsSemiSpan < 1) throw std::invalid_argument("NPanelsSemiSpan must be >= 1");
 
@@ -194,8 +199,10 @@ inline constexpr double DefaultRateStepFraction = 0.002; // central-difference r
     return panels;
 }
 
-// Full horseshoe induced velocity (unit gamma) at point P for panel j,
-// using far-downstream points computed on the fly with `trail`.
+/**
+ * Full horseshoe induced velocity (unit gamma) at point P for panel j,
+ * using far-downstream points computed on the fly with `trail`.
+ */
 [[nodiscard]] inline Vec3 HorseshoeVelocity(const Vec3& P, const Panel& pj, double gamma, double trail) {
     Vec3 A_inf = pj.A + pj.TrailDirA * trail;
     Vec3 B_inf = pj.B + pj.TrailDirB * trail;
@@ -206,9 +213,11 @@ inline constexpr double DefaultRateStepFraction = 0.002; // central-difference r
     return v;
 }
 
-// Same but skipping the bound segment (used for near-field self-induced
-// velocity at a panel's own bound-vortex midpoint, where the bound segment
-// itself would be singular).
+/**
+ * Same but skipping the bound segment (used for near-field self-induced
+ * velocity at a panel's own bound-vortex midpoint, where the bound segment
+ * itself would be singular).
+ */
 [[nodiscard]] inline Vec3 HorseshoeVelocityNoBound(const Vec3& P, const Panel& pj, double gamma, double trail) {
     Vec3 A_inf = pj.A + pj.TrailDirA * trail;
     Vec3 B_inf = pj.B + pj.TrailDirB * trail;
@@ -251,9 +260,10 @@ inline constexpr double DefaultRateStepFraction = 0.002; // central-difference r
 using DenseMatrixView      = std::mdspan<double, std::dextents<std::size_t, 2>>;
 using ConstDenseMatrixView = std::mdspan<const double, std::dextents<std::size_t, 2>>;
 
+/** LAPACK dgetrf LU factorization of the influence matrix, ready for repeated dgetrs solves. */
 struct LUFactorization {
     int N = 0;
-    std::vector<double> Flat; // row-major N*N (== column-major A^T), overwritten in place with L/U by dgetrf
+    std::vector<double> Flat; ///< Row-major N*N (== column-major A^T), overwritten in place with L/U by dgetrf.
     std::vector<int> Ipiv;
     bool NearSingular = false;
     // Smallest LU pivot divided by the largest entry ANYWHERE in A.
@@ -271,9 +281,10 @@ struct LUFactorization {
     // asserts. See also SingularAtIndex, which is dgetrf's own verdict and
     // carries no such caveat.
     double MinPivotRatio = 1.0;
-    int SingularAtIndex = 0; // dgetrf's INFO: >0 means U(info,info) is exactly zero -- 0 = fully nonsingular
+    int SingularAtIndex = 0; ///< dgetrf's INFO: >0 means U(info,info) is exactly zero -- 0 = fully nonsingular.
 };
 
+/** Factorize A in place via LAPACK dgetrf (partial-pivoting LU). */
 [[nodiscard]] inline LUFactorization LuFactorize(ConstDenseMatrixView A) {
     int n = static_cast<int>(A.extent(0));
     LUFactorization f;
@@ -300,6 +311,7 @@ struct LUFactorization {
     return f;
 }
 
+/** Solve A x = b against an already-factorized system via LAPACK dgetrs. */
 [[nodiscard]] inline std::vector<double> LuSolve(const LUFactorization& f, const std::vector<double>& b) {
     std::vector<double> x = b; // dgetrs solves in place
     if (f.N == 0) return x;
@@ -334,6 +346,7 @@ struct LUFactorization {
 // system exactly A_vv Gamma = -Vkin . n_v -- the same equations, with the
 // source rows and columns absent rather than skipped by a branch. That is
 // why there is no separate wing-only path to keep in step.
+/** Everything a solve is posed on: lifting surfaces (vortices) and body surfaces (sources). */
 struct PanelSystem {
     std::vector<Panel> Vortices;
     std::vector<SourcePanel> Sources;
@@ -380,12 +393,14 @@ struct PanelSystem {
 // panel positions/normals, never on alpha/beta/rates/externalField, so
 // this is what you build ONCE and reuse across many flight conditions
 // (see ComputeDerivatives() below for the motivating case).
+/** A geometry-only factorization, built once and reused across many flight conditions. */
 struct PreparedSystem {
     PanelSystem System;
     double TrailLength = 0.0;
     LUFactorization Factorization;
 };
 
+/** Assemble and factorize the influence matrix for system. */
 [[nodiscard]] inline PreparedSystem Prepare(const PanelSystem& system, double trailLength) {
     const int N = system.UnknownCount();
     std::vector<double> aStorage(static_cast<std::size_t>(N) * N, 0.0);
@@ -401,17 +416,21 @@ struct PreparedSystem {
     return sys;
 }
 
-// Wing-only convenience. This is not a second code path: it states the
-// reduction literally, by posing the same system with no source panels.
+/**
+ * Wing-only convenience. This is not a second code path: it states the
+ * reduction literally, by posing the same system with no source panels.
+ */
 [[nodiscard]] inline PreparedSystem Prepare(const std::vector<Panel>& panels, double trailLength) {
     return Prepare(PanelSystem{panels, {}}, trailLength);
 }
 
-// Core solver, RHS/force part: takes an already-factorized system and just
-// needs the flight condition -- O(N^2) instead of O(N^3), since the
-// expensive part (matrix assembly + factorization) already happened in
-// Prepare(). This is the function to call in a loop over many conditions
-// against the same geometry.
+/**
+ * Core solver, RHS/force part: takes an already-factorized system and just
+ * needs the flight condition -- O(N^2) instead of O(N^3), since the
+ * expensive part (matrix assembly + factorization) already happened in
+ * Prepare(). This is the function to call in a loop over many conditions
+ * against the same geometry.
+ */
 [[nodiscard]] inline SolveResult SolveWithSystem(const PreparedSystem& sys, const FreestreamConditions& fc,
                                     const ReferenceGeometry& ref,
                                     const std::function<Vec3(const Vec3&)>& externalField = nullptr) {
@@ -609,22 +628,24 @@ struct PreparedSystem {
     return res;
 }
 
-// Core solver: works on an arbitrary panel list (one or many lifting
-// surfaces already merged together -- e.g. wing + horizontal tail +
-// vertical tail panels all in one vector).
-//
-// externalField: optional background velocity PERTURBATION as a function
-// of position, added on top of the freestream+rotation kinematic velocity
-// at every panel. This is how you inject something like a propeller's
-// slipstream (see BEMT.h), ground effect, or a gust field into an
-// otherwise-ordinary lifting-surface solve -- the field only needs to
-// return the extra velocity it contributes, not the total.
-//
-// This is a thin convenience wrapper around Prepare()+SolveWithSystem();
-// if you're going to solve the SAME geometry against multiple flight
-// conditions (a sweep, stability derivatives, an optimization loop), call
-// Prepare() once yourself and use SolveWithSystem() directly instead --
-// see ComputeDerivatives() for exactly that pattern.
+/**
+ * Core solver: works on an arbitrary panel list (one or many lifting
+ * surfaces already merged together -- e.g. wing + horizontal tail +
+ * vertical tail panels all in one vector).
+ *
+ * externalField: optional background velocity PERTURBATION as a function
+ * of position, added on top of the freestream+rotation kinematic velocity
+ * at every panel. This is how you inject something like a propeller's
+ * slipstream (see BEMT.h), ground effect, or a gust field into an
+ * otherwise-ordinary lifting-surface solve -- the field only needs to
+ * return the extra velocity it contributes, not the total.
+ *
+ * This is a thin convenience wrapper around Prepare()+SolveWithSystem();
+ * if you're going to solve the SAME geometry against multiple flight
+ * conditions (a sweep, stability derivatives, an optimization loop), call
+ * Prepare() once yourself and use SolveWithSystem() directly instead --
+ * see ComputeDerivatives() for exactly that pattern.
+ */
 [[nodiscard]] inline SolveResult Solve(const std::vector<Panel>& panels, const FreestreamConditions& fc,
                           const ReferenceGeometry& ref, double trailLength,
                           const std::function<Vec3(const Vec3&)>& externalField = nullptr) {
@@ -632,10 +653,12 @@ struct PreparedSystem {
     return SolveWithSystem(sys, fc, ref, externalField);
 }
 
-// Convenience overload: build a single parametric wing and solve it (this
-// is the original single-surface entry point). Reference chord defaults to
-// the mean geometric chord (S/span); moment reference point comes from
-// fc.RefPoint (default: origin -- set fc.RefPoint to your CG).
+/**
+ * Convenience overload: build a single parametric wing and solve it (this
+ * is the original single-surface entry point). Reference chord defaults to
+ * the mean geometric chord (S/span); moment reference point comes from
+ * fc.RefPoint (default: origin -- set fc.RefPoint to your CG).
+ */
 [[nodiscard]] inline SolveResult Solve(const WingParams& wp, const FreestreamConditions& fc) {
     std::vector<Panel> panels = BuildWing(wp);
     for (auto& p : panels) p.Surface = "wing";
@@ -649,6 +672,11 @@ struct PreparedSystem {
     return Solve(panels, fc, ref, trail);
 }
 
+/**
+ * Central-difference stability & control derivatives about base, by
+ * factorizing the geometry once and re-solving it against 11 perturbed
+ * flight conditions via SolveWithSystem().
+ */
 [[nodiscard]] inline StabilityDerivatives ComputeDerivatives(const std::vector<Panel>& panels,
                                                 const FreestreamConditions& base,
                                                 const ReferenceGeometry& ref,

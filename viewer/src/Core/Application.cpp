@@ -3,6 +3,8 @@
 #include "Core/Application.h"
 #include "Visualization/ColorMap.h"
 
+#include "Aeolion/PanelBuilder/PanelBuilder.h"
+
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
@@ -12,6 +14,8 @@
 
 #include <algorithm>
 #include <cfloat>
+#include <cstdio>
+#include <fstream>
 #include <numbers>
 #include <string>
 #include <vector>
@@ -62,9 +66,11 @@ void ColorBar(double minValue, double maxValue) {
 
 } // namespace
 
-Application::Application()
-    : m_Window("Aeolion Viewer", DefaultWindowWidth, DefaultWindowHeight) {
+Application::Application(const std::string& geometryPath, const std::string& screenshotPath)
+    : m_Window("Aeolion Viewer", DefaultWindowWidth, DefaultWindowHeight),
+      m_ScreenshotPath(screenshotPath) {
     // Sensible default study: a moderately swept, tapered, washed-out wing.
+    // Ignored once LoadHandoff() below switches to handoff mode.
     m_Wing.Span = 4.0;
     m_Wing.RootChord = 0.6;
     m_Wing.TipChord = 0.35;
@@ -80,6 +86,8 @@ Application::Application()
     ImGui_ImplGlfw_InitForOpenGL(m_Window.Handle(), true);
     ImGui_ImplOpenGL3_Init("#version 330");
 
+    if (!geometryPath.empty()) LoadHandoff(geometryPath);
+
     FrameView();
 }
 
@@ -89,29 +97,76 @@ Application::~Application() {
     ImGui::DestroyContext();
 }
 
+void Application::LoadHandoff(const std::string& geometryPath) {
+    m_Contract = Geometry::LoadHandoff(geometryPath);
+    PanelBuilder::LatticeBuilder builder(m_Contract);
+    m_Panels = builder.Build();
+    m_BodyPanels = builder.BuildBody();
+    m_ReferenceArea = builder.GrossPlanformArea();
+    m_ReferenceSpan = m_Contract.Span;
+    m_TrimEta = builder.TrimEta();
+    m_UseHandoff = true;
+
+    // Bounding sphere of the whole airframe (wing + body), for framing --
+    // the wing's own span alone would leave the fuselage's nose/tail cut off
+    // whenever the wing is placed near one end of the body.
+    Solver::Vec3 lo(1e30, 1e30, 1e30), hi(-1e30, -1e30, -1e30);
+    auto accumulate = [&](const Solver::Vec3& p) {
+        lo = Solver::Vec3(std::min(lo.x, p.x), std::min(lo.y, p.y), std::min(lo.z, p.z));
+        hi = Solver::Vec3(std::max(hi.x, p.x), std::max(hi.y, p.y), std::max(hi.z, p.z));
+    };
+    for (const auto& panel : m_Panels) { accumulate(panel.A); accumulate(panel.B); }
+    for (const auto& panel : m_BodyPanels)
+        for (const auto& corner : panel.Corners) accumulate(corner);
+
+    m_SceneCenter = (lo + hi) * 0.5;
+    Solver::Vec3 extent = hi - lo;
+    m_SceneRadius = std::max({extent.x, extent.y, extent.z, 0.1});
+
+    Resolve();
+}
+
 void Application::FrameView() {
+    if (m_UseHandoff) {
+        m_Camera.SetTarget(glm::vec3(static_cast<float>(m_SceneCenter.x), static_cast<float>(m_SceneCenter.y),
+                                      static_cast<float>(m_SceneCenter.z)));
+        m_Camera.SetDistance(static_cast<float>(m_SceneRadius) * CameraFrameDistanceFactor);
+        return;
+    }
     // Center on the mid-chord of the root section; the lattice grows aft (+x).
     m_Camera.SetTarget(glm::vec3(static_cast<float>(m_Wing.RootChord) * 0.25f, 0.0f, 0.0f));
     m_Camera.SetDistance(static_cast<float>(m_Wing.Span) * CameraFrameDistanceFactor);
 }
 
 void Application::Resolve() {
-    m_Panels = Solver::BuildWing(m_Wing);
-    for (auto& panel : m_Panels) panel.Surface = "wing";
-
-    double area = 0.0;
-    for (const auto& panel : m_Panels) area += panel.Area;
-
     Solver::ReferenceGeometry ref;
-    ref.Area = area;
-    ref.Span = m_Wing.Span;
-    ref.Chord = area / m_Wing.Span;
+    double trail;
 
-    double trail = (m_Wing.TrailLength > 0.0)
-                       ? m_Wing.TrailLength
-                       : Solver::DefaultTrailSpanFactor * m_Wing.Span;
+    if (m_UseHandoff) {
+        // Geometry is fixed once loaded (no Planform sliders in this mode);
+        // only the freestream changes, so re-solve the same panel lists.
+        ref.Area = m_ReferenceArea;
+        ref.Span = m_ReferenceSpan;
+        ref.Chord = m_ReferenceArea / m_ReferenceSpan;
+        trail = Solver::DefaultTrailSpanFactor * m_ReferenceSpan;
 
-    m_Result = Solver::Solve(m_Panels, m_Freestream, ref, trail);
+        const Solver::PanelSystem system{m_Panels, m_BodyPanels};
+        const Solver::PreparedSystem prepared = Solver::Prepare(system, trail);
+        m_Result = Solver::SolveWithSystem(prepared, m_Freestream, ref);
+    } else {
+        m_Panels = Solver::BuildWing(m_Wing);
+        for (auto& panel : m_Panels) panel.Surface = "wing";
+
+        double area = 0.0;
+        for (const auto& panel : m_Panels) area += panel.Area;
+        ref.Area = area;
+        ref.Span = m_Wing.Span;
+        ref.Chord = area / m_Wing.Span;
+        trail = (m_Wing.TrailLength > 0.0) ? m_Wing.TrailLength
+                                            : Solver::DefaultTrailSpanFactor * m_Wing.Span;
+
+        m_Result = Solver::Solve(m_Panels, m_Freestream, ref, trail);
+    }
     m_Derivatives.reset(); // stale for the new geometry/condition; recompute on demand
 }
 
@@ -147,7 +202,15 @@ void Application::DrawUI() {
     ImGui::SetNextWindowSize(ImVec2(360, 560), ImGuiCond_FirstUseEver);
     ImGui::Begin("Controls");
 
-    if (ImGui::CollapsingHeader("Planform", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (m_UseHandoff) {
+        if (ImGui::CollapsingHeader("Geometry (handoff)", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Text("design_id: %.16s...", m_Contract.DesignId.c_str());
+            ImGui::Text("schema: %s", m_Contract.SchemaVersion.c_str());
+            ImGui::Text("wing panels: %zu", m_Panels.size());
+            ImGui::Text("body panels: %zu", m_BodyPanels.size());
+            ImGui::Text("trimmed at eta: %.3f", m_TrimEta);
+        }
+    } else if (ImGui::CollapsingHeader("Planform", ImGuiTreeNodeFlags_DefaultOpen)) {
         m_Dirty |= SliderD("Span [m]", &m_Wing.Span, 0.5, 12.0);
         m_Dirty |= SliderD("Root chord [m]", &m_Wing.RootChord, 0.05, 2.0);
         m_Dirty |= SliderD("Tip chord [m]", &m_Wing.TipChord, 0.05, 2.0);
@@ -195,8 +258,9 @@ void Application::DrawUI() {
         ReadoutRow("Cn", m_Result.Cn);
         ReadoutRow("L [N]", m_Result.L, "%.2f");
         ReadoutRow("Di [N]", m_Result.Di, "%.3f");
+        double refSpan = m_UseHandoff ? m_ReferenceSpan : m_Wing.Span;
         double aspectRatio = (m_Result.ReferenceArea > 0.0)
-                                 ? m_Wing.Span * m_Wing.Span / m_Result.ReferenceArea
+                                 ? refSpan * refSpan / m_Result.ReferenceArea
                                  : 0.0;
         ReadoutRow("AR", aspectRatio, "%.2f");
         if (m_Result.CDi > 1e-9) {
@@ -219,31 +283,37 @@ void Application::DrawUI() {
                          "cl(y), tip-to-tip", FLT_MAX, FLT_MAX, ImVec2(-1, 90));
     }
 
-    ImGui::SeparatorText("Stability derivatives");
-    if (ImGui::Button("Compute derivatives")) {
-        double area = 0.0;
-        for (const auto& panel : m_Panels) area += panel.Area;
-        Solver::ReferenceGeometry ref;
-        ref.Area = area;
-        ref.Span = m_Wing.Span;
-        ref.Chord = area / m_Wing.Span;
-        double trail = (m_Wing.TrailLength > 0.0)
-                           ? m_Wing.TrailLength
-                           : Solver::DefaultTrailSpanFactor * m_Wing.Span;
-        m_Derivatives = Solver::ComputeDerivatives(m_Panels, m_Freestream, ref, trail);
-    }
-    if (m_Derivatives) {
-        if (ImGui::BeginTable("derivatives", 2, ImGuiTableFlags_SizingStretchProp)) {
-            ReadoutRow("CL_alpha [/rad]", m_Derivatives->CL_alpha, "%.4f");
-            ReadoutRow("Cm_alpha [/rad]", m_Derivatives->Cm_alpha, "%.4f");
-            ReadoutRow("CY_beta [/rad]", m_Derivatives->CY_beta, "%.4f");
-            ReadoutRow("Croll_beta [/rad]", m_Derivatives->Croll_beta, "%.4f");
-            ReadoutRow("Cn_beta [/rad]", m_Derivatives->Cn_beta, "%.4f");
-            ReadoutRow("CL_q (nd)", m_Derivatives->CL_q_nd, "%.4f");
-            ReadoutRow("Cm_q (nd)", m_Derivatives->Cm_q_nd, "%.4f");
-            ReadoutRow("Croll_p (nd)", m_Derivatives->Croll_p_nd, "%.4f");
-            ReadoutRow("Cn_r (nd)", m_Derivatives->Cn_r_nd, "%.4f");
-            ImGui::EndTable();
+    // Solver::ComputeDerivatives() takes a wing-only panel list (no
+    // PanelSystem/body-coupling overload exists), so it would silently
+    // ignore the fuselage in handoff mode -- hidden there rather than
+    // offering a derivative table that quietly excludes the body.
+    if (!m_UseHandoff) {
+        ImGui::SeparatorText("Stability derivatives");
+        if (ImGui::Button("Compute derivatives")) {
+            double area = 0.0;
+            for (const auto& panel : m_Panels) area += panel.Area;
+            Solver::ReferenceGeometry ref;
+            ref.Area = area;
+            ref.Span = m_Wing.Span;
+            ref.Chord = area / m_Wing.Span;
+            double trail = (m_Wing.TrailLength > 0.0)
+                               ? m_Wing.TrailLength
+                               : Solver::DefaultTrailSpanFactor * m_Wing.Span;
+            m_Derivatives = Solver::ComputeDerivatives(m_Panels, m_Freestream, ref, trail);
+        }
+        if (m_Derivatives) {
+            if (ImGui::BeginTable("derivatives", 2, ImGuiTableFlags_SizingStretchProp)) {
+                ReadoutRow("CL_alpha [/rad]", m_Derivatives->CL_alpha, "%.4f");
+                ReadoutRow("Cm_alpha [/rad]", m_Derivatives->Cm_alpha, "%.4f");
+                ReadoutRow("CY_beta [/rad]", m_Derivatives->CY_beta, "%.4f");
+                ReadoutRow("Croll_beta [/rad]", m_Derivatives->Croll_beta, "%.4f");
+                ReadoutRow("Cn_beta [/rad]", m_Derivatives->Cn_beta, "%.4f");
+                ReadoutRow("CL_q (nd)", m_Derivatives->CL_q_nd, "%.4f");
+                ReadoutRow("Cm_q (nd)", m_Derivatives->Cm_q_nd, "%.4f");
+                ReadoutRow("Croll_p (nd)", m_Derivatives->Croll_p_nd, "%.4f");
+                ReadoutRow("Cn_r (nd)", m_Derivatives->Cn_r_nd, "%.4f");
+                ImGui::EndTable();
+            }
         }
     }
     ImGui::End();
@@ -263,7 +333,8 @@ void Application::Run(int maxFrames) {
             m_DisplayDirty = true;
         }
         if (m_DisplayDirty) {
-            m_Lattice.Update(m_Panels, m_Result, m_Display, m_Wing.Span);
+            double span = m_UseHandoff ? m_SceneRadius : m_Wing.Span;
+            m_Lattice.Update(m_Panels, m_Result, m_Display, span, m_BodyPanels);
             m_DisplayDirty = false;
         }
 
@@ -286,6 +357,29 @@ void Application::Run(int maxFrames) {
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         m_Window.SwapBuffers();
+
+        if (!m_ScreenshotPath.empty() && maxFrames >= 0 && frame == maxFrames) CaptureScreenshot();
+    }
+}
+
+void Application::CaptureScreenshot() const {
+    int width = m_Window.FramebufferWidth();
+    int height = m_Window.FramebufferHeight();
+    std::vector<unsigned char> pixels(static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 3);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
+
+    std::ofstream file(m_ScreenshotPath, std::ios::binary);
+    if (!file) {
+        std::fprintf(stderr, "aeolion_viewer: could not open '%s' for writing\n", m_ScreenshotPath.c_str());
+        return;
+    }
+    file << "P6\n" << width << ' ' << height << "\n255\n";
+    // glReadPixels rows run bottom-to-top; flip to the top-down row order a
+    // PPM reader expects.
+    for (int row = height - 1; row >= 0; --row) {
+        const auto* rowStart = pixels.data() + static_cast<std::size_t>(row) * static_cast<std::size_t>(width) * 3;
+        file.write(reinterpret_cast<const char*>(rowStart), static_cast<std::streamsize>(width) * 3);
     }
 }
 

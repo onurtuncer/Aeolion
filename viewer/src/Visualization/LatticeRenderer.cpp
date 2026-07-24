@@ -28,6 +28,9 @@ constexpr float GridDropSpanFactor = 0.3f;   // grid plane sits this far below t
 constexpr int   GridLineCount = 17;          // lines per direction (odd -> line through center)
 constexpr float AxisLengthSpanFactor = 0.3f;
 
+const glm::vec3 BodyFillColor(0.58f, 0.54f, 0.48f);
+const glm::vec3 BodyOutlineColor(0.32f, 0.29f, 0.25f);
+
 const glm::vec3 OutlineColor(0.42f, 0.44f, 0.48f);
 const glm::vec3 BoundVortexColor(0.95f, 0.95f, 0.98f);
 const glm::vec3 NormalGlyphColor(1.0f, 0.62f, 0.25f);
@@ -98,7 +101,8 @@ void LatticeRenderer::AppendLine(std::vector<float>& lines, const glm::vec3& a, 
 }
 
 void LatticeRenderer::Update(const std::vector<Solver::Panel>& panels, const Solver::SolveResult& result,
-                             const LatticeDisplayOptions& options, double span) {
+                             const LatticeDisplayOptions& options, double span,
+                             const std::vector<Lattice::SourcePanel>& bodyPanels) {
     const std::size_t n = panels.size();
 
     // --- scalar field per panel (indexed like `panels`, not by station order)
@@ -196,6 +200,38 @@ void LatticeRenderer::Update(const std::vector<Solver::Panel>& panels, const Sol
         }
         if (options.ShowNormals) {
             glm::vec3 cp = ToGlm(p.ControlPoint);
+            float glyphLength = static_cast<float>(span) * NormalGlyphSpanFactor;
+            AppendLine(lineVerts, cp, cp + normal * glyphLength, NormalGlyphColor);
+        }
+    }
+
+    // --- fuselage source panels ---------------------------------------------
+    // No solved scalar field is broadcast to the body (SolveResult carries no
+    // per-source-panel array), so every panel gets the same fixed shade;
+    // shape and the outline are what these are here to show.
+    for (const Lattice::SourcePanel& body : bodyPanels) {
+        glm::vec3 c0 = ToGlm(body.Corners[0]);
+        glm::vec3 c1 = ToGlm(body.Corners[1]);
+        glm::vec3 c2 = ToGlm(body.Corners[2]);
+        glm::vec3 c3 = ToGlm(body.Corners[3]);
+        glm::vec3 normal = ToGlm(body.Normal);
+
+        auto pushVertex = [&](const glm::vec3& pos) {
+            panelVerts.insert(panelVerts.end(),
+                              {pos.x, pos.y, pos.z, normal.x, normal.y, normal.z,
+                               BodyFillColor.r, BodyFillColor.g, BodyFillColor.b});
+        };
+        pushVertex(c0); pushVertex(c1); pushVertex(c2);
+        pushVertex(c0); pushVertex(c2); pushVertex(c3);
+
+        if (options.ShowWireframe) {
+            AppendLine(lineVerts, c0, c1, BodyOutlineColor);
+            AppendLine(lineVerts, c1, c2, BodyOutlineColor);
+            AppendLine(lineVerts, c2, c3, BodyOutlineColor);
+            AppendLine(lineVerts, c3, c0, BodyOutlineColor);
+        }
+        if (options.ShowNormals) {
+            glm::vec3 cp = ToGlm(body.ControlPoint);
             float glyphLength = static_cast<float>(span) * NormalGlyphSpanFactor;
             AppendLine(lineVerts, cp, cp + normal * glyphLength, NormalGlyphColor);
         }

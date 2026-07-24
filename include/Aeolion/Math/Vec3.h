@@ -14,6 +14,7 @@
 
 namespace Aeolion::Math {
 
+/** 3D double vector. */
 struct Vec3 {
     double x = 0.0, y = 0.0, z = 0.0;
 
@@ -25,8 +26,10 @@ struct Vec3 {
     [[nodiscard]] Vec3 operator*(double s) const { return {x * s, y * s, z * s}; }
     [[nodiscard]] Vec3 operator-() const { return {-x, -y, -z}; }
 
+    /** Euclidean length. */
     [[nodiscard]] double Norm() const { return std::sqrt(x * x + y * y + z * z); }
 
+    /** Unit-length copy; returns the zero vector if Norm() is below 1e-14. */
     [[nodiscard]] Vec3 Normalized() const {
         double n = Norm();
         if (n < 1e-14) return {0, 0, 0};
@@ -34,28 +37,35 @@ struct Vec3 {
     }
 };
 
+/** Dot product. */
 [[nodiscard]] inline double Dot(const Vec3& a, const Vec3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 
+/** Cross product, right-hand rule. */
 [[nodiscard]] inline Vec3 Cross(const Vec3& a, const Vec3& b) {
     return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
 }
 
+/** Rotate about the global x-axis by angleRad, right-hand rule. */
 [[nodiscard]] inline Vec3 RotateAboutX(const Vec3& v, double angleRad) {
     double c = std::cos(angleRad), s = std::sin(angleRad);
     return {v.x, c * v.y - s * v.z, s * v.y + c * v.z};
 }
 
-// Rotate about a local spanwise axis (approximated as global y) — used to
-// apply geometric twist to the panel normal vector.
+/**
+ * Rotate about a local spanwise axis (approximated as global y) — used to
+ * apply geometric twist to the panel normal vector.
+ */
 [[nodiscard]] inline Vec3 RotateAboutY(const Vec3& v, double angleRad) {
     double c = std::cos(angleRad), s = std::sin(angleRad);
     return {c * v.x + s * v.z, v.y, -s * v.x + c * v.z};
 }
 
-// Rodrigues rotation about an arbitrary unit axis, right-hand rule. Needed
-// where the rotation axis is data rather than a coordinate direction — a
-// control surface's hinge line, whose axis the geometry contract states
-// explicitly (see Geometry/ControlSurface.h).
+/**
+ * Rodrigues rotation about an arbitrary unit axis, right-hand rule. Needed
+ * where the rotation axis is data rather than a coordinate direction — a
+ * control surface's hinge line, whose axis the geometry contract states
+ * explicitly (see Geometry/ControlSurface.h).
+ */
 [[nodiscard]] inline Vec3 RotateAboutAxis(const Vec3& v, const Vec3& axis, double angleRad) {
     const Vec3 k = axis.Normalized();
     const double c = std::cos(angleRad), s = std::sin(angleRad);

@@ -38,37 +38,50 @@ namespace Aeolion::Lattice {
 
 using Math::Vec3;
 
+/**
+ * One constant-strength quadrilateral SOURCE panel: the atomic unit of a
+ * non-lifting body's surface, the way Panel is the atomic unit of a lifting
+ * surface's lattice.
+ */
 struct SourcePanel {
-    // Corners in order around the panel; the winding must be consistent with
-    // Normal (right-hand rule), since the influence kernel integrates over
-    // the edges in this order.
+    /**
+     * Corners in order around the panel; the winding must be consistent with
+     * Normal (right-hand rule), since the influence kernel integrates over
+     * the edges in this order.
+     */
     std::array<Vec3, 4> Corners;
 
-    Vec3 ControlPoint;    // centroid, where tangency is enforced
-    Vec3 Normal;          // unit outward normal (out of the body)
-    double Area = 0.0;    // true panel area
+    Vec3 ControlPoint;    ///< Centroid, where tangency is enforced.
+    Vec3 Normal;          ///< Unit outward normal (out of the body).
+    double Area = 0.0;    ///< True panel area.
 
-    // Normal velocity the boundary condition should enforce at ControlPoint,
-    // positive along Normal. Zero is a solid wall; nonzero is transpiration,
-    // which is how the open base carries the propeller efflux.
+    /**
+     * Normal velocity the boundary condition should enforce at ControlPoint,
+     * positive along Normal. Zero is a solid wall; nonzero is transpiration,
+     * which is how the open base carries the propeller efflux.
+     */
     double PrescribedNormalVelocity = 0.0;
 
-    // Whether this panel is a real wall or just a boundary the flow passes
-    // through. A permeable panel still imposes its condition -- that is how
-    // the efflux shapes the field around the rest of the body -- but it
-    // contributes NO pressure force, because there is no surface there for
-    // pressure to act on.
-    //
-    // Getting this wrong is subtle rather than loud: integrating Cp over a
-    // permeable face silently converts a fast jet into base suction, which
-    // reads as drag. A jet's thrust is momentum flux through the exit plane,
-    // which is not a pressure force on the body at all.
+    /**
+     * Whether this panel is a real wall or just a boundary the flow passes
+     * through. A permeable panel still imposes its condition -- that is how
+     * the efflux shapes the field around the rest of the body -- but it
+     * contributes NO pressure force, because there is no surface there for
+     * pressure to act on.
+     *
+     * Getting this wrong is subtle rather than loud: integrating Cp over a
+     * permeable face silently converts a fast jet into base suction, which
+     * reads as drag. A jet's thrust is momentum flux through the exit plane,
+     * which is not a pressure force on the body at all.
+     */
     bool Permeable = false;
 
-    std::string Surface;  // which body this belongs to (e.g. "fuselage")
+    std::string Surface;  ///< Which body this belongs to (e.g. "fuselage").
 
-    // Axial station index along the body, so a chordwise/axial pressure
-    // distribution can be reported without re-deriving the topology.
+    /**
+     * Axial station index along the body, so a chordwise/axial pressure
+     * distribution can be reported without re-deriving the topology.
+     */
     int StationIndex = -1;
 };
 

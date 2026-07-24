@@ -23,32 +23,37 @@ namespace Aeolion::Lattice {
 
 using Math::Vec3;
 
+/** One horseshoe-vortex panel: the atomic geometric unit of the lattice. */
 struct Panel {
-    Vec3 A, B;              // bound vortex endpoints (panel quarter-chord), A.y < B.y
-    Vec3 ControlPoint;      // panel three-quarter-chord, mid-span
-    Vec3 Normal;            // unit outward normal at control point (twist + dihedral + camber slope)
-    Vec3 TrailDirA, TrailDirB; // unit direction of trailing legs from A and from B (downstream)
-    // Area of the actual (cambered, dihedral-tilted) panel surface, and the
-    // area of its projection onto the reference plane. They are equal only
-    // for a flat, un-dihedralled panel.
-    //
-    // These are NOT interchangeable. Force and moment coefficients are
-    // normalized by PLANFORM area by universal convention -- CL = L/(q*S)
-    // with S projected -- so every coefficient in the solver divides by
-    // PlanformArea. Area is the true wetted-side geometry, which is what a
-    // skin-friction / viscous buildup wants (see DragEstimate). Normalizing
-    // a coefficient by Area instead would silently redefine CL and break
-    // comparison against every published lift curve.
+    Vec3 A, B;                 ///< Bound vortex endpoints (panel quarter-chord), A.y < B.y.
+    Vec3 ControlPoint;         ///< Panel three-quarter-chord, mid-span.
+    Vec3 Normal;               ///< Unit outward normal at control point (twist + dihedral + camber slope).
+    Vec3 TrailDirA, TrailDirB; ///< Unit direction of trailing legs from A and from B (downstream).
+
+    /**
+     * Area of the actual (cambered, dihedral-tilted) panel surface. Equal to
+     * PlanformArea only for a flat, un-dihedralled panel; this is the true
+     * wetted-side geometry a skin-friction/viscous buildup wants (see
+     * DragEstimate).
+     */
     double Area = 0.0;
+    /**
+     * Area of the panel's projection onto the reference plane. Force and
+     * moment coefficients are normalized by PLANFORM area by universal
+     * convention -- CL = L/(q*S) with S projected -- so every coefficient in
+     * the solver divides by this, never by Area.
+     */
     double PlanformArea = 0.0;
     double SpanwiseWidth = 0.0;
-    std::string Surface;    // which lifting surface this panel belongs to (e.g. "wing", "htail")
+    std::string Surface;       ///< Which lifting surface this panel belongs to (e.g. "wing", "htail").
 
-    // Panels sharing a StripIndex are the chordwise stack covering ONE
-    // spanwise station, and the solver reports them as a single
-    // StationResult (summed circulation and lift over the section chord).
-    // Negative means "this panel is its own station" -- the single-row
-    // case, where per-panel and per-station are the same thing.
+    /**
+     * Panels sharing a StripIndex are the chordwise stack covering ONE
+     * spanwise station, and the solver reports them as a single
+     * StationResult (summed circulation and lift over the section chord).
+     * Negative means "this panel is its own station" -- the single-row
+     * case, where per-panel and per-station are the same thing.
+     */
     int StripIndex = -1;
 };
 

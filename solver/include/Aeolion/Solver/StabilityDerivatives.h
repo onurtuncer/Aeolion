@@ -13,19 +13,20 @@
 
 namespace Aeolion::Solver {
 
+/** Central-difference stability & control derivatives about a baseline flight condition. */
 struct StabilityDerivatives {
     double CL0 = 0, CDi0 = 0, CY0 = 0, Cm0 = 0, Croll0 = 0, Cn0 = 0;
 
-    double CL_alpha = 0, CDi_alpha = 0, Cm_alpha = 0;      // per rad
-    double CY_beta = 0, Croll_beta = 0, Cn_beta = 0;       // per rad
+    double CL_alpha = 0, CDi_alpha = 0, Cm_alpha = 0;      ///< Per rad.
+    double CY_beta = 0, Croll_beta = 0, Cn_beta = 0;       ///< Per rad.
 
-    double CL_q = 0, CDi_q = 0, Cm_q = 0;                  // per rad/s
-    double CY_p = 0, Croll_p = 0, Cn_p = 0;                // per rad/s
-    double CY_r = 0, Croll_r = 0, Cn_r = 0;                // per rad/s
+    double CL_q = 0, CDi_q = 0, Cm_q = 0;                  ///< Per rad/s.
+    double CY_p = 0, Croll_p = 0, Cn_p = 0;                ///< Per rad/s.
+    double CY_r = 0, Croll_r = 0, Cn_r = 0;                ///< Per rad/s.
 
-    double CL_q_nd = 0, Cm_q_nd = 0;                       // x cbar/(2V)
-    double Croll_p_nd = 0, Cn_p_nd = 0;                    // x b/(2V)
-    double Croll_r_nd = 0, Cn_r_nd = 0;                    // x b/(2V)
+    double CL_q_nd = 0, Cm_q_nd = 0;                       ///< x cbar/(2V).
+    double Croll_p_nd = 0, Cn_p_nd = 0;                    ///< x b/(2V).
+    double Croll_r_nd = 0, Cn_r_nd = 0;                    ///< x b/(2V).
 };
 
 } // namespace Aeolion::Solver

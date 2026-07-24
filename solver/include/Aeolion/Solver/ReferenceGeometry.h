@@ -8,10 +8,11 @@
 
 namespace Aeolion::Solver {
 
+/** Normalization constants for force/moment coefficients. */
 struct ReferenceGeometry {
-    double Area = 0.0;   // S, wing reference area [m^2]
-    double Chord = 0.0;  // reference chord (mean aerodynamic chord) -- normalizes Cm [m]
-    double Span = 0.0;   // reference span -- normalizes Croll, Cn [m]
+    double Area = 0.0;   ///< S, wing reference area [m^2].
+    double Chord = 0.0;  ///< Reference chord (mean aerodynamic chord) -- normalizes Cm [m].
+    double Span = 0.0;   ///< Reference span -- normalizes Croll, Cn [m].
 };
 
 } // namespace Aeolion::Solver

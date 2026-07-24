@@ -15,6 +15,7 @@
 #include "Renderer/VertexArray.h"
 
 #include "Aeolion/Lattice/Panel.h"
+#include "Aeolion/Lattice/SourcePanel.h"
 #include "Aeolion/Solver/SolveResult.h"
 #include "Aeolion/Solver/StationResult.h"
 
@@ -44,9 +45,13 @@ public:
     LatticeRenderer();
 
     // Rebuild all vertex data from a solved lattice. `span` scales the
-    // grid, axes, and normal-vector glyphs.
+    // grid, axes, and normal-vector glyphs. `bodyPanels` (optional) is a
+    // fuselage's source-panel mesh, drawn in a fixed neutral shade -- it
+    // carries no per-vertex scalar field the way a solved lifting panel
+    // does, so it is not part of the field's min/max range.
     void Update(const std::vector<Solver::Panel>& panels, const Solver::SolveResult& result,
-                const LatticeDisplayOptions& options, double span);
+                const LatticeDisplayOptions& options, double span,
+                const std::vector<Lattice::SourcePanel>& bodyPanels = {});
 
     void Draw(const glm::mat4& viewProjection) const;
 

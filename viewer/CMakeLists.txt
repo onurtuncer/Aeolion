@@ -27,6 +27,7 @@ add_executable(aeolion_viewer
 target_include_directories(aeolion_viewer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(aeolion_viewer PRIVATE
     aeolion
+    aeolion_panelbuilder
     glfw
     glad::glad
     glm::glm

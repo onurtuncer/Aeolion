@@ -26,28 +26,32 @@
 
 namespace Aeolion::Geometry {
 
+/** One axial station of the body-of-revolution profile. */
 struct BodyStation {
-    double x = 0.0;      // [m], contract frame (x forward, so aft is negative)
-    double Radius = 0.0; // [m], >= 0; zero means the profile closes to a point
+    double x = 0.0;      ///< [m], contract frame (x forward, so aft is negative).
+    double Radius = 0.0; ///< [m], >= 0; zero means the profile closes to a point.
 };
 
+/** Fuselage/duct body, as an axisymmetric body of revolution. */
 struct BodyGeometry {
-    double Length = 0.0;              // [m], nose-to-tail
-    std::vector<BodyStation> Stations; // ordered nose -> tail (x strictly decreasing)
+    double Length = 0.0;              ///< [m], nose-to-tail.
+    std::vector<BodyStation> Stations; ///< Ordered nose -> tail (x strictly decreasing).
 
     [[nodiscard]] bool IsPresent() const { return !Stations.empty(); }
 };
 
-// The body's radius law: its radius at an arbitrary axial position, in the
-// CONTRACT's frame (x forward, so the body occupies [-Length, 0]). Linear
-// between stations, which is the interpolation the contract itself
-// specifies -- the same rule PlanformStation.h states for the planform.
-//
-// Returns 0 outside the body's extent, so "is this point inside the body?"
-// reduces to comparing a radius against this without a separate bounds
-// test. That question is what trimming a wing lattice at the fuselage
-// surface is made of, which is why this lives here rather than being
-// re-derived by each consumer.
+/**
+ * The body's radius law: its radius at an arbitrary axial position, in the
+ * CONTRACT's frame (x forward, so the body occupies [-Length, 0]). Linear
+ * between stations, which is the interpolation the contract itself
+ * specifies -- the same rule PlanformStation.h states for the planform.
+ *
+ * Returns 0 outside the body's extent, so "is this point inside the body?"
+ * reduces to comparing a radius against this without a separate bounds
+ * test. That question is what trimming a wing lattice at the fuselage
+ * surface is made of, which is why this lives here rather than being
+ * re-derived by each consumer.
+ */
 [[nodiscard]] inline double RadiusAt(const BodyGeometry& body, double contractX) {
     const auto& stations = body.Stations;
     if (stations.empty()) return 0.0;

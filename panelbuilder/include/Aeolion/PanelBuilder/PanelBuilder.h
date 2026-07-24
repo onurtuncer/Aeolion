@@ -179,16 +179,19 @@ inline constexpr int MinPanelsPerSubInterval = 1;
 // Surfaces are addressed by INDEX into HandoffContract::ControlSurfaces,
 // never by name: ControlSurface.h warns that names are not unique (a
 // four-vane duct emits four entries all called "vane").
+/** A commanded control-surface deflection, addressed by index into HandoffContract::ControlSurfaces. */
 struct ControlDeflection {
     std::size_t SurfaceIndex = 0;
-    double RightAngleDeg = 0.0; // +y semi-span
-    double LeftAngleDeg = 0.0;  // -y semi-span
+    double RightAngleDeg = 0.0; ///< +y semi-span.
+    double LeftAngleDeg = 0.0;  ///< -y semi-span.
 };
 
+/** Equal deflection on both semi-spans (flap/elevator mode). */
 [[nodiscard]] inline ControlDeflection Symmetric(std::size_t surfaceIndex, double angleDeg) {
     return {surfaceIndex, angleDeg, angleDeg};
 }
 
+/** Opposite deflection on each semi-span (aileron mode). */
 [[nodiscard]] inline ControlDeflection Antisymmetric(std::size_t surfaceIndex, double angleDeg) {
     return {surfaceIndex, angleDeg, -angleDeg};
 }
@@ -224,52 +227,62 @@ struct ControlDeflection {
 // Cosine is kept because it is a modest win at low panel counts, but it is
 // opt-in and should not be used on fine meshes without checking
 // LUFactorization::MinPivotRatio.
+/** How panels are distributed within one interval between breakpoints. */
 enum class Spacing { Uniform, Cosine };
 
+/** Discretization and body-handling options for LatticeBuilder. */
 struct LatticeOptions {
     Spacing Spanwise = Spacing::Uniform;
     Spacing Chordwise = Spacing::Uniform;
 
-    // Whether to panel the fuselage at all. A wing-only study is a
-    // legitimate thing to want, and the body roughly doubles the unknown
-    // count -- which the dense solve pays for cubically.
+    /**
+     * Whether to panel the fuselage at all. A wing-only study is a
+     * legitimate thing to want, and the body roughly doubles the unknown
+     * count -- which the dense solve pays for cubically.
+     */
     bool IncludeBody = true;
 
-    // Cut the wing lattice off where it enters the fuselage. A lifting
-    // panel whose control point is inside a solid body is not a meaningful
-    // boundary condition, so the default is to trim.
-    //
-    // The cut is at the body radius evaluated at the ROOT LEADING EDGE
-    // station -- a single straight cut rather than one following the body's
-    // curvature down the chord. That is the conventional wing-body
-    // treatment and it is what the placement anchor names, so the two agree
-    // by construction. Requires a stated placement; without one there is no
-    // defined relationship to cut against and nothing is trimmed.
+    /**
+     * Cut the wing lattice off where it enters the fuselage. A lifting
+     * panel whose control point is inside a solid body is not a meaningful
+     * boundary condition, so the default is to trim.
+     *
+     * The cut is at the body radius evaluated at the ROOT LEADING EDGE
+     * station -- a single straight cut rather than one following the body's
+     * curvature down the chord. That is the conventional wing-body
+     * treatment and it is what the placement anchor names, so the two agree
+     * by construction. Requires a stated placement; without one there is no
+     * defined relationship to cut against and nothing is trimmed.
+     */
     bool TrimWingAtBody = true;
 
-    // Carry the wing's bound circulation THROUGH the fuselage.
-    //
-    // Trimming alone loses lift that the real aircraft keeps: a source
-    // distribution cannot carry circulation, and lift is circulation, so a
-    // sources-only body recovers only about three quarters of the trimmed
-    // root load. The classical fix (Pitts, Nielsen & Kaattari) is a
-    // carry-through vortex spanning the body at the strength of the
-    // innermost exposed strip.
-    //
-    // Implemented by EXTENDING that strip's bound segment inboard to the
-    // centreline rather than adding an unknown: the strength is then equal
-    // to its neighbour's by construction instead of by a constraint row, so
-    // the system stays one block of tangency equations. Tangency is still
-    // enforced only on the exposed wing, since the extended part of the
-    // segment runs inside the body where a boundary condition would be
-    // meaningless.
+    /**
+     * Carry the wing's bound circulation THROUGH the fuselage.
+     *
+     * Trimming alone loses lift that the real aircraft keeps: a source
+     * distribution cannot carry circulation, and lift is circulation, so a
+     * sources-only body recovers only about three quarters of the trimmed
+     * root load. The classical fix (Pitts, Nielsen & Kaattari) is a
+     * carry-through vortex spanning the body at the strength of the
+     * innermost exposed strip.
+     *
+     * Implemented by EXTENDING that strip's bound segment inboard to the
+     * centreline rather than adding an unknown: the strength is then equal
+     * to its neighbour's by construction instead of by a constraint row, so
+     * the system stays one block of tangency equations. Tangency is still
+     * enforced only on the exposed wing, since the extended part of the
+     * segment runs inside the body where a boundary condition would be
+     * meaningless.
+     */
     bool CarryThroughLift = true;
 
-    // Circumferential divisions around the body. The handoff schema states
-    // an axial station list but no azimuthal resolution, so this is the
-    // consumer's choice. The body is axisymmetric, but the FLOW around it
-    // is not once there is incidence or sideslip, which is the whole reason
-    // to resolve it circumferentially rather than treat it as rings.
+    /**
+     * Circumferential divisions around the body. The handoff schema states
+     * an axial station list but no azimuthal resolution, so this is the
+     * consumer's choice. The body is axisymmetric, but the FLOW around it
+     * is not once there is incidence or sideslip, which is the whole reason
+     * to resolve it circumferentially rather than treat it as rings.
+     */
     int BodyCircumferentialPanels = 16;
 };
 
@@ -302,51 +315,75 @@ struct LatticeOptions {
 // the solid cap BuildBody() produced, which is a closed-body answer -- wrong
 // in a known direction rather than an unknown one.
 //
-// Returns the number of base panels affected, so a caller can tell the
-// difference between "applied" and "there was no base".
+/**
+ * Prescribe the duct exit's outflow (freestream + slipstream induced
+ * velocity) on the base panels of body, in place. Returns the number of
+ * base panels affected, so a caller can tell the difference between
+ * "applied" and "there was no base".
+ */
 [[nodiscard]] int ApplyBaseEfflux(std::vector<Lattice::SourcePanel>& body,
                                   const std::function<Math::Vec3(const Math::Vec3&)>& slipstream,
                                   const Math::Vec3& referenceFreestream);
 
 // --- the builder ------------------------------------------------------------
+/**
+ * Builds the solver's lattice from a parsed geometry handoff, on the
+ * camber surface the handoff's CST sections describe, with wing-bound
+ * control surfaces deflected about their stated hinge lines. See the file
+ * header for the full method.
+ */
 class LatticeBuilder {
 public:
-    // The contract is copied: a builder outlives the expression that made
-    // it in every intended use (LatticeBuilder(LoadHandoff(path))), and the
-    // copy is negligible beside the O(N^3) solve it feeds.
+    /**
+     * The contract is copied: a builder outlives the expression that made
+     * it in every intended use (LatticeBuilder(LoadHandoff(path))), and the
+     * copy is negligible beside the O(N^3) solve it feeds.
+     */
     explicit LatticeBuilder(Geometry::HandoffContract contract, LatticeOptions options = {});
 
-    // Command a control surface. Repeat calls for the same surface replace
-    // the previous command, so a sweep can just re-Deflect and re-Build.
+    /**
+     * Command a control surface. Repeat calls for the same surface replace
+     * the previous command, so a sweep can just re-Deflect and re-Build.
+     */
     LatticeBuilder& Deflect(const ControlDeflection& deflection);
+    /** Clear all commanded deflections. */
     LatticeBuilder& ClearDeflections();
 
+    /** Build the wing lattice with the currently commanded deflections applied. */
     [[nodiscard]] std::vector<Solver::Panel> Build() const;
 
-    // The fuselage as source panels. Empty when the contract carries no
-    // body or LatticeOptions::IncludeBody is false, which is exactly the
-    // degenerate case the solver's blocked system reduces to.
+    /**
+     * The fuselage as source panels. Empty when the contract carries no
+     * body or LatticeOptions::IncludeBody is false, which is exactly the
+     * degenerate case the solver's blocked system reduces to.
+     */
     [[nodiscard]] std::vector<Lattice::SourcePanel> BuildBody() const;
 
-    // Semi-span fraction the wing is trimmed at, or 0 when nothing is
-    // trimmed. Exposed because "how much of the wing did the body eat?" is
-    // a question worth asking without diffing panel counts.
+    /**
+     * Semi-span fraction the wing is trimmed at, or 0 when nothing is
+     * trimmed. Exposed because "how much of the wing did the body eat?" is
+     * a question worth asking without diffing panel counts.
+     */
     [[nodiscard]] double TrimEta() const { return m_TrimEta; }
 
-    // Area of the FULL trapezoidal planform, including the part buried in
-    // the fuselage, computed from the contract's stations rather than by
-    // summing panels.
-    //
-    // This is the reference area coefficients must be normalized by, and it
-    // must NOT follow the trim: CL is conventionally referred to gross
-    // planform area, so letting a trimmed panel sum drive it would rescale
-    // CL by whatever fraction was cut -- a silent redefinition of exactly
-    // the kind Solver::Panel's Area/PlanformArea split exists to prevent.
+    /**
+     * Area of the FULL trapezoidal planform, including the part buried in
+     * the fuselage, computed from the contract's stations rather than by
+     * summing panels.
+     *
+     * This is the reference area coefficients must be normalized by, and it
+     * must NOT follow the trim: CL is conventionally referred to gross
+     * planform area, so letting a trimmed panel sum drive it would rescale
+     * CL by whatever fraction was cut -- a silent redefinition of exactly
+     * the kind Solver::Panel's Area/PlanformArea split exists to prevent.
+     */
     [[nodiscard]] double GrossPlanformArea() const;
 
-    // The spanwise panel boundaries this builder will use, in eta. Exposed
-    // because "did the mesh land on the control surface edge?" is a
-    // question worth being able to ask without rebuilding the lattice.
+    /**
+     * The spanwise panel boundaries this builder will use, in eta. Exposed
+     * because "did the mesh land on the control surface edge?" is a
+     * question worth being able to ask without rebuilding the lattice.
+     */
     [[nodiscard]] const std::vector<double>& BoundaryEtas() const { return m_BoundaryEtas; }
     [[nodiscard]] const Geometry::HandoffContract& Contract() const { return m_Contract; }
 
