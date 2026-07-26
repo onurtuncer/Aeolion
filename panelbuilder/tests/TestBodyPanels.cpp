@@ -205,9 +205,9 @@ void TestFlagAndAbsentBody() {
 // cover.
 void TestFixtureBodyIsCapped() {
     const auto contract = Aeolion::Geometry::LoadHandoff(std::string(AEOLION_TEST_DATA_DIR) +
-                                                        "/AeolionGeometryHandoff-1.4.0.json");
+                                                        "/AeolionGeometryHandoff-1.5.0.json");
     const auto body = PB::LatticeBuilder(contract).BuildBody();
-    CHECK(!body.empty(), "the 1.4.0 fixture should produce body panels");
+    CHECK(!body.empty(), "the fixture should produce body panels");
 
     int basePanels = 0;
     for (const auto& panel : body)

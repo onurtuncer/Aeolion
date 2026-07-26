@@ -30,18 +30,25 @@ new top-level header. Namespaces are written with the `::` form —
 **Top-level components.** A module that is large enough to own its build
 target, or that has compiled sources rather than headers alone, becomes a
 sibling of `include/` with its own `include/`(`/src/`) split, the way
-`viewer/` does:
+`viewer/` does. Each such module also owns its own `tests/` — there is no
+single central test directory; `tests/` at the repo root is the core
+header-only library's *own* test folder, not a shared one:
 
 | Folder | Target | Why it is top-level |
 |---|---|---|
 | `solver/` | header-only, part of `aeolion` | the VLM core every other module builds on |
-| `panelbuilder/` | `aeolion_panelbuilder` (STATIC) | the one component with compiled sources |
+| `panelbuilder/` | `aeolion_panelbuilder` (STATIC) | a component with compiled sources |
+| `bemt/` | `aeolion_bemt` (STATIC) | a component with compiled sources |
 | `viewer/` | `aeolion_viewer` (exe) | GL application, not part of the library |
 
 `Lattice/Panel.h` stays in `include/` despite being shared by all of them:
 it is pure data vocabulary, so it belongs to no one module. It is
 re-exported into `Aeolion::Solver` the same way `Math/Vec3.h` is, so
-`Solver::Panel` keeps resolving.
+`Solver::Panel` keeps resolving. `BEMT/PropGeometry.h` follows the same
+rule relative to `bemt/`: it is the blade data vocabulary a geometry
+handoff builds (`Geometry::ToPropGeometry`), and building that data never
+requires calling into the BEMT solver itself, so it stays header-only in
+`include/Aeolion/BEMT/` rather than moving into `bemt/include/`.
 
 Prefer STATIC over SHARED for Aeolion's own libraries — a DLL would need
 `__declspec` plumbing on every exported symbol for no ABI-stability or

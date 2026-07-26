@@ -1,0 +1,3 @@
+aeolion_add_test(TestSolverCore)
+aeolion_add_test(TestDenseSolve)
+aeolion_add_test(TestSourcePanel)

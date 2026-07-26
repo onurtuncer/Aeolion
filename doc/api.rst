@@ -48,8 +48,9 @@ PanelBuilder
 
 Builds the solver's lattice from a parsed geometry handoff: CST camber
 surface, spanwise and chordwise discretization, deflected control
-surfaces, with breakpoints on every surface edge. The one component with
-compiled sources rather than headers alone.
+surfaces, with breakpoints on every surface edge. A compiled STATIC
+library (``aeolion_panelbuilder``) rather than headers alone; consumers
+link it explicitly in addition to ``aeolion``.
 
 .. doxygennamespace:: Aeolion::PanelBuilder
    :content-only:
@@ -59,7 +60,11 @@ BEMT
 
 Propeller blade-element momentum theory. Hover-safe: solves for induced
 velocities directly rather than induction factors, and exposes the
-resulting slipstream field for downstream control vanes.
+resulting slipstream field for downstream control vanes. Also a compiled
+STATIC library (``aeolion_bemt``), for the same reason as PanelBuilder.
+``Geometry::PropulsionSpec``/``PropGeometry`` (the blade data vocabulary)
+stay header-only in the core library, since building that data never
+requires calling into this solver.
 
 .. doxygennamespace:: Aeolion::BEMT
    :content-only:

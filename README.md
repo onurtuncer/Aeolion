@@ -19,27 +19,39 @@ source panels -- all one coupled potential-flow solve). See
 
 ## Layout
 
+Every compiled/header-only module is a top-level component that owns its
+own tests: `solver/tests/`, `panelbuilder/tests/`, `bemt/tests/`, and
+`tests/` for the core header-only library itself. All four are one `ctest`
+invocation regardless of which folder a test lives in -- see "Building"
+below.
+
 ```
-solver/include/Aeolion/Solver/       the vortex lattice method core, kept as its
-                                     own top-level component (like panelbuilder/
-                                     and viewer/) since every other module builds
-                                     on top of it                (Aeolion::Solver)
-  Solver.h           3D VLM core: horseshoe vortices + fuselage source panels
-                      in one blocked linear system, LAPACK LU solve, sideslip,
-                      body rates, moments, stability derivatives,
-                      external-velocity-field hook
-  SourceInfluence.h    constant-strength quadrilateral source-panel kernel
-                        (Hess & Smith in-plane, solid-angle normal component)
-  WingParams.h         parametric single-wing planform
-  FreestreamConditions.h   flight condition (freestream, rates, ref point)
-  ReferenceGeometry.h  coefficient normalization constants
-  StationResult.h      per-spanwise-station output
-  SolveResult.h        full solve result (coeffs, forces, per-surface)
-  StabilityDerivatives.h   central-difference derivative table
+solver/                          header-only, part of `aeolion`
+                                 kept as its own top-level component (like
+                                 panelbuilder/, bemt/, and viewer/) since
+                                 every other module builds on top of it
+  include/Aeolion/Solver/                              (Aeolion::Solver)
+    Solver.h           3D VLM core: horseshoe vortices + fuselage source panels
+                        in one blocked linear system, LAPACK LU solve, sideslip,
+                        body rates, moments, stability derivatives,
+                        external-velocity-field hook
+    SourceInfluence.h    constant-strength quadrilateral source-panel kernel
+                          (Hess & Smith in-plane, solid-angle normal component)
+    WingParams.h         parametric single-wing planform
+    FreestreamConditions.h   flight condition (freestream, rates, ref point)
+    ReferenceGeometry.h  coefficient normalization constants
+    StationResult.h      per-spanwise-station output
+    SolveResult.h        full solve result (coeffs, forces, per-surface)
+    StabilityDerivatives.h   central-difference derivative table
+  tests/
+    TestSolverCore.cpp            VLM vs. thin-wing theory, Oswald efficiency
+    TestDenseSolve.cpp            LAPACK dense-solve sanity check
+    TestSourcePanel.cpp           source-panel kernel vs. closed-form: far
+                                   field, on-sheet jump, source-panelled sphere
 
 panelbuilder/                    aeolion_panelbuilder (STATIC library)
-                                 the one component with compiled sources
-                                                    (Aeolion::PanelBuilder)
+                                 a component with compiled sources, not
+                                 headers alone                    (Aeolion::PanelBuilder)
   include/Aeolion/PanelBuilder/
     PanelBuilder.h     LatticeBuilder: builds the solver's wing lattice, the
                         fuselage's source-panel mesh, AND the (disjoint)
@@ -49,6 +61,35 @@ panelbuilder/                    aeolion_panelbuilder (STATIC library)
                         wing/body trim + carry-through, breakpoints on
                         every surface edge
   src/PanelBuilder.cpp
+  tests/
+    TestBodyPanels.cpp            fuselage panelling: closure, d'Alembert,
+                                   Munk moment, frame convention
+    TestDuctPanels.cpp            duct panelling: closure, enclosed annulus
+                                   volume, d'Alembert, frame convention
+    TestPanelBuilder.cpp          camber lifts at zero incidence, chordwise
+                                   rows, control deflection, mesh lands on
+                                   control surface edges
+    TestAirframe.cpp              the whole chain coupled: real handoff ->
+                                   wing + fuselage + duct lattice -> solve,
+                                   including a control-surface deflection
+                                   re-solved on the same cached builder
+
+bemt/                             aeolion_bemt (STATIC library)
+                                 also a component with compiled sources
+                                                    (Aeolion::BEMT)
+  include/Aeolion/BEMT/
+    BEMT.h             propeller BEMT (hover-safe: solves for induced
+                        velocities directly, not induction factors) +
+                        slipstream field for downstream control vanes --
+                        declarations only; see src/BEMT.cpp
+  src/BEMT.cpp
+  tests/
+    TestBEMT.cpp                  BEMT vs. hard physical bounds (FOM <= 1,
+                                   efficiency <= 1)
+    TestPropVane.cpp              propwash -> vane control authority
+                                   integration test
+    TestPropContract.cpp          handoff-to-BEMT unit bridge (r/R -> metres),
+                                   the hub station that broke the solve
 
 viewer/                          aeolion_viewer (exe, GL application)
                                  interactive OpenGL visualizer, not part of
@@ -75,12 +116,11 @@ include/Aeolion/     header-only library (the rest of the toolkit)
                         the fuselage's atomic surface unit, the way Panel
                         is the wing's
   BEMT/                                                   (Aeolion::BEMT)
-    BEMT.h             propeller BEMT (hover-safe: solves for induced
-                        velocities directly, not induction factors) +
-                        slipstream field for downstream control vanes
     PropGeometry.h     the propeller a BEMT run is posed on (metric radii,
-                        blade stations) -- split out so describing a
-                        propeller doesn't require the blade-element solver
+                        blade stations) -- pure data, so it stays header-only
+                        here rather than moving into bemt/: HandoffContract.h
+                        builds a PropGeometry without ever calling into the
+                        BEMT solver itself
   Geometry/                                           (Aeolion::Geometry)
     HandoffContract.h  strict parser for the aeolion_geometry.json handoff
     CstSurface.h       CST evaluation: camber mean line, its slope, and
@@ -99,35 +139,22 @@ include/Aeolion/     header-only library (the rest of the toolkit)
     DragEstimate.h     viscous CD0: flat-plate skin friction + form factor
                         + interference factor component buildup
 
-src/                  driver programs (link against the aeolion library)
+app/                  driver programs (link against the aeolion library)
   main.cpp               parametric single-wing demo (solver_demo)
   GeometryContractCLI.cpp   solve a wing loaded from a JSON contract (aeolion_geometry)
   PropellerCLI.cpp         run a handoff's propeller through BEMT (aeolion_prop)
 
-tests/                 regression suite, wired into ctest
-  TestSolverCore.cpp            VLM vs. thin-wing theory, Oswald efficiency
-  TestDenseSolve.cpp            LAPACK dense-solve sanity check
-  TestBEMT.cpp                  BEMT vs. hard physical bounds (FOM <= 1,
-                                 efficiency <= 1)
-  TestPropVane.cpp              propwash -> vane control authority
-                                 integration test
-  TestPropContract.cpp          handoff-to-BEMT unit bridge (r/R -> metres),
-                                 the hub station that broke the solve
-  TestSourcePanel.cpp           source-panel kernel vs. closed-form: far
-                                 field, on-sheet jump, source-panelled sphere
-  TestBodyPanels.cpp            fuselage panelling: closure, d'Alembert,
-                                 Munk moment, frame convention
-  TestDuctPanels.cpp            duct panelling: closure, enclosed annulus
-                                 volume, d'Alembert, frame convention
+tests/                 the core header-only library's OWN tests, wired into
+                       ctest the same way as every other module's tests/
   TestHandoffContract.cpp       JSON handoff parsing, contract invariants,
                                  surface binding, trapezoid reduction
-  TestPanelBuilder.cpp          camber lifts at zero incidence, chordwise
-                                 rows, control deflection, mesh lands on
-                                 control surface edges
-  TestAirframe.cpp              the whole chain coupled: real handoff ->
-                                 wing + fuselage + duct lattice -> solve
+  Data/                  one real geometry handoff JSON per schema revision
+                         tested against -- shared by every module's tests,
+                         not just this folder's
 
-cmake/                build modules (CompilerWarnings, LapackBackend) + vcpkg triplets
+cmake/                build modules (CompilerWarnings, LapackBackend,
+                      AeolionTest -- the aeolion_add_test() every module's
+                      tests/CMakeLists.txt calls) + vcpkg triplets
 
 doc/                   Sphinx + Doxygen documentation (theory, API reference,
                        test-suite writeup) -- see "Documentation" below
@@ -140,7 +167,7 @@ LAPACK, MKL, Accelerate, ...). The dense solve calls LAPACK's dgetrf/dgetrs
 through their Fortran ABI directly — no LAPACKE C header needed. The
 viewer additionally needs GLFW, glad, glm, and Dear ImGui (OpenGL 3.3
 core); set `AEOLION_BUILD_VIEWER=OFF` to skip it and build only the
-header-only library, `panelbuilder`, and the CLIs.
+header-only library, `panelbuilder`, `bemt`, and the CLIs.
 
 ```
 # Debian/Ubuntu system LAPACK:
@@ -170,7 +197,7 @@ Without CMake, the parametric demo builds directly (the JSON contract CLI
 also needs nlohmann/json on the include path):
 
 ```
-g++ -std=c++23 -O2 -Iinclude -Isolver/include -o solver_demo src/main.cpp -llapack -lblas
+g++ -std=c++23 -O2 -Iinclude -Isolver/include -o solver_demo app/main.cpp -llapack -lblas
 ```
 
 ## Quick usage
@@ -260,8 +287,8 @@ boundary. Discretization must stay fixed during one derivative evaluation.
 `doc/` is a Sphinx + Doxygen/Breathe site: `doc/theory.rst` derives the
 full linear system (influence-matrix entries, boundary condition, near-field
 Kutta-Joukowski and pressure force integration, coefficient normalization)
-and the BEMT/drag-buildup math; `doc/tests.rst` walks what each test in
-`tests/` actually validates and why; `doc/api.rst` pulls the Doxygen
+and the BEMT/drag-buildup math; `doc/tests.rst` walks what each module's
+tests actually validate and why; `doc/api.rst` pulls the Doxygen
 comments in every header into one API reference. Build it locally with
 Doxygen + Graphviz and the Python packages in `doc/requirements.txt`:
 

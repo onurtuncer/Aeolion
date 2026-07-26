@@ -1,28 +1,5 @@
-function(aeolion_add_test name)
-    add_executable(${name} ${name}.cpp)
-    target_link_libraries(${name} PRIVATE aeolion)
-    # Fixture files (e.g. the JSON handoff) are read from the source tree, so
-    # tests do not depend on where the binary ends up.
-    target_compile_definitions(${name} PRIVATE
-        AEOLION_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Data")
-    add_test(NAME ${name} COMMAND ${name})
-endfunction()
-
-aeolion_add_test(TestSolverCore)
-aeolion_add_test(TestBEMT)
-aeolion_add_test(TestPropContract)
-aeolion_add_test(TestPropVane)
-aeolion_add_test(TestDenseSolve)
+# The core header-only library's (Math/Lattice/Geometry/DragEstimate) own
+# tests. Every other module's tests live beside the module they test --
+# solver/tests/, panelbuilder/tests/, bemt/tests/ -- registered through the
+# shared aeolion_add_test() in cmake/AeolionTest.cmake.
 aeolion_add_test(TestHandoffContract)
-
-aeolion_add_test(TestSourcePanel)
-
-aeolion_add_test(TestPanelBuilder)
-aeolion_add_test(TestBodyPanels)
-aeolion_add_test(TestDuctPanels)
-aeolion_add_test(TestAirframe)
-# These exercise compiled code rather than headers alone.
-target_link_libraries(TestPanelBuilder PRIVATE aeolion_panelbuilder)
-target_link_libraries(TestBodyPanels PRIVATE aeolion_panelbuilder)
-target_link_libraries(TestDuctPanels PRIVATE aeolion_panelbuilder)
-target_link_libraries(TestAirframe PRIVATE aeolion_panelbuilder)

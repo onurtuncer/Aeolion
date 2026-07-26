@@ -335,7 +335,7 @@ void TestCrankedPlanform() {
 }
 
 void TestJsonFixture() {
-    const std::string path = std::string(AEOLION_TEST_DATA_DIR) + "/AeolionGeometryHandoff-1.0.0.json";
+    const std::string path = std::string(AEOLION_TEST_DATA_DIR) + "/AeolionGeometryHandoff-1.5.0.json";
     std::ifstream input(path);
     CHECK(static_cast<bool>(input), "could not open fixture " + path);
     if (!input) return;
@@ -345,7 +345,14 @@ void TestJsonFixture() {
     const HandoffContract contract = Aeolion::Geometry::ParseHandoff(root);
     CHECK(contract.Mesh.ChordwisePanels > 1, "fixture should request more than one chordwise row");
 
-    const std::vector<Panel> panels = BuildLattice(contract);
+    // This fixture states both a body and a wing placement, so the default
+    // options would trim the wing where it meets the fuselage -- exactly
+    // what TestAirframe.cpp checks elsewhere. Disabled here because the
+    // panel-count formula below assumes every spanwise strip survives; it is
+    // discretization arithmetic, not a wing-body coupling test.
+    PB::LatticeOptions untrimmed;
+    untrimmed.TrimWingAtBody = false;
+    const std::vector<Panel> panels = BuildLattice(contract, untrimmed);
     const std::size_t strips = 2 * static_cast<std::size_t>(contract.Mesh.SpanwisePanelsPerSection) *
                                (contract.Stations.size() - 1);
     CHECK(panels.size() == strips * static_cast<std::size_t>(contract.Mesh.ChordwisePanels),

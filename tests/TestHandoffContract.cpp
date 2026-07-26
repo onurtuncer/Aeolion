@@ -30,10 +30,14 @@ std::string FixturePath(const std::string& version) {
     return std::string(AEOLION_TEST_DATA_DIR) + "/AeolionGeometryHandoff-" + version + ".json";
 }
 
-// The 1.0.0 document is the baseline for the invariant tests; 1.1.0 is the
-// same geometry re-emitted with explicit 'surface' fields.
+// 1.5.0 is the oldest schema still shipped as a fixture (1.0.0/1.1.0/1.4.0
+// were retired along with the tests that existed only to prove parsing an
+// old schema still worked -- this project does not carry that back-compat
+// burden) and is the baseline for the invariant tests below; 1.8.0 is
+// exercised separately for the fields introduced since (see
+// TestSchema180Blocks).
 const std::string& FixturePath() {
-    static const std::string path = FixturePath("1.0.0");
+    static const std::string path = FixturePath("1.5.0");
     return path;
 }
 
@@ -65,9 +69,9 @@ void CheckRejects(const std::string& what, Mutate mutate) {
 void TestParsesFixture() {
     const auto contract = Aeolion::Geometry::LoadHandoff(FixturePath());
 
-    Check(contract.SchemaVersion == "1.0.0", "schema_version round-trips");
+    Check(contract.SchemaVersion == "1.5.0", "schema_version round-trips");
     Check(contract.ReferenceFrame == "aetherion_body_frd", "reference_frame round-trips");
-    Check(contract.DesignId == "2732d99b6276483926f2a4047cf3dc0be31699a3aad09c93d3dddf516ec24a63",
+    Check(contract.DesignId == "07890729101b69eea55adbf8e6cada6ba118ac8ba53fa9cd4c8d4c760e812269",
           "design_id digest has its 'sha256:' prefix stripped");
 
     CheckClose(contract.Span, 1.0628798195068672, "planform.span");
@@ -113,12 +117,37 @@ void TestParsesFixture() {
     CheckClose(contract.Propulsion.BladeStations.back().RadiusFraction, 1.0, "tip r/R");
     CheckClose(contract.Propulsion.BladeStations.back().Chord, 0.0, "tip chord tapers to zero");
     CheckClose(contract.Propulsion.BladeStations.back().TwistDeg, 13.427041758485208, "tip twist");
+    Check(contract.Propulsion.BladeCount == 3, "blade count comes from n_blades");
+
+    Check(contract.Body.IsPresent(), "the fixture carries a body");
+    CheckClose(contract.Body.Length, 0.49099, "body length");
+    Check(contract.Body.Stations.size() == 25, "25 body stations");
+    CheckClose(contract.Body.Stations.front().x, 0.0, "nose at x=0");
+    CheckClose(contract.Body.Stations.front().Radius, 0.0, "sharp nose");
+    CheckClose(contract.Body.Stations.back().x, -0.49099, "tail x");
+    // The tail does NOT close: this body is truncated at the duct exit, and
+    // anything that panels it has to cope with an open base.
+    CheckClose(contract.Body.Stations.back().Radius, 0.0406, "open base radius");
+
+    Check(contract.Placement.IsStated, "the fixture states a wing placement");
+    CheckClose(contract.Placement.RootLeadingEdge.x, -0.20687, "root leading edge x");
+
+    const auto& aileron = contract.ControlSurfaces.front();
+    CheckClose(aileron.Limits.MinDeg, -20.0, "aileron min deflection");
+    CheckClose(aileron.Limits.MaxDeg, 20.0, "aileron max deflection");
+    Check(!aileron.Limits.HasSoftLimit, "the aileron states no soft limit");
+
+    const auto& vane = contract.ControlSurfaces[1];
+    Check(vane.Limits.HasSoftLimit, "the vane states a soft limit");
+    CheckClose(vane.Limits.SoftLimitDeg, 15.0, "vane soft limit");
 }
 
-// The 1.0.0 schema carries no surface association, so the parser has to
-// recover it from the control's name. Getting this wrong would put all-moving
-// duct-jet vanes into the wing lattice -- with eta bands that are radius
-// fractions, not semi-span fractions.
+// Every fixture now states 'surface' explicitly, but the parser still has to
+// recover the binding from the control's NAME on a document that does not
+// (schema 1.0.0 carried no such field, and nothing stops a future producer
+// from omitting it again). Getting this wrong would put all-moving duct-jet
+// vanes into the wing lattice -- with eta bands that are radius fractions,
+// not semi-span fractions.
 void TestSurfaceBinding() {
     const auto contract = Aeolion::Geometry::LoadHandoff(FixturePath());
 
@@ -127,8 +156,27 @@ void TestSurfaceBinding() {
         Check(contract.ControlSurfaces[i].Binding == ControlSurfaceBinding::DuctJet,
               "every vane binds to the duct jet, not the wing");
 
-    // An explicit 'surface' field (schema >= 1.1.0) overrides the name rule,
-    // and is the escape hatch for names the table does not know.
+    // Strip every explicit 'surface' field and re-parse: the name-convention
+    // fallback must recover IDENTICAL bindings on its own, since the name
+    // table lives in this repo and the explicit field is written by the
+    // exporter -- if they ever drift, one of the two is silently
+    // mis-binding controls.
+    nlohmann::json implied = FixtureJson();
+    bool sawSurfaceField = false;
+    for (auto& surface : implied["control_surfaces"]) {
+        if (surface.contains("surface")) sawSurfaceField = true;
+        surface.erase("surface");
+    }
+    Check(sawSurfaceField, "the fixture actually carries explicit 'surface' fields");
+    const auto fromName = Aeolion::Geometry::ParseHandoff(implied);
+    Check(fromName.ControlSurfaces.size() == contract.ControlSurfaces.size(), "control surface counts agree");
+    for (std::size_t i = 0; i < contract.ControlSurfaces.size(); ++i)
+        Check(fromName.ControlSurfaces[i].Binding == contract.ControlSurfaces[i].Binding,
+              "the name convention agrees with the explicit 'surface' field for control_surfaces[" +
+                  std::to_string(i) + "]");
+
+    // An explicit 'surface' field overrides the name rule, and is the escape
+    // hatch for names the table does not know.
     nlohmann::json root = FixtureJson();
     root["control_surfaces"][1]["surface"] = "wing";
     const auto overridden = Aeolion::Geometry::ParseHandoff(root);
@@ -146,44 +194,6 @@ void TestSurfaceBinding() {
         std::cerr << "FAIL: 'surface' should admit unknown names -- " << error.what() << "\n";
         ++g_Failures;
     }
-}
-
-// Schema 1.1.0 states each control's binding explicitly instead of leaving it
-// implicit in the name. The two must never disagree: the name table lives in
-// this repo and the explicit field is written by the exporter, so if they ever
-// drift, one of the two repos is silently mis-binding controls. Parsing the
-// 1.1.0 document with and without its 'surface' fields must therefore give
-// identical bindings.
-void TestSchema110AgreesWithNameConvention() {
-    const auto explicitJson = JsonAt(FixturePath("1.1.0"));
-
-    nlohmann::json impliedJson = explicitJson;
-    bool sawSurfaceField = false;
-    for (auto& surface : impliedJson["control_surfaces"]) {
-        if (surface.contains("surface")) sawSurfaceField = true;
-        surface.erase("surface");
-    }
-    Check(sawSurfaceField, "the 1.1.0 fixture actually carries 'surface' fields");
-
-    const auto fromField = Aeolion::Geometry::ParseHandoff(explicitJson);
-    const auto fromName = Aeolion::Geometry::ParseHandoff(impliedJson);
-
-    Check(fromField.SchemaVersion == "1.1.0", "the 1.1.0 document parses");
-    Check(fromField.ControlSurfaces.size() == fromName.ControlSurfaces.size(), "control surface counts agree");
-    for (std::size_t i = 0; i < fromField.ControlSurfaces.size(); ++i)
-        Check(fromField.ControlSurfaces[i].Binding == fromName.ControlSurfaces[i].Binding,
-              "explicit 'surface' agrees with the name convention for control_surfaces[" + std::to_string(i) + "]");
-
-    // 1.1.0 added metadata only. The geometry -- and so the aerodynamics --
-    // must be untouched relative to 1.0.0, even though design_id moved.
-    const auto baseline = Aeolion::Geometry::LoadHandoff(FixturePath("1.0.0"));
-    CheckClose(fromField.Span, baseline.Span, "span is unchanged across the version bump");
-    Check(fromField.DesignId != baseline.DesignId, "design_id moves with the schema bump");
-    const auto wing = Aeolion::Geometry::ToWingParams(fromField);
-    const auto baselineWing = Aeolion::Geometry::ToWingParams(baseline);
-    CheckClose(wing.RootChord, baselineWing.RootChord, "root chord is unchanged");
-    CheckClose(wing.TipChord, baselineWing.TipChord, "tip chord is unchanged");
-    Check(wing.NPanelsSemiSpan == baselineWing.NPanelsSemiSpan, "lattice density is unchanged");
 }
 
 // Reducing the per-station planform to BuildWing()'s single trapezoid is lossy,
@@ -258,73 +268,6 @@ void TestOptionalBlocks() {
         std::cerr << "FAIL: control_surfaces and propulsion_bemt should be optional -- " << error.what() << "\n";
         ++g_Failures;
     }
-}
-
-// --- schema 1.4.0: body, blade count, deflection limits --------------------
-// The 1.4.0 document adds three blocks that older ones lack. Because the
-// parser tolerates unknown keys for forward compatibility, an unwired block
-// parses SILENTLY -- so these checks are what distinguish "understood" from
-// "ignored".
-void TestSchema140Blocks() {
-    const auto contract = Aeolion::Geometry::LoadHandoff(FixturePath("1.4.0"));
-
-    Check(contract.Body.IsPresent(), "1.4.0 carries a body");
-    CheckClose(contract.Body.Length, 0.49099, "body length");
-    Check(contract.Body.Stations.size() == 25, "25 body stations");
-    CheckClose(contract.Body.Stations.front().x, 0.0, "nose at x=0");
-    CheckClose(contract.Body.Stations.front().Radius, 0.0, "sharp nose");
-    CheckClose(contract.Body.Stations.back().x, -0.49099, "tail x");
-    // The tail does NOT close: this body is truncated at the duct exit, and
-    // anything that panels it has to cope with an open base.
-    CheckClose(contract.Body.Stations.back().Radius, 0.0406, "open base radius");
-
-    Check(contract.Propulsion.BladeCount == 3, "blade count comes from n_blades");
-
-    const auto& aileron = contract.ControlSurfaces.front();
-    Check(aileron.Binding == ControlSurfaceBinding::Wing, "aileron binds to the wing");
-    CheckClose(aileron.Limits.MinDeg, -20.0, "aileron min deflection");
-    CheckClose(aileron.Limits.MaxDeg, 20.0, "aileron max deflection");
-    Check(!aileron.Limits.HasSoftLimit, "the aileron states no soft limit");
-
-    const auto& vane = contract.ControlSurfaces[1];
-    Check(vane.Binding == ControlSurfaceBinding::DuctJet, "vane binds to the duct jet");
-    Check(vane.Limits.HasSoftLimit, "the vane states a soft limit");
-    CheckClose(vane.Limits.SoftLimitDeg, 15.0, "vane soft limit");
-
-    // Older documents must keep parsing, with the new fields simply absent.
-    const auto older = Aeolion::Geometry::LoadHandoff(FixturePath("1.0.0"));
-    Check(!older.Body.IsPresent(), "1.0.0 has no body");
-    Check(older.Propulsion.BladeCount == 0, "1.0.0 states no blade count");
-    Check(!older.ControlSurfaces.front().Limits.HasSoftLimit, "1.0.0 states no soft limit");
-}
-
-// Every invariant the 1.4.0 blocks rely on gets a negative test, same as the
-// rest of the contract.
-void TestRejectsMalformed140() {
-    const auto rejects = [](const std::string& what, auto mutate) {
-        nlohmann::json root = JsonAt(FixturePath("1.4.0"));
-        mutate(root);
-        try {
-            (void)Aeolion::Geometry::ParseHandoff(root);
-            std::cerr << "FAIL: expected rejection -- " << what << "\n";
-            ++g_Failures;
-        } catch (const ContractError&) {
-        }
-    };
-
-    rejects("a body whose x does not decrease nose to tail",
-            [](auto& root) { root["body"]["stations"][3]["x"] = 0.5; });
-    rejects("a negative body radius", [](auto& root) { root["body"]["stations"][3]["radius"] = -0.01; });
-    rejects("a body length disagreeing with its stations",
-            [](auto& root) { root["body"]["length"] = 0.6; });
-    rejects("a body with one station", [](auto& root) {
-        root["body"]["stations"] = nlohmann::json::array({root["body"]["stations"][0]});
-    });
-    rejects("a single-bladed propeller", [](auto& root) { root["propulsion_bemt"]["n_blades"] = 1; });
-    rejects("deflection limits whose max does not exceed min",
-            [](auto& root) { root["control_surfaces"][0]["deflection_limits_deg"]["max"] = -30.0; });
-    rejects("a soft limit outside the hard stops",
-            [](auto& root) { root["control_surfaces"][1]["deflection_soft_limit_deg"] = 25.0; });
 }
 
 // --- schema 1.8.0: duct, moment reference point, blade airfoil sections,
@@ -474,8 +417,12 @@ void TestRejectsMalformed() {
                  [](auto& root) { root["control_surfaces"][0]["eta_start"] = 1.0; });
     CheckRejects("a zero-width control surface",
                  [](auto& root) { root["control_surfaces"][0]["eta_end"] = 0.88; });
-    CheckRejects("a control surface whose name implies no binding",
-                 [](auto& root) { root["control_surfaces"][0]["name"] = "spoiler"; });
+    CheckRejects("a control surface whose name implies no binding", [](auto& root) {
+        // An explicit 'surface' field would override the name lookup this is
+        // meant to exercise (see TestSurfaceBinding), so it has to go too.
+        root["control_surfaces"][0]["name"] = "spoiler";
+        root["control_surfaces"][0].erase("surface");
+    });
     CheckRejects("an unknown explicit surface binding",
                  [](auto& root) { root["control_surfaces"][0]["surface"] = "fuselage"; });
     CheckRejects("a zero hinge axis",
@@ -500,6 +447,22 @@ void TestRejectsMalformed() {
                  [](auto& root) { root["propulsion_bemt"]["blade_stations"][0]["r_over_R"] = 1.5; });
     CheckRejects("out-of-order blade stations",
                  [](auto& root) { root["propulsion_bemt"]["blade_stations"][1]["r_over_R"] = 0.41; });
+    CheckRejects("a single-bladed propeller", [](auto& root) { root["propulsion_bemt"]["n_blades"] = 1; });
+
+    CheckRejects("a body whose x does not decrease nose to tail",
+                 [](auto& root) { root["body"]["stations"][3]["x"] = 0.5; });
+    CheckRejects("a negative body radius",
+                 [](auto& root) { root["body"]["stations"][3]["radius"] = -0.01; });
+    CheckRejects("a body length disagreeing with its stations",
+                 [](auto& root) { root["body"]["length"] = 0.6; });
+    CheckRejects("a body with one station", [](auto& root) {
+        root["body"]["stations"] = nlohmann::json::array({root["body"]["stations"][0]});
+    });
+
+    CheckRejects("deflection limits whose max does not exceed min",
+                 [](auto& root) { root["control_surfaces"][0]["deflection_limits_deg"]["max"] = -30.0; });
+    CheckRejects("a soft limit outside the hard stops",
+                 [](auto& root) { root["control_surfaces"][1]["deflection_soft_limit_deg"] = 25.0; });
 }
 
 void TestRejectsMalformedJson() {
@@ -516,13 +479,10 @@ void TestRejectsMalformedJson() {
 int main() {
     TestParsesFixture();
     TestSurfaceBinding();
-    TestSchema110AgreesWithNameConvention();
     TestToWingParams();
     TestNormalizesHingeAxis();
     TestToleratesUnknownKeys();
     TestOptionalBlocks();
-    TestSchema140Blocks();
-    TestRejectsMalformed140();
     TestSchema180Blocks();
     TestRejectsMalformed180();
     TestRejectsMalformed();

@@ -24,3 +24,7 @@ target_include_directories(aeolion_panelbuilder PUBLIC
 # PUBLIC: anything using the builder also uses Lattice::Panel and the
 # contract types it takes and returns.
 target_link_libraries(aeolion_panelbuilder PUBLIC aeolion)
+
+if(AEOLION_BUILD_TESTS)
+    add_subdirectory(tests)
+endif()

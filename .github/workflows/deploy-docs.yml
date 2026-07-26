@@ -5,10 +5,11 @@ on:
     branches: [ main ]
     paths:
       - 'doc/**'
-      - 'src/**'
+      - 'app/**'
       - 'include/**'
       - 'solver/include/**'
       - 'panelbuilder/include/**'
+      - 'bemt/include/**'
       - '.github/workflows/deploy-docs.yml'
   workflow_dispatch:
 

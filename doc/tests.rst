@@ -2,12 +2,17 @@ Test Cases and Validation
 ===========================
 
 Every module is checked against a closed-form or independently-known
-result before being trusted, not just eyeballed for plausibility. The
-suite is wired into ``ctest`` (``tests/CMakeLists.txt``); run it with
-``ctest --output-on-failure`` from the build directory. Bugs found and
-fixed along the way are documented in the relevant code comments rather
-than scrubbed from history -- several were caught only by checking a
-*hard* physical bound rather than a "looks about right" check, which the
+result before being trusted, not just eyeballed for plausibility. Each
+top-level component owns its own test folder rather than sharing one
+central directory -- ``solver/tests/``, ``panelbuilder/tests/``,
+``bemt/tests/``, and ``tests/`` for the core header-only library
+(Math/Lattice/Geometry/DragEstimate) -- registered through the shared
+``aeolion_add_test()`` in ``cmake/AeolionTest.cmake``. The whole suite is
+still one ``ctest`` invocation regardless of which folder a test lives in;
+run it with ``ctest --output-on-failure`` from the build directory. Bugs
+found and fixed along the way are documented in the relevant code comments
+rather than scrubbed from history -- several were caught only by checking
+a *hard* physical bound rather than a "looks about right" check, which the
 BEMT tests below rely on deliberately.
 
 TestSolverCore
@@ -110,6 +115,17 @@ arithmetic:
 - **Frame**: the contract states x forward; the solver is x aft. The nose
   must end up ahead of the tail in solver axes.
 
+TestDuctPanels
+----------------
+
+The same physics-based checks as TestBodyPanels, applied to the duct
+(``Geometry::DuctGeometry``, disjoint from the fuselage -- see
+``BuildDuct()``): closure and outward-normal winding across all four
+faces (outer wall, inner bore wall, leading/trailing caps), the enclosed
+volume matching the annular ring's exact :math:`\pi (r_{outer}^2 -
+r_{inner}^2) \times \text{chord}`, d'Alembert (zero net force on the
+closed shell), and the frame conversion.
+
 TestPanelBuilder
 ------------------
 
@@ -138,25 +154,38 @@ TestHandoffContract
 Parsing, contract invariants, surface binding, and trapezoid reduction for
 ``Geometry::HandoffContract``: schema version gating, unit checks, the
 eta-spanning-sequence rule, CST coefficient-order bounds, control-surface
-binding resolution (explicit ``surface`` field vs. the 1.0.0 name
-convention), deflection-limit consistency, and the body length/station
-consistency check -- each one a rejection path a malformed handoff must
-hit with a located error message rather than silently produce a wrong
-lattice.
+binding resolution (explicit ``surface`` field vs. the legacy implicit
+name convention, which the parser still recovers from on a document that
+omits ``surface`` even though no fixture exercises that shape anymore),
+deflection-limit consistency, and the body length/station consistency
+check -- each one a rejection path a malformed handoff must hit with a
+located error message rather than silently produce a wrong lattice.
 
 TestAirframe
 -------------
 
-The whole chain on the real airframe: parse the 1.4.0 handoff, build the
+The whole chain on the real airframe: parse the 1.5.0 handoff, build the
 wing lattice and the fuselage panels, and solve them coupled. This is the
 first place every piece meets, so it is also where integration problems
 that no single-component test can see are expected to show up.
 
+Also covers the pattern the viewer's ``Application`` runs every time a
+control-surface slider moves: one ``PanelBuilder::LatticeBuilder`` kept
+alive across repeated ``ClearDeflections()``/``Deflect()``/``Build()``
+calls, re-solved coupled with the SAME cached fuselage + duct panels each
+time (the 1.8.0 handoff, which carries a duct). Asserts an antisymmetric
+aileron command rolls the coupled airframe without changing its lift, and
+that clearing the deflection reproduces the original solve exactly.
+
 Fixture data
 ------------
 
-``tests/Data/AeolionGeometryHandoff-{1.0.0,1.1.0,1.4.0,1.5.0}.json``
-carries one real geometry handoff per schema revision, so contract-parsing
-tests exercise the actual wire format rather than a hand-rolled stand-in,
-and the schema's evolution (body, control-surface binding, wing
-placement) is tested against the version it was introduced in.
+``tests/Data/AeolionGeometryHandoff-{1.5.0,1.8.0}.json`` carries one real
+geometry handoff per supported schema revision, so contract-parsing tests
+exercise the actual wire format rather than a hand-rolled stand-in. 1.5.0
+is the baseline every general invariant test parses; 1.8.0 additionally
+covers the duct, moment reference point, blade airfoil sections, and
+propeller rotation axis introduced since (see TestSchema180Blocks).
+Earlier schema revisions (1.0.0, 1.1.0, 1.4.0) are no longer shipped or
+tested against -- this project does not carry a back-compat burden for
+retired schema versions, only for the currently-supported ones.
