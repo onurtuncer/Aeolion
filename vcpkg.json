@@ -8,6 +8,7 @@
     "openblas",
     "lapack-reference",
     "nlohmann-json",
+    "spdlog",
     "glfw3",
     "glad",
     "glm",

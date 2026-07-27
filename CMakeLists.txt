@@ -54,6 +54,7 @@ target_link_libraries(aeolion INTERFACE nlohmann_json::nlohmann_json)
 add_subdirectory(solver)
 
 # ------------------------------------------------------ compiled libraries --
+add_subdirectory(logger)
 add_subdirectory(panelbuilder)
 add_subdirectory(bemt)
 

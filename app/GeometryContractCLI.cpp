@@ -1,10 +1,12 @@
 #include "Aeolion/Geometry/HandoffContract.h"
+#include "Aeolion/Logger/Log.h"
 #include "Aeolion/Solver/Solver.h"
-#include <print>
 
 int main(int argc, char** argv) {
+    Aeolion::Logger::Log::Init();
+
     if (argc != 2) {
-        std::println(stderr, "usage: aeolion_geometry <aeolion_geometry.json>");
+        AE_ERROR("usage: aeolion_geometry <aeolion_geometry.json>");
         return 2;
     }
     try {
@@ -20,18 +22,16 @@ int main(int argc, char** argv) {
 
         Aeolion::Solver::FreestreamConditions conditions;
         const auto result = Aeolion::Solver::Solve(wing, conditions);
-        std::print("design_id={}\n"
-                   "schema_version={}\n"
-                   "stations={}\n"
-                   "wing_controls={}\n"
-                   "panels={}\n"
-                   "reference_area_m2={:.10g}\n"
-                   "CL={:.10g}\n"
-                   "CDi={:.10g}\n",
-                   contract.DesignId, contract.SchemaVersion, contract.Stations.size(), wingControls,
-                   result.gamma.size(), result.ReferenceArea, result.CL, result.CDi);
+        AE_INFO("design_id={}", contract.DesignId);
+        AE_INFO("schema_version={}", contract.SchemaVersion);
+        AE_INFO("stations={}", contract.Stations.size());
+        AE_INFO("wing_controls={}", wingControls);
+        AE_INFO("panels={}", result.gamma.size());
+        AE_INFO("reference_area_m2={:.10g}", result.ReferenceArea);
+        AE_INFO("CL={:.10g}", result.CL);
+        AE_INFO("CDi={:.10g}", result.CDi);
     } catch (const std::exception& error) {
-        std::println(stderr, "geometry error: {}", error.what());
+        AE_ERROR("geometry error: {}", error.what());
         return 1;
     }
 }

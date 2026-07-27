@@ -10,10 +10,11 @@
 
 #include "Aeolion/BEMT/BEMT.h"
 #include "Aeolion/Geometry/HandoffContract.h"
+#include "Aeolion/Logger/Log.h"
 
 #include <charconv>
 #include <exception>
-#include <print>
+#include <format>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -80,14 +81,14 @@ void ReportOperatingPoint(const Aeolion::BEMT::PropGeometry& prop, const Aeolion
     // Figure of merit is a hover metric and propulsive efficiency a
     // forward-flight one; neither means anything in the other regime, so
     // only the applicable one is shown.
-    std::print("{:>7.1f} {:>10.3f} {:>10.4f} {:>10.1f} {:>9.1f}", speed, result.Thrust, result.Torque,
-               result.Power, Aeolion::BEMT::DiskLoading(result));
-    if (speed > 0.0) std::print(" {:>10.3f}", efficiency);
-    else             std::print(" {:>10}", "-");
-    if (speed > 0.0) std::print(" {:>8}", "-");
-    else             std::print(" {:>8.3f}", figureOfMerit);
+    std::string row = std::format("{:>7.1f} {:>10.3f} {:>10.4f} {:>10.1f} {:>9.1f}", speed, result.Thrust,
+                                  result.Torque, result.Power, Aeolion::BEMT::DiskLoading(result));
+    if (speed > 0.0) row += std::format(" {:>10.3f}", efficiency);
+    else             row += std::format(" {:>10}", "-");
+    if (speed > 0.0) row += std::format(" {:>8}", "-");
+    else             row += std::format(" {:>8.3f}", figureOfMerit);
     if (result.Converged) {
-        std::println("");
+        AE_INFO("{}", row);
     } else {
         int failed = 0;
         double worstRadius = 0.0, worstResidual = 0.0;
@@ -99,32 +100,33 @@ void ReportOperatingPoint(const Aeolion::BEMT::PropGeometry& prop, const Aeolion
                     worstRadius = station.r;
                 }
             }
-        std::println("   {} of {} stations unconverged (worst r/R {:.2f}, residual {:.2e} m/s)", failed,
-                     result.Stations.size(), worstRadius / prop.Radius, worstResidual);
+        AE_WARN("{}   {} of {} stations unconverged (worst r/R {:.2f}, residual {:.2e} m/s)", row, failed,
+                result.Stations.size(), worstRadius / prop.Radius, worstResidual);
     }
 }
 
 } // namespace
 
 int main(int argc, char** argv) {
+    Aeolion::Logger::Log::Init();
+
     Options options;
     if (!ParseArguments(argc, argv, options)) {
-        std::println(stderr,
-                     "usage: aeolion_prop <aeolion_geometry.json> [--rpm N] [--speed V] [--rho R]\n"
-                     "                    [--blades N] [--reverse]\n"
-                     "\n"
-                     "  --rpm     shaft speed; defaults to the contract's reference_rpm\n"
-                     "  --speed   a single airspeed [m/s]; omitted, a range is swept\n"
-                     "  --rho     air density [kg/m^3]; defaults to sea-level ISA\n"
-                     "  --blades  blade count, for contracts older than schema 1.4.0\n"
-                     "  --reverse left-handed rotation (flips slipstream swirl)");
+        AE_ERROR("usage: aeolion_prop <aeolion_geometry.json> [--rpm N] [--speed V] [--rho R]\n"
+                 "                    [--blades N] [--reverse]\n"
+                 "\n"
+                 "  --rpm     shaft speed; defaults to the contract's reference_rpm\n"
+                 "  --speed   a single airspeed [m/s]; omitted, a range is swept\n"
+                 "  --rho     air density [kg/m^3]; defaults to sea-level ISA\n"
+                 "  --blades  blade count, for contracts older than schema 1.4.0\n"
+                 "  --reverse left-handed rotation (flips slipstream swirl)");
         return 2;
     }
 
     try {
         const auto contract = Aeolion::Geometry::LoadHandoff(options.Path);
         if (contract.Propulsion.BladeStations.empty()) {
-            std::println(stderr, "{}: this contract carries no propulsion_bemt block", options.Path);
+            AE_ERROR("{}: this contract carries no propulsion_bemt block", options.Path);
             return 1;
         }
 
@@ -132,26 +134,24 @@ int main(int argc, char** argv) {
                                                            options.Blades);
         const double rpm = (options.Rpm > 0.0) ? options.Rpm : contract.Propulsion.ReferenceRpm;
 
-        std::println("design_id      {}", contract.DesignId);
-        std::println("blades         {}{}", prop.NBlades,
-                     contract.Propulsion.BladeCount > 0 ? " (from contract)" : " (supplied)");
-        std::println("radius         {:.4f} m   hub {:.4f} m   stations {}", prop.Radius, prop.HubRadius,
-                     prop.Stations.size());
-        std::println("rpm            {:.1f}{}", rpm,
-                     options.Rpm > 0.0 ? "" : "   (contract reference)");
-        std::println("density        {:.4f} kg/m^3", options.Density);
-        std::println("");
+        AE_INFO("design_id      {}", contract.DesignId);
+        AE_INFO("blades         {}{}", prop.NBlades,
+                contract.Propulsion.BladeCount > 0 ? " (from contract)" : " (supplied)");
+        AE_INFO("radius         {:.4f} m   hub {:.4f} m   stations {}", prop.Radius, prop.HubRadius,
+                prop.Stations.size());
+        AE_INFO("rpm            {:.1f}{}", rpm,
+                options.Rpm > 0.0 ? "" : "   (contract reference)");
+        AE_INFO("density        {:.4f} kg/m^3", options.Density);
 
         // The analytic polar is a placeholder, and saying so matters: blade
         // section data is what separates a believable propeller prediction
         // from a plausible-looking one.
         const Aeolion::BEMT::Polar polar;
-        std::println("NOTE: using the analytic default polar (thin-airfoil lift slope, parabolic drag).");
-        std::println("      Thrust is far less sensitive to this than torque and efficiency are.");
-        std::println("");
+        AE_WARN("using the analytic default polar (thin-airfoil lift slope, parabolic drag);\n"
+                "thrust is far less sensitive to this than torque and efficiency are");
 
-        std::println("{:>7} {:>10} {:>10} {:>10} {:>9} {:>10} {:>8}", "V[m/s]", "T[N]", "Q[N.m]", "P[W]",
-                     "T/A[Pa]", "eta", "FOM");
+        AE_INFO("{:>7} {:>10} {:>10} {:>10} {:>9} {:>10} {:>8}", "V[m/s]", "T[N]", "Q[N.m]", "P[W]",
+                "T/A[Pa]", "eta", "FOM");
         if (options.Speed >= 0.0) {
             ReportOperatingPoint(prop, polar, rpm, options.Speed, options.Density);
         } else {
@@ -159,7 +159,7 @@ int main(int argc, char** argv) {
                 ReportOperatingPoint(prop, polar, rpm, speed, options.Density);
         }
     } catch (const std::exception& error) {
-        std::println(stderr, "propeller error: {}", error.what());
+        AE_ERROR("propeller error: {}", error.what());
         return 1;
     }
     return 0;

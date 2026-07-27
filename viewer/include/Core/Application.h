@@ -11,7 +11,10 @@
 #include "Core/Window.h"
 #include "Renderer/OrbitCamera.h"
 #include "Visualization/LatticeRenderer.h"
+#include "Visualization/PropellerRenderer.h"
 
+#include "Aeolion/BEMT/BEMT.h"
+#include "Aeolion/BEMT/PropGeometry.h"
 #include "Aeolion/Geometry/HandoffContract.h"
 #include "Aeolion/PanelBuilder/PanelBuilder.h"
 #include "Aeolion/Solver/Solver.h"
@@ -22,6 +25,15 @@
 
 namespace Aeolion::Viewer {
 
+// Which subject the viewer is showing. Airframe = the wing/fuselage lattice
+// (LatticeRenderer + VLM); Propeller = the isolated propeller (PropellerRenderer
+// + BEMT). The two carry independent geometry, computation, camera framing,
+// and UI panels; only the window, GL context, and orbit camera are shared.
+enum class Screen {
+    Airframe = 0,
+    Propeller,
+};
+
 class Application {
 public:
     // geometryPath: if non-empty, loads an aeolion_geometry.json handoff
@@ -29,7 +41,8 @@ public:
     // instead of the parametric single-wing demo. screenshotPath: if
     // non-empty, captures the framebuffer to a binary PPM file on the last
     // rendered frame -- meant to be paired with a small, finite maxFrames.
-    explicit Application(const std::string& geometryPath = "", const std::string& screenshotPath = "");
+    explicit Application(const std::string& geometryPath = "", const std::string& screenshotPath = "",
+                         Screen initialScreen = Screen::Airframe);
     ~Application();
 
     Application(const Application&) = delete;
@@ -43,12 +56,22 @@ private:
     void Resolve();
     void FrameView();
     void DrawUI();
+    void DrawScreenSelector();
     void LoadHandoff(const std::string& geometryPath);
     void CaptureScreenshot() const;
 
+    // --- propeller screen ---------------------------------------------------
+    void BuildDefaultPropeller();               // fallback prop when no contract states one
+    void AdoptContractPropeller();              // use the loaded handoff's propulsion_bemt block
+    void ResolveProp();                         // run BEMT + remesh the propeller
+    void FrameProp();                           // frame the camera on the (small) propeller
+    void DrawPropellerUI();
+
     Window m_Window;
     OrbitCamera m_Camera;
+    Screen m_Screen = Screen::Airframe;
     LatticeRenderer m_Lattice;
+    PropellerRenderer m_Propeller;
 
     Solver::WingParams m_Wing;
     Solver::FreestreamConditions m_Freestream;
@@ -94,6 +117,20 @@ private:
 
     bool m_Dirty = true;         // geometry/condition changed -> re-solve + remesh
     bool m_DisplayDirty = false; // display options changed -> remesh only
+
+    // --- propeller screen state ---------------------------------------------
+    // The propeller is independent of the airframe: its own geometry (from the
+    // handoff's propulsion_bemt block, or a built-in default), its own BEMT
+    // operating point, and its own render. m_PropDirty covers both the solve
+    // and the remesh -- one BEMT::Solve is cheap enough not to split them.
+    BEMT::PropGeometry m_Prop;
+    BEMT::Result m_PropResult;
+    PropellerDisplayOptions m_PropDisplay;
+    bool m_PropFromContract = false; // true if m_Prop came from a loaded contract, not the default
+    double m_PropRpm = 6000.0;       // shaft speed
+    double m_PropSpeed = 0.0;        // forward airspeed [m/s]; 0 = hover
+    double m_PropDensity = 1.225;    // [kg/m^3], sea-level ISA
+    bool m_PropDirty = true;         // operating point/geometry/display changed -> re-solve + remesh
 
     double m_LastMouseX = 0.0, m_LastMouseY = 0.0;
 };
