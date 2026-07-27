@@ -10,6 +10,9 @@ aircraft.json
 # ImGui layout state written by aeolion_viewer at runtime
 imgui.ini
 
+# Log file the logger's file sink writes at runtime
+Aeolion.log
+
 # Sphinx/Doxygen documentation build output
 doc/_build/
 

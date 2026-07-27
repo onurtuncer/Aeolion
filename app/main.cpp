@@ -9,10 +9,10 @@
 
 #include "Aeolion/Solver/Solver.h"
 #include "Aeolion/Math/Constants.h"
+#include "Aeolion/Logger/Log.h"
 #include <numbers>
 #include <fstream>
 #include <format>
-#include <print>
 
 using namespace Aeolion;
 
@@ -36,6 +36,8 @@ constexpr double LiftingLineArCorrection = Math::Two; // the "2" in 1 + 2/AR
 }
 
 int main() {
+    Logger::Log::Init();
+
     Solver::WingParams wing;
     wing.Span = DemoSpan;
     wing.RootChord = DemoRootChord;
@@ -55,23 +57,23 @@ int main() {
 
     double AR = (wing.Span * wing.Span) / res.ReferenceArea;
 
-    std::println("Reference area S   : {:.5f} m^2", res.ReferenceArea);
-    std::println("Aspect ratio AR    : {:.5f}", AR);
-    std::println("Panels (semi x2)   : {}", res.gamma.size());
-    std::println("-----------------------------------------");
-    std::println("CL                 : {:.5f}", res.CL);
-    std::println("CDi (induced)      : {:.5f}", res.CDi);
-    std::println("CY (side)          : {:.5f}", res.CY);
-    std::println("L/D (induced only) : {:.5f}", res.CDi > Solver::GeometryEps ? res.CL / res.CDi : 0.0);
+    AE_INFO("Reference area S   : {:.5f} m^2", res.ReferenceArea);
+    AE_INFO("Aspect ratio AR    : {:.5f}", AR);
+    AE_INFO("Panels (semi x2)   : {}", res.gamma.size());
+    AE_INFO("-----------------------------------------");
+    AE_INFO("CL                 : {:.5f}", res.CL);
+    AE_INFO("CDi (induced)      : {:.5f}", res.CDi);
+    AE_INFO("CY (side)          : {:.5f}", res.CY);
+    AE_INFO("L/D (induced only) : {:.5f}", res.CDi > Solver::GeometryEps ? res.CL / res.CDi : 0.0);
 
     // Sanity check against linear thin-wing theory for an unswept,
     // untwisted flat wing: CL ~= 2*pi*alpha / (1 + 2/AR)  [alpha in rad]
     double alphaRad = Math::DegToRad(fc.alphaDeg);
     double CL_flat_theory = Math::Two * std::numbers::pi * alphaRad / (1.0 + LiftingLineArCorrection / AR);
-    std::println("-----------------------------------------");
-    std::println("Flat-wing thin-airfoil-theory CL estimate (unswept/untwisted\n"
-                 "reference, not directly comparable to the swept/twisted case\n"
-                 "above): {:.5f}", CL_flat_theory);
+    AE_INFO("-----------------------------------------");
+    AE_INFO("Flat-wing thin-airfoil-theory CL estimate (unswept/untwisted\n"
+            "reference, not directly comparable to the swept/twisted case\n"
+            "above): {:.5f}", CL_flat_theory);
 
     // Write spanwise loading to CSV for plotting.
     std::ofstream csv("spanwise_loading.csv");
@@ -79,7 +81,7 @@ int main() {
     for (const auto& s : res.Stations) {
         csv << std::format("{:.8g},{:.8g},{:.8g},{:.8g}\n", s.y, s.gamma, s.LiftPerSpan, s.cl_local);
     }
-    std::println("\nSpanwise loading written to spanwise_loading.csv");
+    AE_INFO("Spanwise loading written to spanwise_loading.csv");
 
     // Stability derivatives about the quarter-chord of the mean aerodynamic
     // chord (a common default reference point for a wing-alone case; set
@@ -92,11 +94,11 @@ int main() {
     fc.RefPoint = Solver::Vec3(ref.Chord * Math::QuarterChord, 0, 0);
     Solver::StabilityDerivatives d = Solver::ComputeDerivatives(panels, fc, ref, trail);
 
-    std::println("\n=== Stability derivatives (wing alone, about x={:.4f}) ===", fc.RefPoint.x);
-    std::println("CL_alpha  = {:.4f} /rad", d.CL_alpha);
-    std::println("Cm_alpha  = {:.4f} /rad  ({})", d.Cm_alpha, d.Cm_alpha < 0 ? "stable" : "UNSTABLE");
-    std::println("CY_beta   = {:.4f} /rad", d.CY_beta);
-    std::println("Croll_beta= {:.4f} /rad", d.Croll_beta);
+    AE_INFO("=== Stability derivatives (wing alone, about x={:.4f}) ===", fc.RefPoint.x);
+    AE_INFO("CL_alpha  = {:.4f} /rad", d.CL_alpha);
+    AE_INFO("Cm_alpha  = {:.4f} /rad  ({})", d.Cm_alpha, d.Cm_alpha < 0 ? "stable" : "UNSTABLE");
+    AE_INFO("CY_beta   = {:.4f} /rad", d.CY_beta);
+    AE_INFO("Croll_beta= {:.4f} /rad", d.Croll_beta);
 
     return 0;
 }
