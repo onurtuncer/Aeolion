@@ -79,6 +79,10 @@ panelbuilder/                    aeolion_panelbuilder (STATIC library)
                                    torque opposing rotation, blade-symmetry
                                    force cancellation, thrust falling with
                                    advance speed
+    TestViscousCoupling.cpp       Level-2 sectional lift feedback: residual
+                                   convergence, stall capping hover thrust,
+                                   profile torque real and switchable,
+                                   CST camber -> negative zero-lift angle
 
 viewer/                          aeolion_viewer (exe, GL application)
                                  interactive OpenGL visualizer, not part of
@@ -233,12 +237,20 @@ row per radial strip, and trailing legs along the local relative wind
 plus the momentum-theory hover inflow (a prescribed linearized helical
 wake). The solved lattice renders colored by circulation / sectional cl /
 lift per span, with RPM, axial-speed, and density controls and
-dimensional thrust / torque / power / disk-loading readouts.
-Quasi-steady and potential-flow: prescribed straight-line wake (no
-roll-up or contraction, so heavily-loaded static thrust reads
-optimistic), induced torque only (no profile drag), single chordwise row
-(integrated loads, not chordwise pressure distributions), no thickness,
-no stall.
+dimensional thrust / torque / power / disk-loading readouts. On top of
+the lattice sits **Level-2 viscous coupling** (`Solver::SolveViscousCoupled`,
+on by default): per radial strip the lattice supplies `alpha_eff`, a 2-D
+viscous section model supplies `cl/cd(alpha_eff, Re, Ma)` (today an
+analytic polar -- finite lift slope about the CST camber line's
+thin-airfoil zero-lift angle, smooth stall saturation, Re-scaled drag
+polar; the interface is the seam a boundary-layer section solver will
+implement), and the circulation relaxes until the sectional-lift
+residual vanishes. That caps the stalled root loading and adds real
+**profile torque**, reported separately from the induced part.
+Remaining caveats: quasi-steady prescribed straight-line wake (no
+roll-up or contraction), single chordwise row (integrated loads, not
+pressure distributions), no thickness, incompressible (Ma carried but
+unused).
 
 ## Validation
 

@@ -129,7 +129,9 @@ private:
     // the lattice is small enough not to split them.
     Geometry::Propeller m_Prop;
     std::vector<Solver::Panel> m_PropPanels;
+    std::vector<Solver::StripSection> m_PropStrips;
     Solver::SolveResult m_PropSolve;
+    Solver::ViscousCoupledResult m_PropCoupled; // populated when m_PropUseViscous
     LatticeRenderer m_PropLattice;              // the solved blade lattice, field-colored
     LatticeDisplayOptions m_PropLatticeDisplay; // grid/axes off; see constructor
     PropellerDisplayOptions m_PropDisplay;      // hub/disk/axis decoration (geometry ribbon off)
@@ -137,6 +139,7 @@ private:
     double m_PropRpm = 6000.0;       // shaft speed; Omega = rpm * 2*pi/60 about +x
     double m_PropSpeed = 0.0;        // axial inflow [m/s]; 0 = hover (solved at a tiny floor speed)
     double m_PropDensity = 1.225;    // [kg/m^3], sea-level ISA
+    bool m_PropUseViscous = true;    // Level-2 sectional lift feedback vs bare inviscid lattice
     bool m_PropDirty = true;         // geometry/operating point/display changed -> remesh + re-solve
 
     double m_LastMouseX = 0.0, m_LastMouseY = 0.0;

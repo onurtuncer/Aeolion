@@ -111,6 +111,7 @@
 #include "Aeolion/Geometry/HandoffContract.h"
 #include "Aeolion/Lattice/Panel.h"
 #include "Aeolion/Lattice/SourcePanel.h"
+#include "Aeolion/Solver/ViscousCoupling.h"
 
 #include <cstddef>
 #include <functional>
@@ -406,6 +407,17 @@ struct LatticeOptions {
  */
 [[nodiscard]] std::vector<Lattice::Panel> BuildPropellerLattice(const Geometry::Propeller& prop,
                                                                 double axialSpeed, double omega);
+
+/**
+ * The per-strip section frames and section data for the Level-2 viscous
+ * coupling (Solver::SolveViscousCoupled), aligned one-to-one with
+ * BuildPropellerLattice's panels: chord/lift directions at mid-chord of
+ * each radial strip, the local chord and width, and the thin-airfoil
+ * zero-lift angle of the strip's CST camber line -- the section model
+ * must carry the camber the coupling supersedes in the lattice's own
+ * boundary condition. Pure geometry: independent of the operating point.
+ */
+[[nodiscard]] std::vector<Solver::StripSection> BuildPropellerStrips(const Geometry::Propeller& prop);
 
 // --- the builder ------------------------------------------------------------
 /**

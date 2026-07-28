@@ -371,15 +371,78 @@ it -- the mean-line slope at the 3/4-chord boundary condition -- but
 resolving chordwise loading distributions awaits a vortex-ring wake or
 finite-core filaments.
 
-Limitations, stated plainly: quasi-steady with a prescribed straight-line
-wake -- no roll-up or contraction, so heavily-loaded static (hover)
-thrust reads optimistic; torque and power are induced only (potential
-flow carries no profile drag); one chordwise row (integrated loads, not
-pressure distributions); thin camber surface, no thickness; and no
-stall. ``TestPropellerLattice`` pins the physics that must hold
-regardless: thrust upstream, torque opposing rotation, exact
-blade-symmetry force cancellation, thrust falling with advance speed at
-fixed rpm, and positively-cambered sections thrusting at zero twist.
+Limitations of the bare lattice, stated plainly: quasi-steady with a
+prescribed straight-line wake -- no roll-up or contraction, so
+heavily-loaded static (hover) thrust reads optimistic; torque and power
+are induced only (potential flow carries no profile drag); one chordwise
+row (integrated loads, not pressure distributions); thin camber surface,
+no thickness; and no stall. ``TestPropellerLattice`` pins the physics
+that must hold regardless: thrust upstream, torque opposing rotation,
+exact blade-symmetry force cancellation, thrust falling with advance
+speed at fixed rpm, and positively-cambered sections thrusting at zero
+twist. The stall and profile-drag limitations are what the viscous
+coupling below removes.
+
+Viscous coupling: sectional lift feedback
+-----------------------------------------
+
+``Solver::SolveViscousCoupled`` closes the loop between the lattice and
+2-D viscous section data (Level-2 viscous-inviscid coupling, the
+nonlinear-lifting-line idea posed on the lattice). The lattice stops
+being the authority on how much lift a section produces and becomes the
+authority on what the section *sees*. Per radial strip, per iteration:
+
+1. the lattice provides :math:`\alpha_{eff}` -- the local velocity
+   (kinematic + induced under the current circulation) projected in the
+   strip's section plane against its chord;
+2. a 2-D section model provides
+   :math:`c_l^{sect} = f(\alpha_{eff}, Re, Ma)`;
+3. the target circulation follows from
+   :math:`L' = \rho V_{rel} \Gamma = \tfrac{1}{2}\rho V_{rel}^2 c\, c_l`,
+   i.e. :math:`|\Gamma_{target}| = \tfrac{1}{2} V_{rel}\, c\, c_l`
+   (implemented through the Kutta-Joukowski projection so every
+   orientation convention stays out of the update);
+4. the circulation relaxes,
+   :math:`\Gamma^{k+1} = (1-\omega)\Gamma^k + \omega\,\Gamma_{target}`
+   with :math:`\omega = 0.15` by default;
+5. induced velocities are recomputed and the loop repeats until the
+   residual
+
+   .. math::
+
+      R_i(\Gamma) \;=\; c_{l,i}^{VLM}(\Gamma)
+        \;-\; c_{l,i}^{sect}\!\bigl(\alpha_{eff,i}(\Gamma),\,Re_i,\,Ma_i\bigr)
+        \;=\; 0
+
+   is satisfied (relaxed fixed point today; the residual form admits
+   Newton, quasi-Newton, or Anderson acceleration without touching
+   anything else). The inviscid linear solve seeds the iteration.
+
+Because the section model owns the lift curve, the lattice geometry's
+own camber boundary condition is superseded -- so each strip carries the
+thin-airfoil zero-lift angle of its CST mean line
+(``Geometry::SectionZeroLiftAngleDeg``,
+:math:`\alpha_0 = \tfrac{1}{\pi}\int_0^\pi s(\theta)(1-\cos\theta)\,
+d\theta`), and the section model represents the same camber the geometry
+would otherwise have supplied.
+
+The section model is deliberately a seam: today it is an analytic
+viscous polar (thin-airfoil slope about :math:`\alpha_0`, smooth tanh
+saturation at :math:`c_{l,max}` -- stall -- and a parabolic drag polar
+with :math:`c_{d0} \sim Re^{-1/5}` skin-friction scaling); a 2-D
+boundary-layer section solver implements the identical
+:math:`f(\alpha_{eff}, Re, Ma)` interface when it lands. Mach rides
+along in the signature for that future model.
+
+Level 2 changes the loads twice over: stall saturation caps the root
+loading the inviscid lattice happily overpredicts at hover, and the
+section drag acts at each strip along its *local* relative wind, which
+finally puts **profile torque** into the shaft-power sum -- reported
+separately from the induced torque. ``TestViscousCoupling`` pins the
+behavior: convergence under tolerance, coupled hover thrust below the
+inviscid lattice's, profile torque positive and exactly zero when the
+drag polar is zeroed, camber surfacing as a negative :math:`\alpha_0`,
+and the advance trend surviving the coupling.
 
 Viscous drag buildup (Aeolion::DragEstimate)
 -------------------------------------------------

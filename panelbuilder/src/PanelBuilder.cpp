@@ -945,4 +945,50 @@ std::vector<Lattice::Panel> BuildPropellerLattice(const Geometry::Propeller& pro
     return panels;
 }
 
+std::vector<Solver::StripSection> BuildPropellerStrips(const Geometry::Propeller& prop) {
+    std::vector<Solver::StripSection> strips;
+    const std::size_t ns = prop.Stations.size();
+    if (ns < 2 || prop.BladeCount < 1) return strips;
+    strips.reserve(static_cast<std::size_t>(prop.BladeCount) * (ns - 1));
+
+    const Math::Vec3 axial(1.0, 0.0, 0.0);
+
+    for (int blade = 0; blade < prop.BladeCount; ++blade) {
+        const double bladeAzimuth = Math::Two * std::numbers::pi * blade / prop.BladeCount;
+
+        // Mid-chord section frame of a station, wrapped on its radius
+        // cylinder exactly the way BuildPropellerLattice wraps the panels
+        // (mid-chord: azimuth offset zero, so the frame is the station's).
+        const auto frameAt = [&](const Geometry::BladeStation& station) {
+            const double beta = Math::DegToRad(station.TwistDeg);
+            const Math::Vec3 rhat(0.0, std::cos(bladeAzimuth), std::sin(bladeAzimuth));
+            const Math::Vec3 that(0.0, -std::sin(bladeAzimuth), std::cos(bladeAzimuth));
+            const Math::Vec3 chordDir = -that * std::cos(beta) + axial * std::sin(beta);
+            return std::pair{chordDir, -Math::Cross(chordDir, rhat)};
+        };
+
+        for (std::size_t i = 0; i + 1 < ns; ++i) {
+            const Geometry::BladeStation& inboard = prop.Stations[i];
+            const Geometry::BladeStation& outboard = prop.Stations[i + 1];
+            const double width = outboard.r - inboard.r;
+            if (width <= 0.0) continue; // must skip exactly what the lattice skips, to stay aligned
+
+            const auto [chordIn, liftIn] = frameAt(inboard);
+            const auto [chordOut, liftOut] = frameAt(outboard);
+            const double etaMid = (prop.Radius > 0.0)
+                                      ? Math::Half * (inboard.r + outboard.r) / prop.Radius
+                                      : 0.0;
+
+            Solver::StripSection strip;
+            strip.ChordDir = (chordIn + chordOut).Normalized();
+            strip.LiftDir = (liftIn + liftOut).Normalized();
+            strip.Chord = Math::Half * (inboard.Chord + outboard.Chord);
+            strip.Width = width;
+            strip.Alpha0Deg = Geometry::SectionZeroLiftAngleDeg(prop.Sections, etaMid);
+            strips.push_back(strip);
+        }
+    }
+    return strips;
+}
+
 } // namespace Aeolion::PanelBuilder

@@ -297,7 +297,19 @@ void Application::ResolveProp() {
     ref.Chord = ref.Area / std::max(ref.Span, 1e-9);
 
     const double trail = Solver::DefaultTrailSpanFactor * 2.0 * m_Prop.Radius;
-    m_PropSolve = Solver::Solve(m_PropPanels, fc, ref, trail);
+    if (m_PropUseViscous) {
+        // Level-2 sectional lift feedback: the lattice supplies alpha_eff,
+        // the analytic viscous section model supplies cl/cd, and the
+        // circulation relaxes until they agree. Base has SolveResult's
+        // shape, so everything downstream reads it unchanged.
+        m_PropStrips = PanelBuilder::BuildPropellerStrips(m_Prop);
+        m_PropCoupled = Solver::SolveViscousCoupled(m_PropPanels, m_PropStrips, fc, ref, trail,
+                                                    Solver::AnalyticSectionModel{});
+        m_PropSolve = m_PropCoupled.Base;
+    } else {
+        m_PropSolve = Solver::Solve(m_PropPanels, fc, ref, trail);
+        m_PropCoupled = {};
+    }
 
     m_PropLattice.Update(m_PropPanels, m_PropSolve, m_PropLatticeDisplay, 2.0 * m_Prop.Radius);
     m_Propeller.Update(m_Prop, m_PropDisplay);
@@ -533,6 +545,11 @@ void Application::DrawPropellerUI() {
         m_PropDirty |= SliderD("RPM", &m_PropRpm, 500.0, 15000.0, "%.0f");
         m_PropDirty |= SliderD("Airspeed [m/s]", &m_PropSpeed, 0.0, 40.0, "%.1f");
         m_PropDirty |= SliderD("rho [kg/m^3]", &m_PropDensity, 0.4, 1.4);
+        m_PropDirty |= ImGui::Checkbox("Viscous coupling", &m_PropUseViscous);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Level-2 sectional lift feedback: analytic viscous polar\n"
+                              "(finite lift slope, stall saturation, Re-scaled profile drag)\n"
+                              "iterated against the lattice's induced flow.");
     }
 
     if (ImGui::CollapsingHeader("Lattice", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -574,20 +591,34 @@ void Application::DrawPropellerUI() {
 
     // The rotating-lattice solve's body-axis sums, restated as propeller
     // quantities (see BuildPropellerLattice's conventions): thrust points
-    // upstream (-x), shaft torque opposes +Omega. Potential flow: the
-    // torque/power here are INDUCED only -- profile drag would add on top.
+    // upstream (-x), shaft torque opposes +Omega. With viscous coupling the
+    // torque is real (induced + profile); the bare inviscid lattice's is
+    // induced only.
     const double omega = m_PropRpm * 2.0 * std::numbers::pi / Math::SecondsPerMinute;
     const double thrust = -m_PropSolve.Di;
     const double torque = -m_PropSolve.Mx;
     const double power = torque * omega;
     if (ImGui::BeginTable("prop_solve", 2, ImGuiTableFlags_SizingStretchProp)) {
         ReadoutRow("Thrust [N]", thrust, "%.3f");
-        ReadoutRow("Torque [N.m] (induced)", torque, "%.4f");
-        ReadoutRow("Power [W] (induced)", power, "%.1f");
+        if (m_PropUseViscous) {
+            ReadoutRow("Torque [N.m]", torque, "%.4f");
+            ReadoutRow("  induced", -m_PropCoupled.InducedMoment.x, "%.4f");
+            ReadoutRow("  profile", -m_PropCoupled.ProfileMoment.x, "%.4f");
+            ReadoutRow("Power [W]", power, "%.1f");
+        } else {
+            ReadoutRow("Torque [N.m] (induced)", torque, "%.4f");
+            ReadoutRow("Power [W] (induced)", power, "%.1f");
+        }
         if (diskArea > 0.0) ReadoutRow("Disk loading [Pa]", thrust / diskArea, "%.1f");
         if (power > 1e-9 && m_PropSpeed > 0.0)
             ReadoutRow("Propulsive eff.", thrust * m_PropSpeed / power, "%.3f");
         ImGui::EndTable();
+    }
+    if (m_PropUseViscous) {
+        ImGui::Text("coupling: %d iteration(s), residual %.2e", m_PropCoupled.Iterations,
+                    m_PropCoupled.MaxResidual);
+        if (!m_PropCoupled.Converged)
+            ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "coupling did not converge");
     }
 
     ImGui::SeparatorText("Geometry");
@@ -616,6 +647,21 @@ void Application::DrawPropellerUI() {
                          FLT_MAX, FLT_MAX, ImVec2(-1, 80));
         ImGui::PlotLines("##twist", twist.data(), static_cast<int>(n), 0, "twist [deg]",
                          FLT_MAX, FLT_MAX, ImVec2(-1, 80));
+    }
+    // One blade's converged section states -- the coupling's own output.
+    if (m_PropUseViscous && m_Prop.Stations.size() > 1) {
+        const std::size_t per = m_Prop.Stations.size() - 1;
+        if (m_PropCoupled.Strips.size() >= per) {
+            std::vector<float> alphaEff(per), cl(per);
+            for (std::size_t i = 0; i < per; ++i) {
+                alphaEff[i] = static_cast<float>(m_PropCoupled.Strips[i].alphaEffDeg);
+                cl[i] = static_cast<float>(m_PropCoupled.Strips[i].cl);
+            }
+            ImGui::PlotLines("##alphaeff", alphaEff.data(), static_cast<int>(per), 0,
+                             "alpha_eff [deg]", FLT_MAX, FLT_MAX, ImVec2(-1, 80));
+            ImGui::PlotLines("##clvisc", cl.data(), static_cast<int>(per), 0, "section cl",
+                             FLT_MAX, FLT_MAX, ImVec2(-1, 80));
+        }
     }
     ImGui::End();
 }
