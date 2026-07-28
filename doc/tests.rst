@@ -143,6 +143,20 @@ time (the 1.8.0 handoff, which carries a duct). Asserts an antisymmetric
 aileron command rolls the coupled airframe without changing its lift, and
 that clearing the deflection reproduces the original solve exactly.
 
+TestPropellerLattice
+--------------------
+
+The rotating-frame propeller VLM
+(``PanelBuilder::BuildPropellerLattice`` + ``Solver::Solve`` with
+``FreestreamConditions::p = Omega``), checked against physics that must
+hold regardless of the blade: a positively-twisted schedule spun at
+:math:`+\Omega` must thrust upstream (:math:`-x`), absorb torque against
+its own rotation (:math:`M_x < 0`), cancel its in-plane forces exactly by
+blade symmetry, and lose thrust as axial inflow rises at fixed rpm. Also
+pins the lattice structure -- and that every trailing leg leaves along
+the local relative wind, which at hover is nearly tangential (an axial
+wake there destroys the lattice geometry and diverges).
+
 Fixture data
 ------------
 

@@ -321,19 +321,46 @@ outward normal, so the propulsive jet reshapes the field around the rest
 of the body without being counted as a pressure force on a face that
 physically is not there (``Aeolion::PanelBuilder::ApplyBaseEfflux``).
 
-Propeller BEMT (external ``BEMT`` project)
-------------------------------------------
+Propeller: rotating-frame vortex lattice
+----------------------------------------
 
-The propeller blade-element momentum theory solver that used to be
-derived here moved to its own repository,
-`onurtuncer/BEMT <https://github.com/onurtuncer/BEMT>`_ -- it is a
-momentum method, not a panel method, and this toolkit no longer depends
-on it. Its theory writeup lives with it. What remains on Aeolion's side
-is generic: ``Solver::Solve``'s ``externalField`` hook accepts any
-velocity-perturbation field (a propeller slipstream model, ground
-effect, a gust), and the handoff contract's ``propulsion_bemt`` block
-(``Geometry::PropulsionSpec``) still carries the blade geometry as
-schema vocabulary.
+Aeolion's propeller method is its own solver applied in a rotating
+frame -- a panel method, consistent with the rest of the toolkit. (The
+blade-element momentum theory solver that used to live here moved to its
+own repository, `onurtuncer/BEMT <https://github.com/onurtuncer/BEMT>`_,
+which this toolkit does not depend on.)
+
+``PanelBuilder::BuildPropellerLattice`` meshes each blade of a
+``Geometry::Propeller`` into the same horseshoe-vortex panels the wing
+uses: chordwise rows by radial strips, flat plates on the chord line at
+the local geometric twist, swept out per blade azimuth about +x. The
+rotation is not special-cased anywhere in the solver: it enters as the
+body roll rate :math:`p = \Omega` in ``FreestreamConditions``, whose
+kinematic-velocity term
+:math:`\mathbf{V}_{kin} = \mathbf{V}_\infty - \boldsymbol{\omega} \times
+\mathbf{r}` hands every blade panel its true :math:`\Omega r` tangential
+onset flow, and the near-field Kutta-Joukowski force evaluation uses that
+same local velocity, so the body-axis sums are dimensional propeller
+loads directly: thrust :math:`= -F_x` (upstream), shaft torque
+:math:`= -M_x` (opposing :math:`+\Omega`), power :math:`= Q\,\Omega`.
+
+Each trailing leg leaves along the **local relative wind** at its root
+(axial inflow plus the tangential sweep) -- the linearized helix. This is
+load-bearing, not cosmetic: at hover the local wind is almost purely
+tangential, and trailing the wake axially instead leaves the legs
+near-perpendicular to the flow, destroying the quarter/three-quarter
+chord lattice geometry (the circulation solve saw-tooths radially and
+diverges under refinement).
+
+Limitations, stated plainly: quasi-steady with a rigid straight-line
+wake -- no helical curvature, roll-up, or contraction, so heavily-loaded
+static (hover) thrust reads optimistic; torque and power are induced
+only (potential flow carries no profile drag); blades are flat plates
+(the contract's CST blade sections are not yet folded in as camber); and
+there is no stall. ``TestPropellerLattice`` pins the physics that must
+hold regardless: thrust upstream, torque opposing rotation, exact
+blade-symmetry force cancellation, and thrust falling with advance speed
+at fixed rpm.
 
 Viscous drag buildup (Aeolion::DragEstimate)
 -------------------------------------------------

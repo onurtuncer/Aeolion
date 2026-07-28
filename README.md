@@ -75,6 +75,10 @@ panelbuilder/                    aeolion_panelbuilder (STATIC library)
                                    wing + fuselage + duct lattice -> solve,
                                    including a control-surface deflection
                                    re-solved on the same cached builder
+    TestPropellerLattice.cpp      rotating-frame blade VLM: thrust upstream,
+                                   torque opposing rotation, blade-symmetry
+                                   force cancellation, thrust falling with
+                                   advance speed
 
 viewer/                          aeolion_viewer (exe, GL application)
                                  interactive OpenGL visualizer, not part of
@@ -219,12 +223,17 @@ any image tool (e.g. `Pillow`: `Image.open("out.ppm").save("out.png")`).
 
 A menu-bar toggle (or `--screen propeller`) switches to the **propeller
 screen**: the handoff's `propulsion_bemt` blade geometry (or a built-in
-default prop) drawn as twisted, tapered blade surfaces colored by twist or
-chord, with hub, actuator-disk circle, rotation axis, and radial
-chord/twist plots plus disk area and solidity readouts. It is a geometry
-view -- the aerodynamic solve behind it left with the external BEMT
-project, and the screen is the seam where this repo's own propeller
-calculation method will plug in.
+default prop) meshed into a rotating-frame vortex lattice
+(`PanelBuilder::BuildPropellerLattice`) and solved by the same VLM core as
+the airframe -- the rotation enters as the solver's roll rate about +x, so
+every blade panel sees its true `Omega x r` onset flow, with trailing legs
+along the local relative wind (a linearized helix). The blades render as
+the solved lattice colored by circulation / sectional cl / lift per span,
+with RPM, axial-speed, density, and chordwise-panel controls, and
+dimensional thrust / torque / power / disk-loading readouts. Quasi-steady
+and potential-flow: rigid straight-line wake (no roll-up or contraction,
+so heavily-loaded static thrust reads optimistic), induced torque only (no
+profile drag), flat-plate blades (no CST camber yet), no stall.
 
 ## Validation
 

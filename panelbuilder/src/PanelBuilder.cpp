@@ -15,6 +15,7 @@
 #include <cmath>
 #include <functional>
 #include <numbers>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -788,6 +789,88 @@ int ApplyBaseEfflux(std::vector<Lattice::SourcePanel>& body,
         ++affected;
     }
     return affected;
+}
+
+std::vector<Lattice::Panel> BuildPropellerLattice(const Geometry::Propeller& prop, int chordwisePanels,
+                                                  double axialSpeed, double omega) {
+    std::vector<Lattice::Panel> panels;
+    const std::size_t ns = prop.Stations.size();
+    if (ns < 2 || chordwisePanels < 1 || prop.BladeCount < 1) return panels;
+
+    const int rows = chordwisePanels;
+    panels.reserve(static_cast<std::size_t>(prop.BladeCount) * (ns - 1) *
+                   static_cast<std::size_t>(rows));
+
+    const Math::Vec3 axial(1.0, 0.0, 0.0); // rotation axis, +x
+
+    // Trailing-leg direction at a wake-root point: the local kinematic
+    // velocity (axial inflow plus the -Omega x r sweep the rotation term
+    // hands the blade), i.e. the linearized helix -- see the header note.
+    auto trailDirection = [&](const Math::Vec3& point) {
+        const Math::Vec3 sweep = Math::Cross(axial * omega, point);
+        const Math::Vec3 local = axial * axialSpeed - sweep;
+        const Math::Vec3 unit = local.Normalized();
+        return (unit.Norm() > 0.5) ? unit : axial; // no flow at all -> fall back to axial
+    };
+
+    for (int blade = 0; blade < prop.BladeCount; ++blade) {
+        const double psi = Math::Two * std::numbers::pi * blade / prop.BladeCount;
+        const Math::Vec3 rhat(0.0, std::cos(psi), std::sin(psi)); // radial, in the rotor (y-z) plane
+        const Math::Vec3 that(0.0, -std::sin(psi), std::cos(psi)); // tangential = axial x rhat: blade motion at +Omega
+
+        // The point at chord fraction f (0 = leading edge) of the station's
+        // chord segment. The blade moves toward +that, so the relative wind
+        // arrives from +that: the leading edge faces +that, and twist tilts
+        // the trailing edge aft (+x), which is what makes the resultant
+        // blade force point upstream (-x) -- thrust -- at positive local
+        // incidence.
+        auto chordPoint = [&](const Geometry::BladeStation& station, double f) {
+            const double beta = Math::DegToRad(station.TwistDeg);
+            const Math::Vec3 chordDir = -that * std::cos(beta) + axial * std::sin(beta); // LE -> TE
+            const Math::Vec3 center = rhat * station.r;
+            return center + chordDir * ((f - Math::Half) * station.Chord);
+        };
+
+        for (std::size_t i = 0; i + 1 < ns; ++i) {
+            const Geometry::BladeStation& inboard = prop.Stations[i];
+            const Geometry::BladeStation& outboard = prop.Stations[i + 1];
+            const double width = outboard.r - inboard.r;
+            if (width <= 0.0) continue; // degenerate/unordered station pair carries no strip
+
+            for (int row = 0; row < rows; ++row) {
+                const double f0 = static_cast<double>(row) / rows;
+                const double f1 = static_cast<double>(row + 1) / rows;
+                const double fBound = (row + Math::QuarterChord) / rows;
+                const double fControl = (row + Math::ThreeQuarterChord) / rows;
+
+                Lattice::Panel panel;
+                panel.A = chordPoint(inboard, fBound);
+                panel.B = chordPoint(outboard, fBound);
+                panel.ControlPoint = (chordPoint(inboard, fControl) + chordPoint(outboard, fControl)) * Math::Half;
+                panel.TrailDirA = trailDirection(panel.A);
+                panel.TrailDirB = trailDirection(panel.B);
+
+                // Quad corners of this chordwise slice, for normal and area.
+                const Math::Vec3 le0 = chordPoint(inboard, f0);
+                const Math::Vec3 te0 = chordPoint(inboard, f1);
+                const Math::Vec3 le1 = chordPoint(outboard, f0);
+                const Math::Vec3 te1 = chordPoint(outboard, f1);
+                panel.Normal = Math::Cross(le1 - le0, te0 - le0).Normalized();
+                // Planar quad: half the cross product of its diagonals.
+                panel.Area = Math::Cross(te1 - le0, le1 - te0).Norm() * Math::Half;
+                // Blades have no reference-plane projection the way a wing
+                // planform does; the flat-plate slice IS its own footprint,
+                // which is also what the viewer reconstructs the drawn quad
+                // from (PlanformArea / SpanwiseWidth = slice chord).
+                panel.PlanformArea = panel.Area;
+                panel.SpanwiseWidth = width;
+                panel.Surface = "blade" + std::to_string(blade);
+                panel.StripIndex = static_cast<int>(blade * (ns - 1) + i);
+                panels.push_back(panel);
+            }
+        }
+    }
+    return panels;
 }
 
 } // namespace Aeolion::PanelBuilder

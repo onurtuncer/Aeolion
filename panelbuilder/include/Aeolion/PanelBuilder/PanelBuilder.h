@@ -356,6 +356,46 @@ struct LatticeOptions {
                                   const std::function<Math::Vec3(const Math::Vec3&)>& slipstream,
                                   const Math::Vec3& referenceFreestream);
 
+// --- propeller blade lattice ------------------------------------------------
+// The panel-method propeller: every blade meshed as horseshoe-vortex panels
+// (chordwise rows x radial strips, exactly the Panel vocabulary the wing
+// uses) and solved by the SAME Solver::Solve as the airframe -- the rotation
+// enters through FreestreamConditions::p, the solver's roll rate about +x,
+// whose kinematic-velocity term hands every blade panel its true
+// Omega x r tangential onset flow. Quasi-steady, with straight trailing
+// legs along +x (a rigid axial wake, no helix or contraction), and
+// potential-flow forces only -- the torque a solve reports is induced
+// torque, with no profile-drag contribution.
+//
+// Conventions: the prop spins at +Omega about +x (right-hand rule), the
+// freestream arrives along +x (solver body axes, x aft), so thrust comes
+// out along -x: Thrust = -SolveResult::Di, shaft torque = -SolveResult::Mx
+// (with RefPoint at the hub), power = torque * Omega. Blades are flat
+// plates on the chord line at the local twist -- the contract's CST blade
+// sections (schema >= 1.8.0) are not yet folded in as camber.
+//
+// The wake direction is why this function needs the operating point, not
+// just geometry: each trailing leg leaves along the LOCAL kinematic
+// velocity at its root (axial inflow + Omega x r tangential sweep), the
+// linearized helix. Trailing purely axially instead is not a small error
+// at hover -- the local wind there is almost entirely tangential, the
+// legs would leave near-perpendicular to the flow, and the lattice's
+// quarter/three-quarter-chord geometry stops meaning anything (in
+// practice the circulation solve saw-tooths radially and diverges with
+// refinement). Rebuild the lattice whenever rpm or inflow change; it is
+// cheap.
+/**
+ * Mesh a metric propeller into horseshoe-vortex panels: chordwisePanels
+ * rows per radial strip, one strip per adjacent station pair, per blade,
+ * with trailing legs along the local relative wind of the stated
+ * operating point (axialSpeed [m/s] inflow along +x, omega [rad/s] about
+ * +x). Solve with FreestreamConditions{ Vinf = axialSpeed, p = omega,
+ * RefPoint = hub center (the origin) }.
+ */
+[[nodiscard]] std::vector<Lattice::Panel> BuildPropellerLattice(const Geometry::Propeller& prop,
+                                                                int chordwisePanels,
+                                                                double axialSpeed, double omega);
+
 // --- the builder ------------------------------------------------------------
 /**
  * Builds the solver's lattice from a parsed geometry handoff, on the

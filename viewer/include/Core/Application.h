@@ -63,6 +63,7 @@ private:
     // --- propeller screen ---------------------------------------------------
     void BuildDefaultPropeller();               // fallback prop when no contract states one
     void AdoptContractPropeller();              // use the loaded handoff's propulsion_bemt block
+    void ResolveProp();                         // mesh the blades + rotating-frame VLM solve + remesh
     void FrameProp();                           // frame the camera on the (small) propeller
     void DrawPropellerUI();
 
@@ -120,12 +121,24 @@ private:
     // --- propeller screen state ---------------------------------------------
     // The propeller is independent of the airframe: its own geometry (from
     // the handoff's propulsion_bemt block via Geometry::ToPropeller, or a
-    // built-in default) and its own render. There is no aerodynamic solve
-    // behind it -- m_PropDirty just remeshes.
+    // built-in default), its own operating point, and its own solve. The
+    // blades are meshed by PanelBuilder::BuildPropellerLattice and run
+    // through the SAME Solver::Solve as the airframe, spinning via the
+    // body-rate term (fc.p = Omega about +x) -- Aeolion's panel-native
+    // propeller method. m_PropDirty covers mesh + solve + remesh together;
+    // the lattice is small enough not to split them.
     Geometry::Propeller m_Prop;
-    PropellerDisplayOptions m_PropDisplay;
+    std::vector<Solver::Panel> m_PropPanels;
+    Solver::SolveResult m_PropSolve;
+    LatticeRenderer m_PropLattice;              // the solved blade lattice, field-colored
+    LatticeDisplayOptions m_PropLatticeDisplay; // grid/axes off; see constructor
+    PropellerDisplayOptions m_PropDisplay;      // hub/disk/axis decoration (geometry ribbon off)
     bool m_PropFromContract = false; // true if m_Prop came from a loaded contract, not the default
-    bool m_PropDirty = true;         // geometry/display changed -> remesh
+    double m_PropRpm = 6000.0;       // shaft speed; Omega = rpm * 2*pi/60 about +x
+    double m_PropSpeed = 0.0;        // axial inflow [m/s]; 0 = hover (solved at a tiny floor speed)
+    double m_PropDensity = 1.225;    // [kg/m^3], sea-level ISA
+    int m_PropChordwise = 4;         // chordwise panel rows per blade strip
+    bool m_PropDirty = true;         // geometry/operating point/display changed -> remesh + re-solve
 
     double m_LastMouseX = 0.0, m_LastMouseY = 0.0;
 };

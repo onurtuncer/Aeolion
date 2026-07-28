@@ -54,8 +54,12 @@ reintroduce BEMT sources, a BEMT `FetchContent`, or BEMT-typed bridges.
 Propeller vocabulary is Aeolion's own: the contract's `propulsion_bemt`
 block parses into `Geometry::PropulsionSpec` (fraction-of-disk radii),
 and `Geometry::ToPropeller` converts it to the metric
-`Geometry::Propeller` every in-repo consumer (the viewer's propeller
-screen today, a calculation method tomorrow) poses itself on.
+`Geometry::Propeller` every in-repo consumer poses itself on. The
+propeller calculation method is Aeolion's rotating-frame VLM:
+`PanelBuilder::BuildPropellerLattice` meshes the blades (trailing legs
+along the local relative wind — never purely axial, which diverges at
+hover) and the ordinary `Solver::Solve` spins them via
+`FreestreamConditions::p = Omega`; thrust `= -Di`, shaft torque `= -Mx`.
 
 Prefer STATIC over SHARED for Aeolion's own libraries — a DLL would need
 `__declspec` plumbing on every exported symbol for no ABI-stability or

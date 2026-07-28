@@ -40,6 +40,13 @@ constexpr double DefaultPropGeometricPitch = 0.12; // [m], sets the twist(r) = a
 constexpr double DefaultPropRootChord = 0.032;     // [m]
 constexpr double DefaultPropTaper = 0.55;          // chord = root * (1 - taper * r/R)
 
+// Hover means zero axial inflow, but the solver's wind-axis force
+// projections need a nonzero translational freestream to be defined
+// (drag/lift directions normalize Vinf) -- solve at this floor instead.
+// The dimensional forces are dominated by the Omega*r rotation term, so
+// the floor's contribution is negligible.
+constexpr double MinPropAirspeed = 0.01; // [m/s]
+
 // Deflection slider range used when a control surface states no
 // deflection_limits_deg (schema < 1.4.0, where MinDeg == MaxDeg == 0 means
 // "not stated" rather than "cannot move" -- see ControlSurface.h).
@@ -99,6 +106,13 @@ Application::Application(const std::string& geometryPath, const std::string& scr
     m_Wing.CosineSpacing = true;
 
     BuildDefaultPropeller();
+    // The propeller screen's lattice is the subject itself -- the airframe
+    // screen's ground grid and body axes would just clutter a 0.1 m prop.
+    m_PropLatticeDisplay.ShowGrid = false;
+    m_PropLatticeDisplay.ShowAxes = false;
+    // The flat geometry ribbon coincides with the solved lattice surface, so
+    // it stays off by default (z-fighting); hub/disk/axis decoration stays.
+    m_PropDisplay.ShowBlades = false;
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -252,6 +266,41 @@ void Application::AdoptContractPropeller() {
         // ToPropeller throws; keep the built-in default rather than fail.
         AE_WARN("propeller: contract propulsion_bemt unusable ({}); keeping the default propeller", e.what());
     }
+}
+
+void Application::ResolveProp() {
+    const double omega = m_PropRpm * 2.0 * std::numbers::pi / Math::SecondsPerMinute;
+    m_PropPanels = PanelBuilder::BuildPropellerLattice(m_Prop, m_PropChordwise, m_PropSpeed, omega);
+
+    // The rotation IS the flight condition: Omega enters as the solver's
+    // roll rate about +x, whose kinematic-velocity term gives every blade
+    // panel its true Omega x r tangential onset flow about the hub
+    // (RefPoint at the origin, where the lattice is built). Thrust and
+    // shaft torque then fall out of the body-axis force/moment sums:
+    // thrust = -Di (upstream, -x), torque = -Mx (opposing +Omega).
+    Solver::FreestreamConditions fc;
+    fc.Vinf = std::max(m_PropSpeed, MinPropAirspeed);
+    fc.alphaDeg = 0.0;
+    fc.betaDeg = 0.0;
+    fc.rho = m_PropDensity;
+    fc.p = omega;
+    fc.RefPoint = Solver::Vec3(0.0, 0.0, 0.0);
+
+    // Reference quantities only normalize coefficients, which are not
+    // meaningful at the hover floor speed anyway -- the readouts below are
+    // dimensional. Still, state something sensible.
+    Solver::ReferenceGeometry ref;
+    double area = 0.0;
+    for (const auto& panel : m_PropPanels) area += panel.PlanformArea;
+    ref.Area = std::max(area, 1e-9);
+    ref.Span = 2.0 * m_Prop.Radius;
+    ref.Chord = ref.Area / std::max(ref.Span, 1e-9);
+
+    const double trail = Solver::DefaultTrailSpanFactor * 2.0 * m_Prop.Radius;
+    m_PropSolve = Solver::Solve(m_PropPanels, fc, ref, trail);
+
+    m_PropLattice.Update(m_PropPanels, m_PropSolve, m_PropLatticeDisplay, 2.0 * m_Prop.Radius);
+    m_Propeller.Update(m_Prop, m_PropDisplay);
 }
 
 void Application::FrameProp() {
@@ -480,29 +529,38 @@ void Application::DrawPropellerUI() {
         }
     }
 
+    if (ImGui::CollapsingHeader("Operating point", ImGuiTreeNodeFlags_DefaultOpen)) {
+        m_PropDirty |= SliderD("RPM", &m_PropRpm, 500.0, 15000.0, "%.0f");
+        m_PropDirty |= SliderD("Airspeed [m/s]", &m_PropSpeed, 0.0, 40.0, "%.1f");
+        m_PropDirty |= SliderD("rho [kg/m^3]", &m_PropDensity, 0.4, 1.4);
+    }
+
+    if (ImGui::CollapsingHeader("Lattice", ImGuiTreeNodeFlags_DefaultOpen)) {
+        m_PropDirty |= ImGui::SliderInt("Chordwise panels", &m_PropChordwise, 1, 8);
+        ImGui::Text("panels: %zu", m_PropPanels.size());
+    }
+
     if (ImGui::CollapsingHeader("Display", ImGuiTreeNodeFlags_DefaultOpen)) {
-        const char* fieldNames[] = {"Twist [deg]", "Chord [m]"};
-        int field = static_cast<int>(m_PropDisplay.Field);
+        const char* fieldNames[] = {"Circulation gamma", "Sectional cl", "Lift per span"};
+        int field = static_cast<int>(m_PropLatticeDisplay.Field);
         if (ImGui::Combo("Field", &field, fieldNames, IM_ARRAYSIZE(fieldNames))) {
-            m_PropDisplay.Field = static_cast<PropFieldMode>(field);
+            m_PropLatticeDisplay.Field = static_cast<FieldMode>(field);
             m_PropDirty = true;
         }
-        m_PropDirty |= ImGui::Checkbox("Blades", &m_PropDisplay.ShowBlades);
+        m_PropDirty |= ImGui::Checkbox("Wireframe", &m_PropLatticeDisplay.ShowWireframe);
+        m_PropDirty |= ImGui::Checkbox("Normals", &m_PropLatticeDisplay.ShowNormals);
         m_PropDirty |= ImGui::Checkbox("Hub", &m_PropDisplay.ShowHub);
         m_PropDirty |= ImGui::Checkbox("Disk & axis", &m_PropDisplay.ShowDisk);
-        m_PropDirty |= ImGui::Checkbox("Wireframe", &m_PropDisplay.ShowWireframe);
+        m_PropDirty |= ImGui::Checkbox("Geometry ribbon", &m_PropDisplay.ShowBlades);
         if (ImGui::Button("Frame view")) FrameProp();
     }
     ImGui::End();
 
-    // --- geometry summary ---------------------------------------------------
-    // Purely geometric quantities; the aerodynamic operating point and its
-    // thrust/power/efficiency readouts left with the BEMT solver, and come
-    // back when this repo grows its own propeller calculation method.
+    // --- results ------------------------------------------------------------
     ImGui::SetNextWindowPos(ImVec2(static_cast<float>(m_Window.FramebufferWidth()) - 370, 28),
                             ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(360, 460), ImGuiCond_FirstUseEver);
-    ImGui::Begin("Propeller geometry");
+    ImGui::SetNextWindowSize(ImVec2(360, 560), ImGuiCond_FirstUseEver);
+    ImGui::Begin("Propeller results");
 
     const double diskArea = std::numbers::pi * m_Prop.Radius * m_Prop.Radius;
     // Blade planform area by the trapezoid rule over the chord distribution;
@@ -512,6 +570,26 @@ void Application::DrawPropellerUI() {
         const double dr = m_Prop.Stations[i + 1].r - m_Prop.Stations[i].r;
         bladeArea += 0.5 * (m_Prop.Stations[i].Chord + m_Prop.Stations[i + 1].Chord) * dr;
     }
+
+    // The rotating-lattice solve's body-axis sums, restated as propeller
+    // quantities (see BuildPropellerLattice's conventions): thrust points
+    // upstream (-x), shaft torque opposes +Omega. Potential flow: the
+    // torque/power here are INDUCED only -- profile drag would add on top.
+    const double omega = m_PropRpm * 2.0 * std::numbers::pi / Math::SecondsPerMinute;
+    const double thrust = -m_PropSolve.Di;
+    const double torque = -m_PropSolve.Mx;
+    const double power = torque * omega;
+    if (ImGui::BeginTable("prop_solve", 2, ImGuiTableFlags_SizingStretchProp)) {
+        ReadoutRow("Thrust [N]", thrust, "%.3f");
+        ReadoutRow("Torque [N.m] (induced)", torque, "%.4f");
+        ReadoutRow("Power [W] (induced)", power, "%.1f");
+        if (diskArea > 0.0) ReadoutRow("Disk loading [Pa]", thrust / diskArea, "%.1f");
+        if (power > 1e-9 && m_PropSpeed > 0.0)
+            ReadoutRow("Propulsive eff.", thrust * m_PropSpeed / power, "%.3f");
+        ImGui::EndTable();
+    }
+
+    ImGui::SeparatorText("Geometry");
     if (ImGui::BeginTable("prop_geom", 2, ImGuiTableFlags_SizingStretchProp)) {
         ReadoutRow("Blades", static_cast<double>(m_Prop.BladeCount), "%.0f");
         ReadoutRow("Tip radius [m]", m_Prop.Radius, "%.4f");
@@ -519,15 +597,11 @@ void Application::DrawPropellerUI() {
         ReadoutRow("Disk area [m^2]", diskArea, "%.4f");
         if (diskArea > 0.0)
             ReadoutRow("Solidity", m_Prop.BladeCount * bladeArea / diskArea, "%.4f");
-        if (!m_Prop.Stations.empty()) {
-            ReadoutRow("Root twist [deg]", m_Prop.Stations.front().TwistDeg, "%.2f");
-            ReadoutRow("Tip twist [deg]", m_Prop.Stations.back().TwistDeg, "%.2f");
-        }
         ImGui::EndTable();
     }
 
     ImGui::SeparatorText("Field range");
-    ColorBar(m_Propeller.FieldMin(), m_Propeller.FieldMax());
+    ColorBar(m_PropLattice.FieldMin(), m_PropLattice.FieldMax());
 
     ImGui::SeparatorText("Radial distribution (hub -> tip)");
     if (!m_Prop.Stations.empty()) {
@@ -564,7 +638,7 @@ void Application::Run(int maxFrames) {
             m_DisplayDirty = false;
         }
         if (m_PropDirty) {
-            m_Propeller.Update(m_Prop, m_PropDisplay);
+            ResolveProp();
             m_PropDirty = false;
         }
 
@@ -577,10 +651,12 @@ void Application::Run(int maxFrames) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glEnable(GL_DEPTH_TEST);
 
-        if (m_Screen == Screen::Propeller)
-            m_Propeller.Draw(m_Camera.ViewProjection());
-        else
+        if (m_Screen == Screen::Propeller) {
+            m_PropLattice.Draw(m_Camera.ViewProjection());
+            m_Propeller.Draw(m_Camera.ViewProjection()); // hub, disk circle, axis (and optional ribbon)
+        } else {
             m_Lattice.Draw(m_Camera.ViewProjection());
+        }
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
