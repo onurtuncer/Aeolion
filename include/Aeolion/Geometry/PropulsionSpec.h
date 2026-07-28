@@ -1,9 +1,11 @@
 // Geometry/PropulsionSpec.h
 //
-// Propeller blade geometry as handed off for a BEMT run. Radial positions are
-// normalized (r/R); multiply by DiskRadius to get the metric radii that
-// BEMT::PropGeometry wants. The innermost station's RadiusFraction is the hub
-// cutout -- the blade is not defined inboard of it.
+// Propeller blade geometry as handed off in the contract's propulsion_bemt
+// block. Radial positions are normalized (r/R); a consumer multiplies by
+// DiskRadius for metric radii. The innermost station's RadiusFraction is the
+// hub cutout -- the blade is not defined inboard of it. (The BEMT solver
+// that used to consume this moved to its own project; the block stays as
+// schema vocabulary for whatever propulsion method consumes it next.)
 //
 // Blade count arrived in schema 1.4.0 (n_blades); older documents omit it,
 // leaving BladeCount zero for the consumer to supply as it did before.
@@ -11,9 +13,8 @@
 // Blade airfoil shape (BladeAirfoilSections) and RotationAxis arrived in
 // schema 1.8.0; older documents leave both empty/zero. RotationAxis states
 // the physical spin axis the blade stations are defined about -- it is not
-// the same thing as BEMT::PropGeometry::RotationSign, which is a CW/CCW
-// installation choice the contract does not state (see HandoffContract.h's
-// ToPropGeometry bridge).
+// a CW/CCW installation choice, which the contract deliberately does not
+// state.
 #pragma once
 
 #include "Aeolion/Math/Vec3.h"
@@ -36,7 +37,7 @@ struct BladeAirfoilSection {
     std::vector<double> CoefficientsLower;
 };
 
-/** Propeller blade geometry as handed off for a BEMT run. */
+/** Propeller blade geometry as handed off (the propulsion_bemt block). */
 struct PropulsionSpec {
     double DiskRadius = 0.0;   ///< [m]
     double ReferenceRpm = 0.0;

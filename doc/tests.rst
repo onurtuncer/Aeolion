@@ -4,16 +4,18 @@ Test Cases and Validation
 Every module is checked against a closed-form or independently-known
 result before being trusted, not just eyeballed for plausibility. Each
 top-level component owns its own test folder rather than sharing one
-central directory -- ``solver/tests/``, ``panelbuilder/tests/``,
-``bemt/tests/``, and ``tests/`` for the core header-only library
+central directory -- ``solver/tests/``, ``panelbuilder/tests/``, and
+``tests/`` for the core header-only library
 (Math/Lattice/Geometry/DragEstimate) -- registered through the shared
 ``aeolion_add_test()`` in ``cmake/AeolionTest.cmake``. The whole suite is
 still one ``ctest`` invocation regardless of which folder a test lives in;
 run it with ``ctest --output-on-failure`` from the build directory. Bugs
 found and fixed along the way are documented in the relevant code comments
 rather than scrubbed from history -- several were caught only by checking
-a *hard* physical bound rather than a "looks about right" check, which the
-BEMT tests below rely on deliberately.
+a *hard* physical bound rather than a "looks about right" check. (The
+propeller BEMT solver and its physical-bound tests moved to the external
+`onurtuncer/BEMT <https://github.com/onurtuncer/BEMT>`_ repository, which
+this project does not depend on.)
 
 TestSolverCore
 --------------
@@ -35,42 +37,6 @@ TestDenseSolve
 Sanity check for the LAPACK/OpenBLAS dense linear-algebra backend: run a
 representative solve plus a full stability-derivative sweep and confirm
 every result is finite and physically sane.
-
-TestBEMT
---------
-
-Validates ``Aeolion::BEMT`` against **hard physical bounds**, not
-plausibility checks:
-
-- Figure of Merit (ideal hover power / actual power) must be :math:`\le
-  1.0` -- a real thermodynamic constraint, and a strong bug detector: this
-  caught two real sign/exponent bugs during development.
-- Propulsive efficiency (:math:`T V_\infty / P`) must be :math:`\le 1.0`
-  for every forward-flight point where the prop is actually absorbing
-  power.
-- Every blade station must converge.
-
-TestPropVane
-------------
-
-Integration test tying ``BEMT::SlipstreamField`` into
-``Solver::Solve``'s ``externalField`` hook: a deflected vane sitting
-behind a running propeller, at essentially zero airspeed (hover), must
-produce real side force / yaw moment purely from the propwash, while the
-same vane with no propwash present produces ~nothing. This is the literal
-physical mechanism that gives a thrust-vectoring-vane aircraft hover
-control authority, so it is kept as a standing regression check.
-
-TestPropContract
------------------
-
-The handoff-to-propeller bridge (``Geometry::ToPropGeometry``): the
-contract states blade radii as fractions of the disk radius and BEMT
-wants metres, and unit-conversion code is exactly the kind that looks
-obviously right and silently isn't -- a factor-of-R error would shift
-every radius and still produce a plausible-looking thrust. Also covers
-the hub station, which broke the solve the first time this bridge was
-wired up.
 
 TestSourcePanel
 -----------------

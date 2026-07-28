@@ -339,9 +339,10 @@ struct LatticeOptions {
 // for any meaningful thrust setting, and it keeps the influence matrix
 // flight-condition-independent, which is what makes a derivative sweep cheap.
 //
-// The slipstream is taken as a plain callable so this does not drag a BEMT
-// dependency into the panel builder; BEMT::SlipstreamField satisfies it
-// directly. With no propeller state, simply never call this: the base stays
+// The slipstream is taken as a plain callable so this does not drag any
+// propeller-model dependency into the panel builder; e.g. the external
+// BEMT project's SlipstreamField satisfies it after a Vec3 field-wise
+// conversion. With no propeller state, simply never call this: the base stays
 // the solid cap BuildBody() produced, which is a closed-body answer -- wrong
 // in a known direction rather than an unknown one.
 //

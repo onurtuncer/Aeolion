@@ -19,13 +19,13 @@ Follow the naming conventions used by TheCherno's **Hazel** game engine.
 
 The whole codebase (C++23) follows this convention. Headers live under
 `include/Aeolion/`, **one folder per namespace** — `Math/`, `Lattice/`,
-`BEMT/`, `Geometry/`, `DragEstimate/`. Nothing sits naked at the top of
+`Geometry/`, `DragEstimate/`. Nothing sits naked at the top of
 `include/Aeolion/`. Each folder holds its module header (`Geometry/HandoffContract.h`, …)
 alongside that module's plain data structs, one struct per file
 (`Geometry/ControlSurface.h`, …). A new module means a new folder, not a
 new top-level header. Namespaces are written with the `::` form —
-`Aeolion::Solver`, `Aeolion::BEMT`, `Aeolion::DragEstimate`,
-`Aeolion::Geometry`, `Aeolion::Lattice` — never the nested-brace form.
+`Aeolion::Solver`, `Aeolion::DragEstimate`, `Aeolion::Geometry`,
+`Aeolion::Lattice` — never the nested-brace form.
 
 **Top-level components.** A module that is large enough to own its build
 target, or that has compiled sources rather than headers alone, becomes a
@@ -38,17 +38,22 @@ header-only library's *own* test folder, not a shared one:
 |---|---|---|
 | `solver/` | header-only, part of `aeolion` | the VLM core every other module builds on |
 | `panelbuilder/` | `aeolion_panelbuilder` (STATIC) | a component with compiled sources |
-| `bemt/` | `aeolion_bemt` (STATIC) | a component with compiled sources |
 | `viewer/` | `aeolion_viewer` (exe) | GL application, not part of the library |
 
 `Lattice/Panel.h` stays in `include/` despite being shared by all of them:
 it is pure data vocabulary, so it belongs to no one module. It is
 re-exported into `Aeolion::Solver` the same way `Math/Vec3.h` is, so
-`Solver::Panel` keeps resolving. `BEMT/PropGeometry.h` follows the same
-rule relative to `bemt/`: it is the blade data vocabulary a geometry
-handoff builds (`Geometry::ToPropGeometry`), and building that data never
-requires calling into the BEMT solver itself, so it stays header-only in
-`include/Aeolion/BEMT/` rather than moving into `bemt/include/`.
+`Solver::Panel` keeps resolving.
+
+**BEMT is a separate project**, not a module or dependency of this repo:
+it is a momentum method, not a panel method, so it lives at
+[onurtuncer/BEMT](https://github.com/onurtuncer/BEMT) (plain `BEMT::`
+namespace, its own `Vec3`) and Aeolion carries **no dependency on it** —
+propeller work here will use separate calculation methods. Do not
+reintroduce BEMT sources, a BEMT `FetchContent`, or BEMT-typed bridges;
+the contract's `propulsion_bemt` block (`Geometry::PropulsionSpec`)
+stays as schema vocabulary for whatever propulsion method consumes it
+next.
 
 Prefer STATIC over SHARED for Aeolion's own libraries — a DLL would need
 `__declspec` plumbing on every exported symbol for no ABI-stability or

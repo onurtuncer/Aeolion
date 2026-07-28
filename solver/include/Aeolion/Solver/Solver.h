@@ -636,9 +636,10 @@ struct PreparedSystem {
  * externalField: optional background velocity PERTURBATION as a function
  * of position, added on top of the freestream+rotation kinematic velocity
  * at every panel. This is how you inject something like a propeller's
- * slipstream (see BEMT.h), ground effect, or a gust field into an
- * otherwise-ordinary lifting-surface solve -- the field only needs to
- * return the extra velocity it contributes, not the total.
+ * slipstream (see the external BEMT project's SlipstreamField), ground
+ * effect, or a gust field into an otherwise-ordinary lifting-surface
+ * solve -- the field only needs to return the extra velocity it
+ * contributes, not the total.
  *
  * This is a thin convenience wrapper around Prepare()+SolveWithSystem();
  * if you're going to solve the SAME geometry against multiple flight

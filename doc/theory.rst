@@ -183,7 +183,7 @@ subtracted from the prescribed condition:
 
 with :math:`\boldsymbol{\omega} = (p, q, r)` the body rates about
 ``FreestreamConditions::RefPoint`` and :math:`\mathbf{V}_{ext}` an
-optional external perturbation field (e.g. ``BEMT::SlipstreamField``,
+optional external perturbation field (e.g. a propeller slipstream model,
 passed as ``Solve()``'s ``externalField`` callback). :math:`w_i` is zero
 for every solid panel and nonzero only on a transpiring base
 (``SourcePanel::PrescribedNormalVelocity``).
@@ -321,48 +321,19 @@ outward normal, so the propulsive jet reshapes the field around the rest
 of the body without being counted as a pressure force on a face that
 physically is not there (``Aeolion::PanelBuilder::ApplyBaseEfflux``).
 
-Propeller BEMT (Aeolion::BEMT)
-----------------------------------
+Propeller BEMT (external ``BEMT`` project)
+------------------------------------------
 
-Blade Element Momentum Theory in a **hover-safe** formulation: classical
-BEMT is written in terms of induction factors :math:`a = v_i/V_\infty` and
-:math:`a' = w_i/(\Omega r)`, which blow up as :math:`V_\infty \to 0`.
-Aeolion instead solves directly for the induced velocities :math:`v_i`
-(axial) and :math:`w_i` (swirl) themselves, so pure hover is an ordinary,
-well-posed case.
-
-Per radial station:
-
-.. math::
-
-   U_{ax} = V_\infty + v_i, \qquad U_t = \Omega r - w_i, \qquad
-   \phi = \operatorname{atan2}(U_{ax}, U_t), \qquad
-   \alpha = \text{twist}(r) - \phi
-
-Section :math:`c_l, c_d` come from the blade's airfoil polar (analytic
-default or a measured/CFD table). Blade-element thrust/torque per unit
-radius,
-
-.. math::
-
-   \frac{dT}{dr} = \tfrac{1}{2}\rho U_{rel}^2 N c\, C_n, \qquad
-   \frac{dQ}{dr} = \tfrac{1}{2}\rho U_{rel}^2 N c\, C_t\, r,
-
-are set equal to the annular-streamtube momentum-theory values, written
-directly in :math:`v_i, w_i` (what keeps the formulation hover-safe), and
-the resulting fixed point is iterated to convergence with a relaxation
-factor and a Prandtl tip/hub loss factor :math:`F`. Two hard physical
-bounds check the result rather than merely eyeballing plausibility:
-Figure of Merit and propulsive efficiency must both be :math:`\le 1`,
-since both are ratios of an ideal power to the power actually absorbed.
-
-The resulting per-station induced velocities feed
-``Aeolion::BEMT::SlipstreamField``, a callable velocity-perturbation field
-(axial acceleration + swirl, ramped from the at-disk value toward the
-classical far-wake value with downstream distance) that plugs directly
-into ``Aeolion::Solver::Solve``'s ``externalField`` hook -- this is how a
-downstream control vane sees real propwash instead of a uniform
-freestream.
+The propeller blade-element momentum theory solver that used to be
+derived here moved to its own repository,
+`onurtuncer/BEMT <https://github.com/onurtuncer/BEMT>`_ -- it is a
+momentum method, not a panel method, and this toolkit no longer depends
+on it. Its theory writeup lives with it. What remains on Aeolion's side
+is generic: ``Solver::Solve``'s ``externalField`` hook accepts any
+velocity-perturbation field (a propeller slipstream model, ground
+effect, a gust), and the handoff contract's ``propulsion_bemt`` block
+(``Geometry::PropulsionSpec``) still carries the blade geometry as
+schema vocabulary.
 
 Viscous drag buildup (Aeolion::DragEstimate)
 -------------------------------------------------

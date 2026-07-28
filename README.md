@@ -1,12 +1,15 @@
 # Aeolion
 
 A small aerodynamics toolkit built around a 3D vortex lattice method:
-lifting-surface VLM coupled to a fuselage source-panel mesh,
-component-buildup viscous drag estimation, and a hover-safe propeller BEMT
-solver, with geometry loaded from a JSON contract. An interactive OpenGL
-viewer visualizes the lattice and the live solve. Built incrementally and
-validated against closed-form theory at each stage rather than assumed
-correct — see "Validation" below.
+lifting-surface VLM coupled to a fuselage source-panel mesh and
+component-buildup viscous drag estimation, with geometry loaded from a
+JSON contract. An interactive OpenGL viewer visualizes the lattice and
+the live solve. Built incrementally and validated against closed-form
+theory at each stage rather than assumed correct — see "Validation"
+below. (The propeller BEMT solver that used to live here is a momentum
+method, not a panel method, so it moved to its own project:
+[onurtuncer/BEMT](https://github.com/onurtuncer/BEMT). This repo carries
+no dependency on it.)
 
 ![aeolion_viewer rendering the wing + fuselage + duct lattice for a real geometry handoff, colored by circulation, with the solved coefficients shown live](doc/_static/viewer_airframe.png)
 
@@ -20,15 +23,14 @@ source panels -- all one coupled potential-flow solve). See
 ## Layout
 
 Every compiled/header-only module is a top-level component that owns its
-own tests: `solver/tests/`, `panelbuilder/tests/`, `bemt/tests/`, and
-`tests/` for the core header-only library itself. All four are one `ctest`
-invocation regardless of which folder a test lives in -- see "Building"
-below.
+own tests: `solver/tests/`, `panelbuilder/tests/`, and `tests/` for the
+core header-only library itself. All of them are one `ctest` invocation
+regardless of which folder a test lives in -- see "Building" below.
 
 ```
 solver/                          header-only, part of `aeolion`
                                  kept as its own top-level component (like
-                                 panelbuilder/, bemt/, and viewer/) since
+                                 panelbuilder/ and viewer/) since
                                  every other module builds on top of it
   include/Aeolion/Solver/                              (Aeolion::Solver)
     Solver.h           3D VLM core: horseshoe vortices + fuselage source panels
@@ -74,23 +76,6 @@ panelbuilder/                    aeolion_panelbuilder (STATIC library)
                                    including a control-surface deflection
                                    re-solved on the same cached builder
 
-bemt/                             aeolion_bemt (STATIC library)
-                                 also a component with compiled sources
-                                                    (Aeolion::BEMT)
-  include/Aeolion/BEMT/
-    BEMT.h             propeller BEMT (hover-safe: solves for induced
-                        velocities directly, not induction factors) +
-                        slipstream field for downstream control vanes --
-                        declarations only; see src/BEMT.cpp
-  src/BEMT.cpp
-  tests/
-    TestBEMT.cpp                  BEMT vs. hard physical bounds (FOM <= 1,
-                                   efficiency <= 1)
-    TestPropVane.cpp              propwash -> vane control authority
-                                   integration test
-    TestPropContract.cpp          handoff-to-BEMT unit bridge (r/R -> metres),
-                                   the hub station that broke the solve
-
 viewer/                          aeolion_viewer (exe, GL application)
                                  interactive OpenGL visualizer, not part of
                                  the library                    (not a namespace)
@@ -115,12 +100,6 @@ include/Aeolion/     header-only library (the rest of the toolkit)
     SourcePanel.h      one constant-strength quadrilateral source panel --
                         the fuselage's atomic surface unit, the way Panel
                         is the wing's
-  BEMT/                                                   (Aeolion::BEMT)
-    PropGeometry.h     the propeller a BEMT run is posed on (metric radii,
-                        blade stations) -- pure data, so it stays header-only
-                        here rather than moving into bemt/: HandoffContract.h
-                        builds a PropGeometry without ever calling into the
-                        BEMT solver itself
   Geometry/                                           (Aeolion::Geometry)
     HandoffContract.h  strict parser for the aeolion_geometry.json handoff
     CstSurface.h       CST evaluation: camber mean line, its slope, and
@@ -129,7 +108,7 @@ include/Aeolion/     header-only library (the rest of the toolkit)
     AirfoilSection.h     CST section shape at a station
     ControlSurface.h     hinged surface + which body it binds to
     MeshTopology.h       requested lattice discretization
-    PropulsionSpec.h     propeller blade geometry for a BEMT run
+    PropulsionSpec.h     propeller blade geometry (the propulsion_bemt block)
     BodyGeometry.h       fuselage body of revolution (axial x radius
                           stations)
     DuctGeometry.h        the duct: a single annular ring (chord, inner/outer
@@ -142,7 +121,6 @@ include/Aeolion/     header-only library (the rest of the toolkit)
 app/                  driver programs (link against the aeolion library)
   main.cpp               parametric single-wing demo (solver_demo)
   GeometryContractCLI.cpp   solve a wing loaded from a JSON contract (aeolion_geometry)
-  PropellerCLI.cpp         run a handoff's propeller through BEMT (aeolion_prop)
 
 tests/                 the core header-only library's OWN tests, wired into
                        ctest the same way as every other module's tests/
@@ -167,7 +145,7 @@ LAPACK, MKL, Accelerate, ...). The dense solve calls LAPACK's dgetrf/dgetrs
 through their Fortran ABI directly — no LAPACKE C header needed. The
 viewer additionally needs GLFW, glad, glm, and Dear ImGui (OpenGL 3.3
 core); set `AEOLION_BUILD_VIEWER=OFF` to skip it and build only the
-header-only library, `panelbuilder`, `bemt`, and the CLIs.
+header-only library, `panelbuilder`, and the CLIs.
 
 ```
 # Debian/Ubuntu system LAPACK:
@@ -208,9 +186,6 @@ g++ -std=c++23 -O2 -Iinclude -Isolver/include -o solver_demo app/main.cpp -llapa
 
 # solve a wing loaded from a JSON geometry contract
 ./aeolion_geometry geometry.json
-
-# run a handoff's propeller through BEMT (hover + a forward-speed sweep)
-./aeolion_prop geometry.json
 ```
 
 ## Viewer
@@ -242,11 +217,6 @@ result before being trusted, not just eyeballed for plausibility:
 - **Solver core**: CL tracks thin-wing lifting-line theory within a few
   percent across aspect ratios 6-20; Oswald efficiency ~1.0 for a plain
   rectangular wing; panel-count convergence confirmed.
-- **BEMT**: checked against hard physical bounds, not just plausibility --
-  Figure of Merit and propulsive efficiency must both be <=1.0 (real
-  thermodynamic constraints). This caught two real bugs during
-  development: a torque-equation exponent error and a sign-flipped
-  drag term in the thrust/torque resolution.
 - **Dense solve**: LAPACK LU factorization (dgetrf/dgetrs), factorized once
   per geometry and reused across right-hand sides.
 - **Source-panel kernel**: matches the closed-form far-field point source,
@@ -287,7 +257,7 @@ boundary. Discretization must stay fixed during one derivative evaluation.
 `doc/` is a Sphinx + Doxygen/Breathe site: `doc/theory.rst` derives the
 full linear system (influence-matrix entries, boundary condition, near-field
 Kutta-Joukowski and pressure force integration, coefficient normalization)
-and the BEMT/drag-buildup math; `doc/tests.rst` walks what each module's
+and the drag-buildup math; `doc/tests.rst` walks what each module's
 tests actually validate and why; `doc/api.rst` pulls the Doxygen
 comments in every header into one API reference. Build it locally with
 Doxygen + Graphviz and the Python packages in `doc/requirements.txt`:
@@ -316,10 +286,6 @@ GitHub Pages on every push to `main`.
   Don't trust it near stall.
 - **Wake trails along the global x-axis**, not the true local freestream
   direction -- standard small-to-moderate-AoA VLM simplification.
-- **BEMT is mid-fidelity blade element momentum theory**, not a
-  substitute for measured prop data or a full rotor VLM (rotating lattice
-  + helical wake) -- that would be a substantially larger, separate
-  undertaking.
 - **Wing/body placement needs schema >= 1.5.0's `planform.placement`.**
   Without it (older contracts, or a newer one that omits the optional
   block) the wing and the body both default to the origin, which puts the

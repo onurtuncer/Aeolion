@@ -3,7 +3,7 @@
 # aeolion_add_test(<name>) -- registers <name>.cpp (in the CALLING
 # directory) as a ctest executable linked against the header-only `aeolion`
 # target. Shared by every module's tests/CMakeLists.txt (solver/,
-# panelbuilder/, bemt/, and the top-level tests/ for the core header-only
+# panelbuilder/, and the top-level tests/ for the core header-only
 # library) so the boilerplate -- and the fixture-directory path -- is
 # defined once rather than once per module.
 #

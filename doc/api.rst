@@ -55,19 +55,16 @@ link it explicitly in addition to ``aeolion``.
 .. doxygennamespace:: Aeolion::PanelBuilder
    :content-only:
 
-BEMT
-----
+BEMT (external project)
+-----------------------
 
-Propeller blade-element momentum theory. Hover-safe: solves for induced
-velocities directly rather than induction factors, and exposes the
-resulting slipstream field for downstream control vanes. Also a compiled
-STATIC library (``aeolion_bemt``), for the same reason as PanelBuilder.
-``Geometry::PropulsionSpec``/``PropGeometry`` (the blade data vocabulary)
-stay header-only in the core library, since building that data never
-requires calling into this solver.
-
-.. doxygennamespace:: Aeolion::BEMT
-   :content-only:
+Propeller blade-element momentum theory now lives in its own repository,
+`onurtuncer/BEMT <https://github.com/onurtuncer/BEMT>`_ -- it is a
+momentum method, not a panel method, so it was excised from this toolkit,
+which carries no dependency on it. The handoff contract's
+``propulsion_bemt`` block (``Geometry::PropulsionSpec``) remains part of
+the schema as propulsion vocabulary for whatever calculation method
+consumes it next. See that repository for the solver's API and theory.
 
 Geometry
 --------
