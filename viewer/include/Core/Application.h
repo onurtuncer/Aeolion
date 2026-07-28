@@ -140,6 +140,7 @@ private:
     double m_PropSpeed = 0.0;        // axial inflow [m/s]; 0 = hover (solved at a tiny floor speed)
     double m_PropDensity = 1.225;    // [kg/m^3], sea-level ISA
     bool m_PropUseViscous = true;    // Level-2 sectional lift feedback vs bare inviscid lattice
+    int m_PropSectionModel = 1;      // 0 = analytic polar, 1 = transpiration-coupled boundary layer
     bool m_PropDirty = true;         // geometry/operating point/display changed -> remesh + re-solve
 
     double m_LastMouseX = 0.0, m_LastMouseY = 0.0;

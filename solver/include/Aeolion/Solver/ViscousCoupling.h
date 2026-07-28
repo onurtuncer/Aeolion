@@ -64,6 +64,15 @@ inline constexpr double DefaultCouplingRelaxation = 0.15; // omega in [0.05, 0.3
 inline constexpr int    DefaultCouplingMaxIterations = 200;
 inline constexpr double DefaultCouplingTolerance = 1e-4;  // on max |cl residual|
 
+// The target circulation Gamma = 1/2 * Vrel * c * cl uses the LOCAL speed,
+// which itself grows with circulation -- so an errant strip can enter a
+// runaway where Gamma inflates Vrel inflates Gamma. No physical section
+// carries more than about this cl on its kinematic (rotation + inflow)
+// dynamic pressure, so the target is capped against the KINEMATIC speed,
+// which the circulation cannot touch. Breaks the feedback loop without
+// affecting converged states (see theory.rst).
+inline constexpr double MaxTargetSectionCl = 2.0;
+
 /**
  * The section-plane frame and section data of one spanwise strip -- what a
  * 2-D section model needs to know about the geometry it is a section OF.
@@ -75,6 +84,7 @@ struct StripSection {
     Vec3 LiftDir;           ///< Unit, suction side (positive-lift direction).
     double Chord = 0.0;     ///< [m]
     double Width = 0.0;     ///< Spanwise/radial width [m].
+    double Eta = 0.0;       ///< Span/radius fraction keying the section shape (e.g. r/R).
     double Alpha0Deg = 0.0; ///< Thin-airfoil zero-lift angle of the section's camber line.
 };
 
@@ -126,6 +136,15 @@ struct ViscousCouplingOptions {
     double Relaxation = DefaultCouplingRelaxation;
     int MaxIterations = DefaultCouplingMaxIterations;
     double Tolerance = DefaultCouplingTolerance;
+
+    /**
+     * Anderson-acceleration depth (number of residual differences kept).
+     * Zero falls back to plain relaxed fixed-point iteration. The
+     * acceleration is what makes strongly-coupled neighbor strips (their
+     * induced velocities share trailing legs) converge where fixed-point
+     * relaxation stalls -- see theory.rst.
+     */
+    int AndersonDepth = 4;
 };
 
 /** Converged per-strip state, for reporting and radial plots. */
@@ -198,7 +217,26 @@ struct ViscousCoupledResult {
 
     res.Strips.resize(n);
 
-    // --- relaxed fixed point on the circulation -----------------------------
+    // Kinematic-speed circulation caps, one per strip (see MaxTargetSectionCl).
+    std::vector<double> gammaCap(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        const Vec3 mid = (panels[i].A + panels[i].B) * Math::Half;
+        gammaCap[i] = Math::Half * kinematicVelocity(mid).Norm() * strips[i].Chord * MaxTargetSectionCl;
+    }
+
+    // --- Anderson-accelerated fixed point on the circulation ----------------
+    // The map is G(Gamma) = Gamma_target(Gamma); its residual is
+    // f = G(Gamma) - Gamma. Type-II Anderson mixing over the last few
+    // residual differences (Walker & Ni) replaces the plain relaxed
+    // update: neighboring strips couple strongly through their shared
+    // trailing legs, and the resulting stiff modes stall a damped fixed
+    // point that Anderson converges. Safeguard: if the residual norm
+    // doubles, the history is discarded and a damped plain step taken.
+    // Full write-up in theory.rst.
+    double omegaCoupling = options.Relaxation;
+    double bestResidual = 1e30;
+    double fNormPrev = 1e30;
+    std::vector<std::vector<double>> historyX, historyF; // iterates and map residuals
     for (res.Iterations = 1; res.Iterations <= options.MaxIterations; ++res.Iterations) {
         res.MaxResidual = 0.0;
         std::vector<double> target(n, 0.0);
@@ -228,7 +266,9 @@ struct ViscousCoupledResult {
 
             const double residual = clVlm - sect.cl;
             res.MaxResidual = std::max(res.MaxResidual, std::fabs(residual));
-            target[i] = (std::fabs(k) > Math::Tiny) ? sect.cl / k : gamma[i];
+            target[i] = (std::fabs(k) > Math::Tiny)
+                            ? std::clamp(sect.cl / k, -gammaCap[i], gammaCap[i])
+                            : gamma[i];
 
             StripState& state = res.Strips[i];
             state.alphaEffDeg = alphaEffDeg;
@@ -244,8 +284,86 @@ struct ViscousCoupledResult {
             res.Converged = true;
             break;
         }
-        for (std::size_t i = 0; i < n; ++i)
-            gamma[i] = (1.0 - options.Relaxation) * gamma[i] + options.Relaxation * target[i];
+        if (res.MaxResidual > bestResidual)
+            omegaCoupling = std::max(Math::Half * omegaCoupling, 0.02);
+        bestResidual = std::min(bestResidual, res.MaxResidual);
+
+        // Map residual f = G(x) - x and its norm.
+        std::vector<double> f(n);
+        double fNorm = 0.0;
+        for (std::size_t i = 0; i < n; ++i) {
+            f[i] = target[i] - gamma[i];
+            fNorm += f[i] * f[i];
+        }
+        fNorm = std::sqrt(fNorm);
+
+        const bool diverging = fNorm > 2.0 * fNormPrev;
+        fNormPrev = fNorm;
+        if (diverging) {
+            historyX.clear();
+            historyF.clear();
+        }
+
+        const std::size_t depth = historyX.size();
+        if (options.AndersonDepth > 0 && depth >= 1 && !diverging) {
+            // Least squares min || f_k - dF theta || over the history of
+            // residual DIFFERENCES, via the (tiny) normal equations.
+            const std::size_t m = depth;
+            std::vector<std::vector<double>> dF(m, std::vector<double>(n));
+            std::vector<std::vector<double>> dX(m, std::vector<double>(n));
+            for (std::size_t j = 0; j < m; ++j)
+                for (std::size_t i = 0; i < n; ++i) {
+                    dF[j][i] = f[i] - historyF[j][i];
+                    dX[j][i] = gamma[i] - historyX[j][i];
+                }
+            std::vector<double> normal(m * m, 0.0), rhsLs(m, 0.0);
+            for (std::size_t a = 0; a < m; ++a) {
+                for (std::size_t b = 0; b < m; ++b)
+                    for (std::size_t i = 0; i < n; ++i) normal[a * m + b] += dF[a][i] * dF[b][i];
+                normal[a * m + a] += 1e-12; // Tikhonov guard for collinear history
+                for (std::size_t i = 0; i < n; ++i) rhsLs[a] += dF[a][i] * f[i];
+            }
+            // Gaussian elimination on the m x m system (m <= AndersonDepth).
+            for (std::size_t col = 0; col < m; ++col) {
+                std::size_t best = col;
+                for (std::size_t row = col + 1; row < m; ++row)
+                    if (std::fabs(normal[row * m + col]) > std::fabs(normal[best * m + col])) best = row;
+                for (std::size_t k = 0; k < m; ++k) std::swap(normal[col * m + k], normal[best * m + k]);
+                std::swap(rhsLs[col], rhsLs[best]);
+                const double diag = normal[col * m + col];
+                if (std::fabs(diag) < 1e-30) continue;
+                for (std::size_t row = col + 1; row < m; ++row) {
+                    const double factor = normal[row * m + col] / diag;
+                    for (std::size_t k = col; k < m; ++k) normal[row * m + k] -= factor * normal[col * m + k];
+                    rhsLs[row] -= factor * rhsLs[col];
+                }
+            }
+            std::vector<double> theta(m, 0.0);
+            for (std::size_t row = m; row-- > 0;) {
+                double sum = rhsLs[row];
+                for (std::size_t k = row + 1; k < m; ++k) sum -= normal[row * m + k] * theta[k];
+                const double diag = normal[row * m + row];
+                theta[row] = (std::fabs(diag) > 1e-30) ? sum / diag : 0.0;
+            }
+
+            // Anderson update, then the physical circulation cap.
+            historyX.push_back(gamma);
+            historyF.push_back(f);
+            for (std::size_t i = 0; i < n; ++i) {
+                double next = gamma[i] + f[i];
+                for (std::size_t j = 0; j < m; ++j) next -= theta[j] * (dX[j][i] + dF[j][i]);
+                gamma[i] = std::clamp(next, -gammaCap[i], gammaCap[i]);
+            }
+        } else {
+            historyX.push_back(gamma);
+            historyF.push_back(f);
+            for (std::size_t i = 0; i < n; ++i)
+                gamma[i] = std::clamp(gamma[i] + omegaCoupling * f[i], -gammaCap[i], gammaCap[i]);
+        }
+        while (historyX.size() > static_cast<std::size_t>(std::max(options.AndersonDepth, 1))) {
+            historyX.erase(historyX.begin());
+            historyF.erase(historyF.begin());
+        }
     }
 
     // --- loads under the converged circulation ------------------------------

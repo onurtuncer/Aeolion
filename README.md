@@ -50,6 +50,9 @@ solver/                          header-only, part of `aeolion`
     TestDenseSolve.cpp            LAPACK dense-solve sanity check
     TestSourcePanel.cpp           source-panel kernel vs. closed-form: far
                                    field, on-sheet jump, source-panelled sphere
+    TestSectionBoundaryLayer.cpp  2-D transpiration-coupled BL section solver
+                                   vs. Blasius drag, thin-airfoil slope/camber,
+                                   Reynolds trend, decambering-only feedback
 
 panelbuilder/                    aeolion_panelbuilder (STATIC library)
                                  a component with compiled sources, not
@@ -79,10 +82,11 @@ panelbuilder/                    aeolion_panelbuilder (STATIC library)
                                    torque opposing rotation, blade-symmetry
                                    force cancellation, thrust falling with
                                    advance speed
-    TestViscousCoupling.cpp       Level-2 sectional lift feedback: residual
-                                   convergence, stall capping hover thrust,
-                                   profile torque real and switchable,
-                                   CST camber -> negative zero-lift angle
+    TestViscousCoupling.cpp       sectional lift feedback: residual
+                                   convergence (both section models), stall
+                                   capping hover thrust, profile torque real
+                                   and switchable, CST camber -> negative
+                                   zero-lift angle
 
 viewer/                          aeolion_viewer (exe, GL application)
                                  interactive OpenGL visualizer, not part of
@@ -238,14 +242,21 @@ plus the momentum-theory hover inflow (a prescribed linearized helical
 wake). The solved lattice renders colored by circulation / sectional cl /
 lift per span, with RPM, axial-speed, and density controls and
 dimensional thrust / torque / power / disk-loading readouts. On top of
-the lattice sits **Level-2 viscous coupling** (`Solver::SolveViscousCoupled`,
-on by default): per radial strip the lattice supplies `alpha_eff`, a 2-D
-viscous section model supplies `cl/cd(alpha_eff, Re, Ma)` (today an
-analytic polar -- finite lift slope about the CST camber line's
-thin-airfoil zero-lift angle, smooth stall saturation, Re-scaled drag
-polar; the interface is the seam a boundary-layer section solver will
-implement), and the circulation relaxes until the sectional-lift
-residual vanishes. That caps the stalled root loading and adds real
+the lattice sits **viscous coupling** (`Solver::SolveViscousCoupled`, on
+by default, Anderson-accelerated): per radial strip the lattice supplies
+`alpha_eff`, a 2-D viscous section model supplies
+`cl/cd(alpha_eff, Re, Ma)`, and the circulation iterates until the
+sectional-lift residual vanishes. Two section models plug into the same
+seam: an analytic polar (finite lift slope about the CST camber line's
+thin-airfoil zero-lift angle, smooth stall saturation, Re-scaled drag),
+and the default **transpiration-coupled boundary-layer solver**
+(`Solver::BoundaryLayerSectionModel`): a 2-D lumped-vortex model of each
+strip's camber line with a Thwaites/Michel/Head integral boundary layer
+marched on both surfaces and the displacement effect fed back as
+transpiration velocities in the panel boundary conditions -- no
+recambering -- trusted in its attached envelope and blended into the
+saturated polar beyond it. The full numerical method is documented in
+`doc/theory.rst`. That caps the stalled root loading and adds real
 **profile torque**, reported separately from the induced part.
 Remaining caveats: quasi-steady prescribed straight-line wake (no
 roll-up or contraction), single chordwise row (integrated loads, not

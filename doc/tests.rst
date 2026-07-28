@@ -143,6 +143,20 @@ time (the 1.8.0 handoff, which carries a duct). Asserts an antisymmetric
 aileron command rolls the coupled airframe without changing its lift, and
 that clearing the deflection reproduces the original solve exactly.
 
+TestSectionBoundaryLayer
+------------------------
+
+The 2-D transpiration-coupled boundary-layer section solver
+(``Solver::BoundaryLayerSectionModel``), checked against external
+references rather than itself: a flat plate at zero incidence must not
+lift and must land its drag at the Blasius/flat-plate friction level; a
+lifting flat plate must sit below but near the :math:`2\pi` thin-airfoil
+slope (a boundary layer can only DEcamber); positive parabolic camber
+must lift at zero incidence below its inviscid value; drag must fall as
+Reynolds number rises; and the converged coupled lift must sit below the
+same solver's zero-transpiration (inviscid) pass. See theory.rst,
+"Level 3", for the method these checks guard.
+
 TestPropellerLattice
 --------------------
 

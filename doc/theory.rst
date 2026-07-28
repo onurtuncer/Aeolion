@@ -414,9 +414,34 @@ authority on what the section *sees*. Per radial strip, per iteration:
         \;-\; c_{l,i}^{sect}\!\bigl(\alpha_{eff,i}(\Gamma),\,Re_i,\,Ma_i\bigr)
         \;=\; 0
 
-   is satisfied (relaxed fixed point today; the residual form admits
-   Newton, quasi-Newton, or Anderson acceleration without touching
-   anything else). The inviscid linear solve seeds the iteration.
+   is satisfied. The inviscid linear solve seeds the iteration. The
+   update is **Anderson-accelerated** (type II, over the last
+   :math:`m = 4` residual differences): writing the map
+   :math:`G(\Gamma) = \Gamma_{target}(\Gamma)` and its residual
+   :math:`\mathbf{f} = G(\Gamma) - \Gamma`, the mixing coefficients
+   :math:`\theta` minimize
+   :math:`\lVert \mathbf{f}_k - \Delta F\,\theta \rVert_2` over the
+   stored residual differences :math:`\Delta F` (solved through the tiny
+   normal equations with a Tikhonov guard), and the next iterate is
+
+   .. math::
+
+      \Gamma^{k+1} = \Gamma^k + \mathbf{f}_k
+        - (\Delta X + \Delta F)\,\theta ,
+
+   falling back to a damped plain step -- and discarding the history --
+   whenever the residual norm doubles. Neighboring strips couple
+   strongly through their shared trailing legs, and the resulting stiff
+   modes stall a plain damped fixed point that Anderson converges: on
+   the reference propeller the analytic-model solve dropped from 67
+   plain-relaxation iterations to 9. Two safeguards bound the update:
+   the target circulation is capped at
+   :math:`|\Gamma_{target}| \le \tfrac{1}{2} V_{kin}\, c\, c_{l,cap}`
+   with :math:`c_{l,cap} = 2` and :math:`V_{kin}` the KINEMATIC (not
+   induced-inflated) local speed -- because
+   :math:`\Gamma_{target} \propto V_{rel}` and :math:`V_{rel}` grows
+   with circulation, an errant strip can otherwise enter a
+   :math:`\Gamma \to V \to \Gamma` runaway that relaxation cannot damp.
 
 Because the section model owns the lift curve, the lattice geometry's
 own camber boundary condition is superseded -- so each strip carries the
@@ -443,6 +468,197 @@ behavior: convergence under tolerance, coupled hover thrust below the
 inviscid lattice's, profile torque positive and exactly zero when the
 drag polar is zeroed, camber surfacing as a negative :math:`\alpha_0`,
 and the advance trend surviving the coupling.
+
+Level 3: the transpiration-coupled boundary-layer section solver
+----------------------------------------------------------------
+
+``Solver::BoundaryLayerSectionModel`` (``SectionBoundaryLayer.h``)
+replaces the analytic polar behind the *same* ``SectionModel`` interface
+with a genuine viscous-inviscid interaction at the section level: an
+integral boundary layer marched over a 2-D inviscid model of the strip's
+camber line, coupled through **transpiration velocities in the panel
+boundary conditions** -- the geometry is never re-cambered; the boundary
+condition carries the entire displacement effect. It is constructed for
+a propeller by ``PanelBuilder::MakePropellerSectionModel``, which binds
+the camber-line slope to the contract's CST blade sections, so the same
+shapes drive the 3-D lattice geometry and the 2-D viscous solve.
+
+**The equivalent inviscid flow and the transpiration condition.** The
+boundary layer displaces the outer inviscid streamlines by the
+displacement thickness :math:`\delta^*`. The *equivalent inviscid flow*
+reproduces that displaced outer flow over the ORIGINAL surface by
+replacing the no-through-flow wall condition with a prescribed
+blowing/transpiration normal velocity
+
+.. math::
+
+   v_n(s) \;=\; \frac{d}{ds}\bigl( U_e\, \delta^* \bigr),
+
+the growth rate of the boundary layer's displacement flux, with
+:math:`s` the arc length and :math:`U_e` the edge velocity. For a THIN
+representation, the two surface conditions collapse onto the camber
+line: taking :math:`\hat{n}` as the mean-line normal (suction side
+positive), the upper surface blows :math:`+\hat{n}` and the lower
+:math:`-\hat{n}`, so the vortex sheet's tangency condition -- which is
+the mean of the two surface conditions -- receives the **antisymmetric
+part**
+
+.. math::
+
+   v_t(s) \;=\; \tfrac{1}{2}\,\frac{d}{ds}\Bigl[
+     U_e^u\, \delta^{*,u} \;-\; U_e^l\, \delta^{*,l} \Bigr] ,
+
+the *viscous decambering* term. The symmetric part
+:math:`\tfrac{1}{2}\, d\,[U_e^u \delta^{*,u} + U_e^l \delta^{*,l}]/ds`
+is a source-sheet (thickness-like) effect that does not alter lift at
+first order and is neglected at this level, consistently with the thin
+lattice carrying no thickness anywhere.
+
+**Inviscid discretization: the 2-D lumped-vortex analog of the
+lattice.** Everything is nondimensionalized by the chord and the strip's
+relative speed; the Reynolds number carries the physics. The camber line
+:math:`z(\psi)` (from Simpson integration of the CST slope) is divided
+into :math:`M = 40` cosine-spaced panels. Panel :math:`j` carries a
+point vortex :math:`\Gamma_j` at its quarter point; flow tangency is
+enforced at its 3/4 point -- exactly the 3-D lattice's Weissinger
+arrangement, so the two levels agree by construction in the inviscid
+thin limit. The boundary condition at control point :math:`i` is
+
+.. math::
+
+   \bigl( \mathbf{V}_\infty + \textstyle\sum_j \mathbf{v}_{ij}\Gamma_j
+   \bigr)\cdot \hat{n}_i \;=\; v_{t,i} ,
+
+so the transpiration enters purely through the right-hand side: the
+influence matrix is geometric, factored once (a small in-header LU) and
+reused across every iteration -- and across the :math:`\alpha`
+continuation below, since incidence also lives only in the RHS. Edge
+velocities at the control points are the tangential mean flow plus half
+the local sheet jump per side,
+:math:`U_e^{u,l} = U_t \pm \gamma/2` with
+:math:`\gamma = \Gamma_i / \Delta s_i`.
+
+**The laminar boundary layer: Thwaites' method.** From the leading edge
+until transition, the momentum thickness follows Thwaites' integral
+
+.. math::
+
+   \theta^2(s) \;=\; \frac{0.45\,\nu}{U_e^6(s)} \int_0^s U_e^5\, ds' ,
+
+with the pressure-gradient parameter
+:math:`\lambda = (\theta^2/\nu)\, dU_e/ds` and the Cebeci-Bradshaw
+piecewise fits for the shape factor :math:`H(\lambda)` and the shear
+correlation :math:`\ell(\lambda)` (skin friction
+:math:`c_f = 2\nu\,\ell/(U_e\theta)`). Laminar separation is declared
+at :math:`\lambda < -0.09`.
+
+**Transition.** Michel's criterion,
+
+.. math::
+
+   Re_\theta \;>\; 1.174\,\Bigl(1 + \frac{22400}{Re_s}\Bigr)\,
+   Re_s^{0.46} ,
+
+or laminar separation (the bubble treated as immediate transition),
+whichever crosses first -- and the crossing is located WITHIN the
+integration step by interpolating the criterion's signed excess between
+stations. This sub-station placement is load-bearing: a transition
+point quantized to whole stations makes :math:`c_l(\alpha)`
+discontinuous, and no outer iteration can converge below the jump.
+
+**The turbulent boundary layer: Head's entrainment method.** Downstream
+of transition the momentum integral and Head's entrainment equation are
+marched (Euler steps on the station grid):
+
+.. math::
+
+   \frac{d\theta}{ds} = \frac{c_f}{2}
+     - (H+2)\,\frac{\theta}{U_e}\frac{dU_e}{ds},
+   \qquad
+   \frac{1}{U_e}\frac{d}{ds}\bigl( U_e\,\theta\, H_1 \bigr)
+     = 0.0306\,(H_1 - 3)^{-0.6169},
+
+with the Ludwieg-Tillmann skin friction
+:math:`c_f = 0.246 \cdot 10^{-0.678 H}\, Re_\theta^{-0.268}` and the
+standard two-branch fits between :math:`H_1` and :math:`H`. Separation
+is handled WITHOUT a latch: :math:`c_f` ramps smoothly to zero over
+:math:`H \in [2.1, 2.4]` and :math:`H` is capped at 3.0 through the
+:math:`H_1` floor, so the marched state is a memoryless, continuous
+function of the edge-velocity distribution -- a latched "separated" flag
+is hysteretic, and hysteresis inside the section feeds limit cycles in
+both coupling loops. Profile drag comes from the Squire-Young formula
+at the trailing edge, summed over both surfaces:
+
+.. math::
+
+   c_d \;=\; \sum_{u,l} \frac{2\,\theta_{TE}}{c}
+     \left( \frac{U_{e,TE}}{V_{rel}} \right)^{\frac{H_{TE}+5}{2}} .
+
+**The transpiration iteration.** Solve the vortex system under the
+current :math:`v_t`; evaluate edge velocities; march both boundary
+layers; form the new antisymmetric displacement-flux derivative by
+central differences; under-relax (:math:`\omega = 0.3`, adaptively
+halved when the :math:`c_l` update grows, floor 0.02); repeat until
+:math:`|\Delta c_l| < 10^{-3}` for three consecutive iterations.
+
+**Stabilization -- what it took to make this converge.** Each device
+below answers a failure mode found empirically, and each is a documented
+constant in ``SectionBoundaryLayer.h``:
+
+* *Transpiration clamping* (:math:`|v_t| \le 0.15\,V_{rel}`): at low
+  Reynolds number :math:`\delta^*` -- and with it the feedback gain --
+  grows, and the tiny cosine-grid trailing-edge panels amplify
+  derivative noise.
+* *Sub-station transition placement* (above): removes the largest
+  :math:`c_l(\alpha)` discontinuity.
+* *Latch-free separation* (above): removes hysteresis.
+* *Convergence streak*: a limit cycle crossing itself can fake a small
+  single-step delta; convergence requires three consecutive small
+  deltas.
+* *Phase averaging*: direct viscous-inviscid iteration is
+  non-convergent once separation is strong -- the classical
+  Goldstein-singularity behavior that semi-inverse (Le Balleur),
+  quasi-simultaneous (Veldman), and simultaneous (XFOIL) couplings were
+  invented to cure. Where the iterate still cycles at exit, the
+  returned coefficients are the arithmetic mean over the final
+  iteration window (48 of 100), with the damping frozen inside the
+  window so the cycle is stationary: a phase average of the attractor,
+  smooth in :math:`\alpha` where the exit iterate is noise.
+* *Continuation in* :math:`\alpha`: past moderate incidence the low-Re
+  section problem grows MULTIPLE stable states (early-bubble vs
+  late-transition), and a cold start lands on either unpredictably --
+  the observed :math:`c_l(\alpha)` scatter of :math:`\pm 0.15` was not
+  noise but branch-hopping. The solve walks :math:`\alpha` up from the
+  attached regime (6 degrees) in 1-degree steps, carrying the
+  transpiration state, and follows one branch smoothly. (The influence
+  matrix is incidence-independent, so the ramp reuses the same
+  factorization.)
+
+**Validity envelope.** The transpiration-coupled solve is trusted up to
+9 degrees from the section's zero-lift line, blends linearly into the
+saturated analytic polar by 13 degrees, and beyond that the analytic
+polar alone continues (with a bluff post-stall drag rise
+:math:`\Delta c_d = 2\sin^2(\alpha - \alpha_{blend})`). Deep stall is
+outside any integral method's physics; a smooth hand-off to the polar
+is worth more than a heroic extrapolation -- and it is what lets the
+outer Anderson-accelerated coupling converge at hover, where a
+propeller's root strips run far past stall (the reference blade: 17
+outer iterations with the boundary-layer model, against a residual
+plateau of ~0.1 when the raw model was forced everywhere).
+
+Remaining limitations, plainly: the wake behind the trailing edge
+carries no displacement effect (no wake :math:`\delta^*` coupling); the
+symmetric (thickness) displacement effect on :math:`U_e` is neglected;
+Michel's criterion knows nothing of freestream turbulence or roughness;
+Squire-Young degrades once the trailing edge is separated;
+:math:`Ma` is carried through the interface unused (incompressible
+throughout); and the correct cure for the separated regime is a
+quasi-simultaneous or simultaneous coupling, which is the natural next
+step on this seam. ``TestSectionBoundaryLayer`` pins the 2-D physics
+against external references: flat-plate drag at the Blasius level, lift
+slope below-but-near :math:`2\pi`, camber lifting at zero incidence,
+drag falling with Reynolds number, and the transpiration strictly
+DEcambering; ``TestViscousCoupling`` pins the coupled behavior.
 
 Viscous drag buildup (Aeolion::DragEstimate)
 -------------------------------------------------

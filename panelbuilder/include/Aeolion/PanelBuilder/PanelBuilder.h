@@ -419,6 +419,16 @@ struct LatticeOptions {
  */
 [[nodiscard]] std::vector<Solver::StripSection> BuildPropellerStrips(const Geometry::Propeller& prop);
 
+/**
+ * The Level-3 section model for a propeller: a transpiration-coupled
+ * boundary-layer section solver (Solver::BoundaryLayerSectionModel, see
+ * doc/theory.rst) with its camber line bound to the propeller's CST blade
+ * sections -- so the same shapes drive the lattice geometry and the
+ * viscous section solve. The returned callable owns a copy of the
+ * section data.
+ */
+[[nodiscard]] Solver::SectionModel MakePropellerSectionModel(const Geometry::Propeller& prop);
+
 // --- the builder ------------------------------------------------------------
 /**
  * Builds the solver's lattice from a parsed geometry handoff, on the

@@ -10,6 +10,7 @@
 #include "Aeolion/Geometry/CstSurface.h"
 #include "Aeolion/Math/Constants.h"
 #include "Aeolion/Math/Vec3.h"
+#include "Aeolion/Solver/SectionBoundaryLayer.h"
 
 #include <algorithm>
 #include <cmath>
@@ -984,11 +985,23 @@ std::vector<Solver::StripSection> BuildPropellerStrips(const Geometry::Propeller
             strip.LiftDir = (liftIn + liftOut).Normalized();
             strip.Chord = Math::Half * (inboard.Chord + outboard.Chord);
             strip.Width = width;
+            strip.Eta = etaMid;
             strip.Alpha0Deg = Geometry::SectionZeroLiftAngleDeg(prop.Sections, etaMid);
             strips.push_back(strip);
         }
     }
     return strips;
+}
+
+Solver::SectionModel MakePropellerSectionModel(const Geometry::Propeller& prop) {
+    Solver::BoundaryLayerSectionModel model;
+    if (!prop.Sections.empty()) {
+        // The callable outlives this function; it owns the section data.
+        model.CamberSlope = [sections = prop.Sections](double eta, double psi) {
+            return Geometry::CamberSlopeAt(sections, eta, psi);
+        };
+    }
+    return model;
 }
 
 } // namespace Aeolion::PanelBuilder

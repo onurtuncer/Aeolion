@@ -303,8 +303,10 @@ void Application::ResolveProp() {
         // circulation relaxes until they agree. Base has SolveResult's
         // shape, so everything downstream reads it unchanged.
         m_PropStrips = PanelBuilder::BuildPropellerStrips(m_Prop);
-        m_PropCoupled = Solver::SolveViscousCoupled(m_PropPanels, m_PropStrips, fc, ref, trail,
-                                                    Solver::AnalyticSectionModel{});
+        const Solver::SectionModel model =
+            (m_PropSectionModel == 1) ? PanelBuilder::MakePropellerSectionModel(m_Prop)
+                                      : Solver::SectionModel(Solver::AnalyticSectionModel{});
+        m_PropCoupled = Solver::SolveViscousCoupled(m_PropPanels, m_PropStrips, fc, ref, trail, model);
         m_PropSolve = m_PropCoupled.Base;
     } else {
         m_PropSolve = Solver::Solve(m_PropPanels, fc, ref, trail);
@@ -547,9 +549,13 @@ void Application::DrawPropellerUI() {
         m_PropDirty |= SliderD("rho [kg/m^3]", &m_PropDensity, 0.4, 1.4);
         m_PropDirty |= ImGui::Checkbox("Viscous coupling", &m_PropUseViscous);
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Level-2 sectional lift feedback: analytic viscous polar\n"
-                              "(finite lift slope, stall saturation, Re-scaled profile drag)\n"
+            ImGui::SetTooltip("Sectional lift feedback: a 2-D viscous section model\n"
                               "iterated against the lattice's induced flow.");
+        if (m_PropUseViscous) {
+            const char* modelNames[] = {"Analytic polar", "Boundary layer (transpiration)"};
+            m_PropDirty |= ImGui::Combo("Section model", &m_PropSectionModel, modelNames,
+                                        IM_ARRAYSIZE(modelNames));
+        }
     }
 
     if (ImGui::CollapsingHeader("Lattice", ImGuiTreeNodeFlags_DefaultOpen)) {

@@ -56,7 +56,8 @@ Solver::FreestreamConditions Conditions(double axialSpeed) {
 }
 
 Solver::ViscousCoupledResult SolveCoupled(const Geometry::Propeller& prop, double axialSpeed,
-                                          const Solver::SectionModel& model) {
+                                          const Solver::SectionModel& model,
+                                          const Solver::ViscousCouplingOptions& options = {}) {
     const auto panels = PanelBuilder::BuildPropellerLattice(prop, axialSpeed, Omega);
     const auto strips = PanelBuilder::BuildPropellerStrips(prop);
 
@@ -66,7 +67,8 @@ Solver::ViscousCoupledResult SolveCoupled(const Geometry::Propeller& prop, doubl
     ref.Chord = ref.Area / ref.Span;
 
     return Solver::SolveViscousCoupled(panels, strips, Conditions(axialSpeed), ref,
-                                       Solver::DefaultTrailSpanFactor * 2.0 * prop.Radius, model);
+                                       Solver::DefaultTrailSpanFactor * 2.0 * prop.Radius, model,
+                                       options);
 }
 
 void TestConvergesAndBoundsThrust() {
@@ -140,6 +142,37 @@ void TestCamberSurfacesInStrips() {
               "positive camber must give a clearly negative zero-lift angle");
 }
 
+void TestBoundaryLayerModelCouples() {
+    // The Level-3 section model (transpiration-coupled boundary layer)
+    // must drive the same outer fixed point to convergence and keep the
+    // load structure physical. Its thrust will differ from the analytic
+    // polar's -- different section physics -- but the signs and the
+    // profile torque must not.
+    auto prop = MakeTestProp();
+    prop.Sections.push_back({0.0, {0.05, 0.06, 0.05}, {0.05, 0.06, 0.05}});
+    prop.Sections.push_back({1.0, {0.05, 0.06, 0.05}, {0.05, 0.06, 0.05}});
+
+    // The BL model's interior is piecewise (the transition station is
+    // discrete), so its cl carries jumps a fixed point cannot iterate
+    // below; the tolerance acknowledges that (see theory.rst).
+    Solver::ViscousCouplingOptions options;
+    options.Tolerance = 2e-2;
+    options.MaxIterations = 400;
+    const auto coupled = SolveCoupled(prop, 0.0, PanelBuilder::MakePropellerSectionModel(prop), options);
+    std::cout << "BL-coupled hover: T=" << -coupled.Base.Di << " N  Q=" << -coupled.Base.Mx
+              << " N*m  (profile " << -coupled.ProfileMoment.x << ")  iters=" << coupled.Iterations
+              << "  residual=" << coupled.MaxResidual << "\n";
+    for (std::size_t i = 0; i < coupled.Strips.size() / 2; ++i)
+        std::cout << "  strip " << i << ": alphaEff=" << coupled.Strips[i].alphaEffDeg
+                  << "  cl=" << coupled.Strips[i].cl << "  R=" << coupled.Strips[i].Residual
+                  << "  Re=" << coupled.Strips[i].Re << "\n";
+
+    CHECK(coupled.Converged, "the outer fixed point must converge with the BL section model");
+    CHECK(-coupled.Base.Di > 0.0, "BL-coupled hover thrust must stay positive");
+    CHECK(-coupled.Base.Mx > 0.0, "BL-coupled torque must oppose the rotation");
+    CHECK(-coupled.ProfileMoment.x > 0.0, "the BL's Squire-Young drag must add profile torque");
+}
+
 void TestThrustStillUnloadsWithAdvance() {
     const auto prop = MakeTestProp();
     double previous = 1e30;
@@ -160,6 +193,7 @@ int main() {
     TestConvergesAndBoundsThrust();
     TestProfileTorqueIsRealAndSwitchable();
     TestCamberSurfacesInStrips();
+    TestBoundaryLayerModelCouples();
     TestThrustStillUnloadsWithAdvance();
 
     if (failures == 0) { std::cout << "PASS: TestViscousCoupling\n"; return 0; }
