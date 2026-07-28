@@ -332,11 +332,18 @@ which this toolkit does not depend on.)
 
 ``PanelBuilder::BuildPropellerLattice`` meshes each blade of a
 ``Geometry::Propeller`` into the same horseshoe-vortex panels the wing
-uses: chordwise rows by radial strips, flat plates on the chord line at
-the local geometric twist, swept out per blade azimuth about +x. The
-rotation is not special-cased anywhere in the solver: it enters as the
-body roll rate :math:`p = \Omega` in ``FreestreamConditions``, whose
-kinematic-velocity term
+uses -- one Weissinger row per radial strip, on the blade's **CST camber
+surface** when the contract states blade sections (evaluated by the same
+``Geometry::CstSurface`` machinery as the wing, with sections keyed by
+:math:`r/R`; positive camber bows toward the suction side, which for a
+propeller is the thrust side). Each chord is **wrapped on its radius
+cylinder** -- the surface a blade element actually sweeps -- rather than
+laid in a flat tangent plane; near a small hub, where chord is comparable
+to radius, a tangent-plane chord subtends tens of degrees of azimuth and
+the resulting phantom incidence can overwhelm real camber and twist
+loading. The rotation is not special-cased anywhere in the solver: it
+enters as the body roll rate :math:`p = \Omega` in
+``FreestreamConditions``, whose kinematic-velocity term
 :math:`\mathbf{V}_{kin} = \mathbf{V}_\infty - \boldsymbol{\omega} \times
 \mathbf{r}` hands every blade panel its true :math:`\Omega r` tangential
 onset flow, and the near-field Kutta-Joukowski force evaluation uses that
@@ -345,22 +352,34 @@ loads directly: thrust :math:`= -F_x` (upstream), shaft torque
 :math:`= -M_x` (opposing :math:`+\Omega`), power :math:`= Q\,\Omega`.
 
 Each trailing leg leaves along the **local relative wind** at its root
-(axial inflow plus the tangential sweep) -- the linearized helix. This is
-load-bearing, not cosmetic: at hover the local wind is almost purely
-tangential, and trailing the wake axially instead leaves the legs
-near-perpendicular to the flow, destroying the quarter/three-quarter
-chord lattice geometry (the circulation solve saw-tooths radially and
-diverges under refinement).
+(the tangential sweep plus the axial inflow, floored at the
+momentum-theory hover inflow :math:`\lambda \approx 0.07\,\Omega R`) --
+a prescribed linearized helix. Both parts are load-bearing, not
+cosmetic: at hover the local wind is almost purely tangential, and
+trailing the wake axially instead leaves the legs near-perpendicular to
+the flow, destroying the quarter/three-quarter chord lattice geometry
+(the circulation solve saw-tooths radially and diverges under
+refinement); and without the inflow floor the legs would lie in the
+rotor plane forever, a straight tangent line crossing every radius
+outboard of its root, making the solve pathologically sensitive to the
+station layout. The single chordwise row is likewise deliberate: a
+straight leg leaves a cylinder-wrapped chord immediately (the surface
+falls away from its tangent by :math:`s^2/2r`), so stacked rows' legs
+would graze the aft control points and the chordwise circulation
+saw-tooths. Camber still enters exactly where thin-airfoil theory wants
+it -- the mean-line slope at the 3/4-chord boundary condition -- but
+resolving chordwise loading distributions awaits a vortex-ring wake or
+finite-core filaments.
 
-Limitations, stated plainly: quasi-steady with a rigid straight-line
-wake -- no helical curvature, roll-up, or contraction, so heavily-loaded
-static (hover) thrust reads optimistic; torque and power are induced
-only (potential flow carries no profile drag); blades are flat plates
-(the contract's CST blade sections are not yet folded in as camber); and
-there is no stall. ``TestPropellerLattice`` pins the physics that must
-hold regardless: thrust upstream, torque opposing rotation, exact
-blade-symmetry force cancellation, and thrust falling with advance speed
-at fixed rpm.
+Limitations, stated plainly: quasi-steady with a prescribed straight-line
+wake -- no roll-up or contraction, so heavily-loaded static (hover)
+thrust reads optimistic; torque and power are induced only (potential
+flow carries no profile drag); one chordwise row (integrated loads, not
+pressure distributions); thin camber surface, no thickness; and no
+stall. ``TestPropellerLattice`` pins the physics that must hold
+regardless: thrust upstream, torque opposing rotation, exact
+blade-symmetry force cancellation, thrust falling with advance speed at
+fixed rpm, and positively-cambered sections thrusting at zero twist.
 
 Viscous drag buildup (Aeolion::DragEstimate)
 -------------------------------------------------

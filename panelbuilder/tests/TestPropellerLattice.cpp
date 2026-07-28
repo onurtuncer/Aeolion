@@ -61,12 +61,11 @@ Solver::SolveResult SolveProp(const Geometry::Propeller& prop, const std::vector
 
 void TestLatticeStructure() {
     const auto prop = MakeTestProp();
-    const int rows = 4;
-    const auto panels = PanelBuilder::BuildPropellerLattice(prop, rows, 0.0, Omega);
+    const auto panels = PanelBuilder::BuildPropellerLattice(prop, 0.0, Omega);
 
     const std::size_t expected =
-        static_cast<std::size_t>(prop.BladeCount) * (prop.Stations.size() - 1) * rows;
-    CHECK(panels.size() == expected, "panel count should be blades * strips * chordwise rows");
+        static_cast<std::size_t>(prop.BladeCount) * (prop.Stations.size() - 1);
+    CHECK(panels.size() == expected, "panel count should be blades * strips (one Weissinger row each)");
 
     for (const auto& panel : panels) {
         CHECK(std::fabs(panel.Normal.Norm() - 1.0) < 1e-9, "every panel normal must be unit length");
@@ -77,18 +76,22 @@ void TestLatticeStructure() {
         CHECK(rA < rB, "A must be the inboard bound-vortex endpoint");
         CHECK(rB <= prop.Radius + 1e-12, "no panel may reach outboard of the tip");
         CHECK(std::fabs(panel.TrailDirA.Norm() - 1.0) < 1e-9, "trailing-leg directions must be unit");
-        // At hover the local wind is almost purely tangential: the leg must
-        // leave along it (opposing the blade's own +Omega sweep), not axially.
+        // At hover the local wind is dominantly tangential: the leg must
+        // leave along it (opposing the blade's own +Omega sweep), with the
+        // prescribed momentum-theory inflow as its axial part -- never
+        // purely axial, and never lying in the disk plane.
         const Solver::Vec3 sweepA = Solver::Cross(Solver::Vec3(Omega, 0.0, 0.0), panel.A);
-        const Solver::Vec3 expectedA = (-sweepA).Normalized();
+        const Solver::Vec3 expectedA =
+            (Solver::Vec3(0.07 * Omega * prop.Radius, 0.0, 0.0) - sweepA).Normalized();
         CHECK(Solver::Dot(panel.TrailDirA, expectedA) > 0.999,
-              "each trailing leg must follow the local relative wind");
+              "each trailing leg must follow the local relative wind plus prescribed inflow");
+        CHECK(panel.TrailDirA.x > 0.0, "the wake must convect out of the disk plane (+x)");
     }
 }
 
 void TestHoverForcesArePhysical() {
     const auto prop = MakeTestProp();
-    const auto panels = PanelBuilder::BuildPropellerLattice(prop, 4, 0.0, Omega);
+    const auto panels = PanelBuilder::BuildPropellerLattice(prop, 0.0, Omega);
     const auto result = SolveProp(prop, panels, 0.0);
 
     const double thrust = -result.Di;
@@ -108,9 +111,55 @@ void TestHoverForcesArePhysical() {
     CHECK(std::fabs(result.Y) < 0.02 * thrust, "blade symmetry must cancel the side force");
 }
 
+void TestCamberThrustsAtZeroTwist() {
+    // The blade analogue of the wing's "camber lifts at zero incidence"
+    // check, which also pins the camber SIGN: positive CST camber bows
+    // toward the suction side, and for a propeller the suction side is the
+    // thrust side. An untwisted flat blade at hover sees ~zero incidence
+    // and produces ~nothing; the same blade with positively-cambered
+    // sections must thrust. A flipped camber direction would make it
+    // thrust BACKWARD and fail loudly.
+    // Posed OUTBOARD of the test prop's tiny hub deliberately: the sign pin
+    // wants a well-conditioned blade-element region (chord well under the
+    // local radius). The hub region has its own honest weirdness -- the
+    // chord there wraps a large azimuth arc -- and that belongs to the
+    // hover-magnitude caveats, not to a sign test.
+    auto prop = MakeTestProp();
+    prop.HubRadius = 0.07;
+    std::erase_if(prop.Stations,
+                  [&](const Geometry::BladeStation& st) { return st.r < prop.HubRadius; });
+    for (auto& st : prop.Stations) st.TwistDeg = 0.0;
+
+    const auto flatPanels = PanelBuilder::BuildPropellerLattice(prop, 0.0, Omega);
+    const double flatThrust = -SolveProp(prop, flatPanels, 0.0).Di;
+
+    // Pure camber, no thickness: equal upper/lower coefficient sets give a
+    // mean line that IS the surface. Modest ~2% camber.
+    prop.Sections.push_back({0.0, {0.05, 0.06, 0.05}, {0.05, 0.06, 0.05}});
+    prop.Sections.push_back({1.0, {0.05, 0.06, 0.05}, {0.05, 0.06, 0.05}});
+    const auto camberedPanels = PanelBuilder::BuildPropellerLattice(prop, 0.0, Omega);
+    const double camberedThrust = -SolveProp(prop, camberedPanels, 0.0).Di;
+
+    std::cout << "zero twist: flat T=" << flatThrust << " N  cambered T=" << camberedThrust << " N\n";
+    {
+        const auto r = SolveProp(prop, camberedPanels, 0.0);
+        std::cout << "  cambered gamma:";
+        for (double g : r.gamma) std::cout << " " << g;
+        std::cout << "\n";
+    }
+    CHECK(std::fabs(flatThrust) < 1.0, "an untwisted flat blade at hover should produce ~no thrust");
+    CHECK(camberedThrust > flatThrust + 1.0,
+          "positively-cambered sections must thrust at zero twist -- this pins the camber sign");
+
+    // Camber also lengthens the true wetted surface relative to the flat
+    // footprint, the wing's Area vs PlanformArea distinction.
+    CHECK(camberedPanels.front().Area > camberedPanels.front().PlanformArea,
+          "a cambered panel's surface area must exceed its flat footprint");
+}
+
 void TestThrustUnloadsWithAdvance() {
     const auto prop = MakeTestProp();
-    const auto panels = PanelBuilder::BuildPropellerLattice(prop, 4, 0.0, Omega);
+    const auto panels = PanelBuilder::BuildPropellerLattice(prop, 0.0, Omega);
 
     double previous = 1e30;
     for (double speed : {0.0, 5.0, 10.0}) {
@@ -128,6 +177,7 @@ void TestThrustUnloadsWithAdvance() {
 int main() {
     TestLatticeStructure();
     TestHoverForcesArePhysical();
+    TestCamberThrustsAtZeroTwist();
     TestThrustUnloadsWithAdvance();
 
     if (failures == 0) { std::cout << "PASS: TestPropellerLattice\n"; return 0; }

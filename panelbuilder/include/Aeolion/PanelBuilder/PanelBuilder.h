@@ -358,42 +358,53 @@ struct LatticeOptions {
 
 // --- propeller blade lattice ------------------------------------------------
 // The panel-method propeller: every blade meshed as horseshoe-vortex panels
-// (chordwise rows x radial strips, exactly the Panel vocabulary the wing
-// uses) and solved by the SAME Solver::Solve as the airframe -- the rotation
-// enters through FreestreamConditions::p, the solver's roll rate about +x,
-// whose kinematic-velocity term hands every blade panel its true
-// Omega x r tangential onset flow. Quasi-steady, with straight trailing
-// legs along +x (a rigid axial wake, no helix or contraction), and
-// potential-flow forces only -- the torque a solve reports is induced
-// torque, with no profile-drag contribution.
+// (one Weissinger row per radial strip, exactly the Panel vocabulary the
+// wing uses) and solved by the SAME Solver::Solve as the airframe -- the
+// rotation enters through FreestreamConditions::p, the solver's roll rate
+// about +x, whose kinematic-velocity term hands every blade panel its true
+// Omega x r tangential onset flow. Quasi-steady and potential-flow: the
+// torque a solve reports is induced torque, with no profile-drag
+// contribution.
 //
 // Conventions: the prop spins at +Omega about +x (right-hand rule), the
 // freestream arrives along +x (solver body axes, x aft), so thrust comes
 // out along -x: Thrust = -SolveResult::Di, shaft torque = -SolveResult::Mx
-// (with RefPoint at the hub), power = torque * Omega. Blades are flat
-// plates on the chord line at the local twist -- the contract's CST blade
-// sections (schema >= 1.8.0) are not yet folded in as camber.
+// (with RefPoint at the hub), power = torque * Omega. Blades sit on the
+// CST camber surface when prop.Sections carries one (chords wrapped on
+// their radius cylinders -- see the .cpp), flat chord lines otherwise.
 //
 // The wake direction is why this function needs the operating point, not
 // just geometry: each trailing leg leaves along the LOCAL kinematic
-// velocity at its root (axial inflow + Omega x r tangential sweep), the
-// linearized helix. Trailing purely axially instead is not a small error
-// at hover -- the local wind there is almost entirely tangential, the
-// legs would leave near-perpendicular to the flow, and the lattice's
+// velocity at its root (axial inflow + Omega x r tangential sweep, with
+// the momentum-theory hover inflow as the axial floor), the linearized
+// helix. Trailing purely axially instead is not a small error at hover --
+// the local wind there is almost entirely tangential, the legs would
+// leave near-perpendicular to the flow, and the lattice's
 // quarter/three-quarter-chord geometry stops meaning anything (in
 // practice the circulation solve saw-tooths radially and diverges with
 // refinement). Rebuild the lattice whenever rpm or inflow change; it is
 // cheap.
+//
+// ONE chordwise row per strip, deliberately (Weissinger): the chords are
+// wrapped on their radius cylinders, and a straight trailing leg leaves a
+// curved chord immediately -- the surface falls away from its tangent
+// line by s^2/2r, so a forward row's legs would graze the aft rows'
+// control points at fractions of a millimetre and the chordwise
+// circulation saw-tooths (found empirically). Camber still enters exactly
+// where thin-airfoil theory wants it, through the mean-line slope at the
+// 3/4-chord boundary condition; resolving the chordwise LOADING
+// distribution needs a vortex-ring wake or finite-core filaments, which
+// belongs with the future viscous/boundary-layer work.
 /**
- * Mesh a metric propeller into horseshoe-vortex panels: chordwisePanels
- * rows per radial strip, one strip per adjacent station pair, per blade,
- * with trailing legs along the local relative wind of the stated
- * operating point (axialSpeed [m/s] inflow along +x, omega [rad/s] about
- * +x). Solve with FreestreamConditions{ Vinf = axialSpeed, p = omega,
- * RefPoint = hub center (the origin) }.
+ * Mesh a metric propeller into horseshoe-vortex panels: one Weissinger
+ * row per radial strip (station pair), per blade, on the CST camber
+ * surface when prop.Sections carries one, with trailing legs along the
+ * local relative wind of the stated operating point (axialSpeed [m/s]
+ * inflow along +x, omega [rad/s] about +x). Solve with
+ * FreestreamConditions{ Vinf = axialSpeed, p = omega, RefPoint = hub
+ * center (the origin) }.
  */
 [[nodiscard]] std::vector<Lattice::Panel> BuildPropellerLattice(const Geometry::Propeller& prop,
-                                                                int chordwisePanels,
                                                                 double axialSpeed, double omega);
 
 // --- the builder ------------------------------------------------------------

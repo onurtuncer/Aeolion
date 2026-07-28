@@ -76,11 +76,35 @@ void TestConversionRefusesWhatItCannotKnow() {
     CHECK(rejected, "a propulsion block with no blade stations should be refused");
 }
 
+void TestBladeSectionsRideAlong() {
+    // Blade CST sections arrived at schema 1.8.0: that fixture must carry
+    // them through to the metric propeller (as AirfoilSections keyed by
+    // Eta = r/R), and the 1.5.0 fixture, which predates them, must yield
+    // flat blades rather than inventing shape data.
+    const auto old = Aeolion::Geometry::ToPropeller(Fixture().Propulsion);
+    CHECK(old.Sections.empty(), "a pre-1.8.0 contract states no blade sections");
+
+    const auto contract = Aeolion::Geometry::LoadHandoff(std::string(AEOLION_TEST_DATA_DIR) +
+                                                         "/AeolionGeometryHandoff-1.8.0.json");
+    const auto prop = Aeolion::Geometry::ToPropeller(contract.Propulsion);
+    CHECK(prop.Sections.size() == contract.Propulsion.BladeAirfoilSections.size(),
+          "every stated blade section should survive the conversion");
+    for (std::size_t i = 0; i < prop.Sections.size(); ++i) {
+        CHECK(prop.Sections[i].Eta == contract.Propulsion.BladeAirfoilSections[i].RadiusFraction,
+              "section Eta is the stated radius fraction");
+        CHECK(!prop.Sections[i].CoefficientsUpper.empty() && !prop.Sections[i].CoefficientsLower.empty(),
+              "stated sections should carry their CST coefficient sets");
+        if (i > 0)
+            CHECK(prop.Sections[i].Eta > prop.Sections[i - 1].Eta, "sections must stay ordered by radius");
+    }
+}
+
 } // namespace
 
 int main() {
     TestConversionConvertsUnits();
     TestConversionRefusesWhatItCannotKnow();
+    TestBladeSectionsRideAlong();
 
     if (failures == 0) { std::cout << "PASS: TestPropeller\n"; return 0; }
     std::cerr << failures << " check(s) failed in TestPropeller\n";

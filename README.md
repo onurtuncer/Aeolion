@@ -226,14 +226,19 @@ screen**: the handoff's `propulsion_bemt` blade geometry (or a built-in
 default prop) meshed into a rotating-frame vortex lattice
 (`PanelBuilder::BuildPropellerLattice`) and solved by the same VLM core as
 the airframe -- the rotation enters as the solver's roll rate about +x, so
-every blade panel sees its true `Omega x r` onset flow, with trailing legs
-along the local relative wind (a linearized helix). The blades render as
-the solved lattice colored by circulation / sectional cl / lift per span,
-with RPM, axial-speed, density, and chordwise-panel controls, and
-dimensional thrust / torque / power / disk-loading readouts. Quasi-steady
-and potential-flow: rigid straight-line wake (no roll-up or contraction,
-so heavily-loaded static thrust reads optimistic), induced torque only (no
-profile drag), flat-plate blades (no CST camber yet), no stall.
+every blade panel sees its true `Omega x r` onset flow. The blades sit on
+their CST camber surface when the contract states blade sections (schema
+>= 1.8.0), with chords wrapped on their radius cylinders, one Weissinger
+row per radial strip, and trailing legs along the local relative wind
+plus the momentum-theory hover inflow (a prescribed linearized helical
+wake). The solved lattice renders colored by circulation / sectional cl /
+lift per span, with RPM, axial-speed, and density controls and
+dimensional thrust / torque / power / disk-loading readouts.
+Quasi-steady and potential-flow: prescribed straight-line wake (no
+roll-up or contraction, so heavily-loaded static thrust reads
+optimistic), induced torque only (no profile drag), single chordwise row
+(integrated loads, not chordwise pressure distributions), no thickness,
+no stall.
 
 ## Validation
 

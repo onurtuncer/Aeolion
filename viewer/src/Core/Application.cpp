@@ -270,7 +270,7 @@ void Application::AdoptContractPropeller() {
 
 void Application::ResolveProp() {
     const double omega = m_PropRpm * 2.0 * std::numbers::pi / Math::SecondsPerMinute;
-    m_PropPanels = PanelBuilder::BuildPropellerLattice(m_Prop, m_PropChordwise, m_PropSpeed, omega);
+    m_PropPanels = PanelBuilder::BuildPropellerLattice(m_Prop, m_PropSpeed, omega);
 
     // The rotation IS the flight condition: Omega enters as the solver's
     // roll rate about +x, whose kinematic-velocity term gives every blade
@@ -536,8 +536,9 @@ void Application::DrawPropellerUI() {
     }
 
     if (ImGui::CollapsingHeader("Lattice", ImGuiTreeNodeFlags_DefaultOpen)) {
-        m_PropDirty |= ImGui::SliderInt("Chordwise panels", &m_PropChordwise, 1, 8);
-        ImGui::Text("panels: %zu", m_PropPanels.size());
+        // One Weissinger row per radial strip -- see BuildPropellerLattice's
+        // header for why chordwise stacking is off the table for now.
+        ImGui::Text("panels: %zu (1 chordwise row per strip)", m_PropPanels.size());
     }
 
     if (ImGui::CollapsingHeader("Display", ImGuiTreeNodeFlags_DefaultOpen)) {

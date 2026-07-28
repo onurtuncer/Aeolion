@@ -152,10 +152,14 @@ The rotating-frame propeller VLM
 hold regardless of the blade: a positively-twisted schedule spun at
 :math:`+\Omega` must thrust upstream (:math:`-x`), absorb torque against
 its own rotation (:math:`M_x < 0`), cancel its in-plane forces exactly by
-blade symmetry, and lose thrust as axial inflow rises at fixed rpm. Also
-pins the lattice structure -- and that every trailing leg leaves along
-the local relative wind, which at hover is nearly tangential (an axial
-wake there destroys the lattice geometry and diverges).
+blade symmetry, lose thrust as axial inflow rises at fixed rpm, and --
+the blade analogue of the wing's camber-lifts-at-zero-incidence check --
+thrust at zero twist when its CST sections carry positive camber, which
+pins the camber sign convention. Also pins the lattice structure and the
+wake direction: every trailing leg leaves along the local relative wind
+plus the prescribed momentum-theory hover inflow (a purely axial wake
+destroys the lattice geometry at hover; a purely tangential one never
+leaves the disk plane).
 
 Fixture data
 ------------

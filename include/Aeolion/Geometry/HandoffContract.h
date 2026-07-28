@@ -725,6 +725,13 @@ inline constexpr int MinBladeCount = 2;
     prop.Stations.reserve(spec.BladeStations.size());
     for (const BladeStationSpec& station : spec.BladeStations)
         prop.Stations.push_back({station.RadiusFraction * spec.DiskRadius, station.Chord, station.TwistDeg});
+
+    // Blade CST sections ride along in the wing's AirfoilSection shape,
+    // with Eta reinterpreted as r/R, so CstSurface's evaluators consume
+    // them unchanged (see Propeller.h). Absent before schema 1.8.0.
+    prop.Sections.reserve(spec.BladeAirfoilSections.size());
+    for (const BladeAirfoilSection& section : spec.BladeAirfoilSections)
+        prop.Sections.push_back({section.RadiusFraction, section.CoefficientsUpper, section.CoefficientsLower});
     return prop;
 }
 

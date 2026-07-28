@@ -13,6 +13,8 @@
 // and it is the only place it should happen.
 #pragma once
 
+#include "Aeolion/Geometry/AirfoilSection.h"
+
 #include <vector>
 
 namespace Aeolion::Geometry {
@@ -30,6 +32,15 @@ struct Propeller {
     double Radius = 0.15;    ///< Tip radius [m].
     double HubRadius = 0.02; ///< Hub radius [m].
     std::vector<BladeStation> Stations; ///< Sorted by increasing r, spanning [HubRadius, Radius].
+
+    /**
+     * Blade CST sections (schema >= 1.8.0), reusing the wing's
+     * AirfoilSection vocabulary with Eta meaning r/R instead of semi-span
+     * fraction -- CstSurface's CamberAt/CamberSlopeAt consume them
+     * unchanged. Ordered by increasing Eta; empty means no section data
+     * was handed off and the blades stay flat plates at the local twist.
+     */
+    std::vector<AirfoilSection> Sections;
 };
 
 } // namespace Aeolion::Geometry

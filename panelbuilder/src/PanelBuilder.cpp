@@ -21,6 +21,12 @@
 
 namespace Aeolion::PanelBuilder {
 
+// Momentum-theory hover inflow ratio, lambda = v_i / (Omega * R): the
+// prescribed-wake axial-convection floor BuildPropellerLattice() gives its
+// trailing legs at low advance speed (see the comment at its use).
+// lambda = sqrt(C_T / 2) ~ 0.07 for ordinary propeller disk loadings.
+inline constexpr double HoverInflowRatio = 0.07;
+
 LatticeBuilder::LatticeBuilder(Geometry::HandoffContract contract, LatticeOptions options)
     : m_Contract(std::move(contract)), m_Options(options) {
     // Breakpoints and the spanwise march depend only on the contract and
@@ -791,44 +797,92 @@ int ApplyBaseEfflux(std::vector<Lattice::SourcePanel>& body,
     return affected;
 }
 
-std::vector<Lattice::Panel> BuildPropellerLattice(const Geometry::Propeller& prop, int chordwisePanels,
+std::vector<Lattice::Panel> BuildPropellerLattice(const Geometry::Propeller& prop,
                                                   double axialSpeed, double omega) {
     std::vector<Lattice::Panel> panels;
     const std::size_t ns = prop.Stations.size();
-    if (ns < 2 || chordwisePanels < 1 || prop.BladeCount < 1) return panels;
+    if (ns < 2 || prop.BladeCount < 1) return panels;
 
-    const int rows = chordwisePanels;
-    panels.reserve(static_cast<std::size_t>(prop.BladeCount) * (ns - 1) *
-                   static_cast<std::size_t>(rows));
+    panels.reserve(static_cast<std::size_t>(prop.BladeCount) * (ns - 1));
 
     const Math::Vec3 axial(1.0, 0.0, 0.0); // rotation axis, +x
 
     // Trailing-leg direction at a wake-root point: the local kinematic
     // velocity (axial inflow plus the -Omega x r sweep the rotation term
     // hands the blade), i.e. the linearized helix -- see the header note.
+    //
+    // The axial part is floored at the momentum-theory hover inflow,
+    // lambda ~ 0.07 (v_i = lambda * Omega * R, the classic value for
+    // ordinary propeller disk loadings, since C_T ~ 0.01 gives
+    // lambda = sqrt(C_T/2) ~ 0.07). At exact hover the kinematic axial
+    // inflow is zero and a straight leg would otherwise lie IN the rotor
+    // plane forever, slicing past every strip outboard of its root (a
+    // straight tangent line leaves its circle and crosses all larger
+    // radii) -- a real wake convects out of the disk plane, and without
+    // this floor the solve is pathologically sensitive to the station
+    // layout.
+    const double hoverInflow = HoverInflowRatio * std::fabs(omega) * prop.Radius;
     auto trailDirection = [&](const Math::Vec3& point) {
         const Math::Vec3 sweep = Math::Cross(axial * omega, point);
-        const Math::Vec3 local = axial * axialSpeed - sweep;
+        const Math::Vec3 local = axial * std::max(axialSpeed, hoverInflow) - sweep;
         const Math::Vec3 unit = local.Normalized();
         return (unit.Norm() > 0.5) ? unit : axial; // no flow at all -> fall back to axial
     };
 
     for (int blade = 0; blade < prop.BladeCount; ++blade) {
-        const double psi = Math::Two * std::numbers::pi * blade / prop.BladeCount;
-        const Math::Vec3 rhat(0.0, std::cos(psi), std::sin(psi)); // radial, in the rotor (y-z) plane
-        const Math::Vec3 that(0.0, -std::sin(psi), std::cos(psi)); // tangential = axial x rhat: blade motion at +Omega
+        const double bladeAzimuth = Math::Two * std::numbers::pi * blade / prop.BladeCount;
 
-        // The point at chord fraction f (0 = leading edge) of the station's
-        // chord segment. The blade moves toward +that, so the relative wind
-        // arrives from +that: the leading edge faces +that, and twist tilts
-        // the trailing edge aft (+x), which is what makes the resultant
-        // blade force point upstream (-x) -- thrust -- at positive local
-        // incidence.
-        auto chordPoint = [&](const Geometry::BladeStation& station, double f) {
+        // Local chord frame at chord fraction f of a station, WRAPPED around
+        // the cylinder of that station's radius. A blade element's chord
+        // does not live in a flat tangent plane -- it lies on the annulus
+        // the element sweeps, so moving along the chord changes azimuth by
+        // s*cos(beta)/r. Near a small hub this is not a nicety: chord there
+        // is comparable to radius, a straight tangent-plane chord subtends
+        // tens of degrees of azimuth and leaves the swept surface entirely,
+        // and the resulting phantom incidence overwhelms real camber/twist
+        // loading (found empirically: the hub strips reversed the sign of
+        // the whole blade's camber response).
+        //
+        // The blade moves toward +that, so the relative wind arrives from
+        // +that: the leading edge faces +that (wrapped to positive azimuth
+        // offset), and twist tilts the trailing edge aft (+x), which is
+        // what makes the resultant blade force point upstream (-x) --
+        // thrust -- at positive local incidence.
+        //
+        // CamberDir is the suction side the CST convention bows positive
+        // camber toward: for a propeller that is the THRUST side, so a
+        // positively-cambered section thrusts at zero twist the way a
+        // wing's lifts at zero incidence (TestPropellerLattice pins the
+        // sign).
+        struct ChordFrame {
+            Math::Vec3 Point;     // on the chord line, wrapped on the cylinder
+            Math::Vec3 ChordDir;  // local LE -> TE tangent, unit
+            Math::Vec3 CamberDir; // suction (thrust) side, unit
+        };
+        auto frameAt = [&](const Geometry::BladeStation& station, double f) {
             const double beta = Math::DegToRad(station.TwistDeg);
-            const Math::Vec3 chordDir = -that * std::cos(beta) + axial * std::sin(beta); // LE -> TE
-            const Math::Vec3 center = rhat * station.r;
-            return center + chordDir * ((f - Math::Half) * station.Chord);
+            const double s = (f - Math::Half) * station.Chord; // arc length from mid-chord, +aft
+            const double radius = std::max(station.r, 1e-12);
+            const double azimuth = bladeAzimuth - s * std::cos(beta) / radius;
+            const Math::Vec3 rhat(0.0, std::cos(azimuth), std::sin(azimuth));
+            const Math::Vec3 that(0.0, -std::sin(azimuth), std::cos(azimuth)); // axial x rhat
+            ChordFrame frame;
+            frame.ChordDir = -that * std::cos(beta) + axial * std::sin(beta);
+            frame.CamberDir = -Math::Cross(frame.ChordDir, rhat); // unit: ChordDir and rhat are orthonormal
+            frame.Point = rhat * station.r + axial * (s * std::sin(beta));
+            return frame;
+        };
+
+        // A point on the CAMBER SURFACE at chord fraction f: the wrapped
+        // chord-line point offset by the interpolated CST mean-line
+        // ordinate toward the suction side, exactly the way the wing's
+        // lattice sits on its camber surface. With no section data
+        // CamberAt() is zero and this is the chord line itself.
+        auto surfacePoint = [&](const Geometry::BladeStation& station, double f) {
+            const ChordFrame frame = frameAt(station, f);
+            const double eta = (prop.Radius > 0.0) ? station.r / prop.Radius : 0.0;
+            const double camber = Geometry::CamberAt(prop.Sections, eta, f);
+            return frame.Point + frame.CamberDir * (camber * station.Chord);
         };
 
         for (std::size_t i = 0; i + 1 < ns; ++i) {
@@ -836,33 +890,51 @@ std::vector<Lattice::Panel> BuildPropellerLattice(const Geometry::Propeller& pro
             const Geometry::BladeStation& outboard = prop.Stations[i + 1];
             const double width = outboard.r - inboard.r;
             if (width <= 0.0) continue; // degenerate/unordered station pair carries no strip
+            const double etaMid = (prop.Radius > 0.0)
+                                      ? Math::Half * (inboard.r + outboard.r) / prop.Radius
+                                      : 0.0;
 
-            for (int row = 0; row < rows; ++row) {
-                const double f0 = static_cast<double>(row) / rows;
-                const double f1 = static_cast<double>(row + 1) / rows;
-                const double fBound = (row + Math::QuarterChord) / rows;
-                const double fControl = (row + Math::ThreeQuarterChord) / rows;
+            {
+                const double f0 = 0.0;
+                const double f1 = 1.0;
+                const double fBound = Math::QuarterChord;
+                const double fControl = Math::ThreeQuarterChord;
 
                 Lattice::Panel panel;
-                panel.A = chordPoint(inboard, fBound);
-                panel.B = chordPoint(outboard, fBound);
-                panel.ControlPoint = (chordPoint(inboard, fControl) + chordPoint(outboard, fControl)) * Math::Half;
+                panel.A = surfacePoint(inboard, fBound);
+                panel.B = surfacePoint(outboard, fBound);
+                panel.ControlPoint = (surfacePoint(inboard, fControl) + surfacePoint(outboard, fControl)) * Math::Half;
                 panel.TrailDirA = trailDirection(panel.A);
                 panel.TrailDirB = trailDirection(panel.B);
 
-                // Quad corners of this chordwise slice, for normal and area.
-                const Math::Vec3 le0 = chordPoint(inboard, f0);
-                const Math::Vec3 te0 = chordPoint(inboard, f1);
-                const Math::Vec3 le1 = chordPoint(outboard, f0);
-                const Math::Vec3 te1 = chordPoint(outboard, f1);
-                panel.Normal = Math::Cross(le1 - le0, te0 - le0).Normalized();
+                // Control-point normal from the surface tangents there: the
+                // radial tangent between the stations, and the chordwise
+                // tangent tilted by the ANALYTIC camber slope (the wing's
+                // convention -- the flow-tangency condition wants the mean
+                // line's own slope at the control point, not a facet
+                // average). Flat sections reduce this to the slice normal.
+                const ChordFrame inFrame = frameAt(inboard, fControl);
+                const ChordFrame outFrame = frameAt(outboard, fControl);
+                const double slope = Geometry::CamberSlopeAt(prop.Sections, etaMid, fControl);
+                const Math::Vec3 radialTangent = surfacePoint(outboard, fControl) - surfacePoint(inboard, fControl);
+                const Math::Vec3 chordTangent =
+                    ((inFrame.ChordDir + outFrame.ChordDir) + (inFrame.CamberDir + outFrame.CamberDir) * slope);
+                panel.Normal = Math::Cross(radialTangent, chordTangent).Normalized();
+
+                // Footprint from the CHORD-LINE quad (the camber-free
+                // slice): that is the planform-style area coefficients
+                // normalize by and the viewer reconstructs the drawn quad
+                // from. The true curved surface is longer by the camber arc
+                // ratio, exactly the wing's Area vs PlanformArea
+                // distinction.
+                const Math::Vec3 le0 = frameAt(inboard, f0).Point;
+                const Math::Vec3 te0 = frameAt(inboard, f1).Point;
+                const Math::Vec3 le1 = frameAt(outboard, f0).Point;
+                const Math::Vec3 te1 = frameAt(outboard, f1).Point;
                 // Planar quad: half the cross product of its diagonals.
-                panel.Area = Math::Cross(te1 - le0, le1 - te0).Norm() * Math::Half;
-                // Blades have no reference-plane projection the way a wing
-                // planform does; the flat-plate slice IS its own footprint,
-                // which is also what the viewer reconstructs the drawn quad
-                // from (PlanformArea / SpanwiseWidth = slice chord).
-                panel.PlanformArea = panel.Area;
+                panel.PlanformArea = Math::Cross(te1 - le0, le1 - te0).Norm() * Math::Half;
+                const double arcFraction = Geometry::CamberArcLengthFraction(prop.Sections, etaMid, f0, f1);
+                panel.Area = panel.PlanformArea * (arcFraction / (f1 - f0));
                 panel.SpanwiseWidth = width;
                 panel.Surface = "blade" + std::to_string(blade);
                 panel.StripIndex = static_cast<int>(blade * (ns - 1) + i);

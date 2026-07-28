@@ -137,7 +137,6 @@ private:
     double m_PropRpm = 6000.0;       // shaft speed; Omega = rpm * 2*pi/60 about +x
     double m_PropSpeed = 0.0;        // axial inflow [m/s]; 0 = hover (solved at a tiny floor speed)
     double m_PropDensity = 1.225;    // [kg/m^3], sea-level ISA
-    int m_PropChordwise = 4;         // chordwise panel rows per blade strip
     bool m_PropDirty = true;         // geometry/operating point/display changed -> remesh + re-solve
 
     double m_LastMouseX = 0.0, m_LastMouseY = 0.0;
