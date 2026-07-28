@@ -40,6 +40,14 @@ constexpr double DefaultPropGeometricPitch = 0.12; // [m], sets the twist(r) = a
 constexpr double DefaultPropRootChord = 0.032;     // [m]
 constexpr double DefaultPropTaper = 0.55;          // chord = root * (1 - taper * r/R)
 
+// Default shroud proportions when the contract states no duct: a snug
+// tip clearance, a modest ring thickness, and a chord that wraps the
+// rotor plane -- enough to show the ducted-fan interaction without
+// pretending to be a designed duct.
+constexpr double DefaultShroudTipClearance = 1.04; // inner radius = this * tip radius
+constexpr double DefaultShroudOuterFactor = 1.20;  // outer radius = this * tip radius
+constexpr double DefaultShroudChordFactor = 0.5;   // chord = this * tip radius
+
 // Hover means zero axial inflow, but the solver's wind-axis force
 // projections need a nonzero translational freestream to be defined
 // (drag/lift directions normalize Vinf) -- solve at this floor instead.
@@ -272,6 +280,22 @@ void Application::ResolveProp() {
     const double omega = m_PropRpm * 2.0 * std::numbers::pi / Math::SecondsPerMinute;
     m_PropPanels = PanelBuilder::BuildPropellerLattice(m_Prop, m_PropSpeed, omega);
 
+    // The duct shroud: the contract's duct ring when it states one, a
+    // default-proportioned shroud otherwise -- centered on the rotor plane
+    // (BuildPropellerDuct's own convention).
+    m_PropDuctPanels.clear();
+    if (m_PropDuctEnabled) {
+        if (m_UseHandoff && m_Contract.Duct.IsStated) {
+            m_PropDuctPanels = PanelBuilder::BuildPropellerDuct(
+                m_Contract.Duct.InnerDiameter * 0.5, m_Contract.Duct.OuterDiameter * 0.5,
+                m_Contract.Duct.Chord);
+        } else {
+            m_PropDuctPanels = PanelBuilder::BuildPropellerDuct(
+                DefaultShroudTipClearance * m_Prop.Radius, DefaultShroudOuterFactor * m_Prop.Radius,
+                DefaultShroudChordFactor * m_Prop.Radius);
+        }
+    }
+
     // The rotation IS the flight condition: Omega enters as the solver's
     // roll rate about +x, whose kinematic-velocity term gives every blade
     // panel its true Omega x r tangential onset flow about the hub
@@ -306,14 +330,21 @@ void Application::ResolveProp() {
         const Solver::SectionModel model =
             (m_PropSectionModel == 1) ? PanelBuilder::MakePropellerSectionModel(m_Prop)
                                       : Solver::SectionModel(Solver::AnalyticSectionModel{});
-        m_PropCoupled = Solver::SolveViscousCoupled(m_PropPanels, m_PropStrips, fc, ref, trail, model);
+        m_PropCoupled = Solver::SolveViscousCoupled(m_PropPanels, m_PropStrips, fc, ref, trail, model,
+                                                    {}, m_PropDuctPanels);
         m_PropSolve = m_PropCoupled.Base;
     } else {
-        m_PropSolve = Solver::Solve(m_PropPanels, fc, ref, trail);
+        if (m_PropDuctPanels.empty()) {
+            m_PropSolve = Solver::Solve(m_PropPanels, fc, ref, trail);
+        } else {
+            const Solver::PanelSystem system{m_PropPanels, m_PropDuctPanels};
+            m_PropSolve = Solver::SolveWithSystem(Solver::Prepare(system, trail), fc, ref);
+        }
         m_PropCoupled = {};
     }
 
-    m_PropLattice.Update(m_PropPanels, m_PropSolve, m_PropLatticeDisplay, 2.0 * m_Prop.Radius);
+    m_PropLattice.Update(m_PropPanels, m_PropSolve, m_PropLatticeDisplay, 2.0 * m_Prop.Radius,
+                         m_PropDuctPanels);
     m_Propeller.Update(m_Prop, m_PropDisplay);
 }
 
@@ -556,6 +587,11 @@ void Application::DrawPropellerUI() {
             m_PropDirty |= ImGui::Combo("Section model", &m_PropSectionModel, modelNames,
                                         IM_ARRAYSIZE(modelNames));
         }
+        m_PropDirty |= ImGui::Checkbox("Duct", &m_PropDuctEnabled);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Shroud the propeller with the contract's duct ring (or a\n"
+                              "default-proportioned one) and solve them coupled: the blades\n"
+                              "see the duct's induced flow, the duct sees the propwash.");
     }
 
     if (ImGui::CollapsingHeader("Lattice", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -614,6 +650,14 @@ void Application::DrawPropellerUI() {
         } else {
             ReadoutRow("Torque [N.m] (induced)", torque, "%.4f");
             ReadoutRow("Power [W] (induced)", power, "%.1f");
+        }
+        if (!m_PropDuctPanels.empty()) {
+            // The duct's share of the axial force, from the per-surface
+            // pressure bookkeeping (drag = force along +x; thrust is -x).
+            double ductDrag = 0.0;
+            for (const auto& [surface, drag] : m_PropSolve.DragBySurface)
+                if (surface.rfind("duct", 0) == 0) ductDrag += drag;
+            ReadoutRow("Duct thrust [N]", -ductDrag, "%.3f");
         }
         if (diskArea > 0.0) ReadoutRow("Disk loading [Pa]", thrust / diskArea, "%.1f");
         if (power > 1e-9 && m_PropSpeed > 0.0)

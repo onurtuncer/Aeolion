@@ -87,6 +87,9 @@ panelbuilder/                    aeolion_panelbuilder (STATIC library)
                                    capping hover thrust, profile torque real
                                    and switchable, CST camber -> negative
                                    zero-lift angle
+    TestPropellerDuct.cpp         ducted-fan interaction: shroud closure,
+                                   coupled convergence, duct thrust share,
+                                   blade loading shifted by the shroud
 
 viewer/                          aeolion_viewer (exe, GL application)
                                  interactive OpenGL visualizer, not part of
@@ -256,7 +259,12 @@ marched on both surfaces and the displacement effect fed back as
 transpiration velocities in the panel boundary conditions -- no
 recambering -- trusted in its attached envelope and blended into the
 saturated polar beyond it. The full numerical method is documented in
-`doc/theory.rst`. That caps the stalled root loading and adds real
+`doc/theory.rst`. The screen can also **shroud the prop in a duct**
+(`PanelBuilder::BuildPropellerDuct`, the contract's duct ring or a
+default-proportioned one): the duct's source panels share the coupled
+solve, the blades see its induced flow, the duct sees the propwash, and
+its pressure integral reports the lip-suction thrust share -- +16% total
+at hover for a snug shroud on the test blade. That caps the stalled root loading and adds real
 **profile torque**, reported separately from the induced part.
 Remaining caveats: quasi-steady prescribed straight-line wake (no
 roll-up or contraction), single chordwise row (integrated loads, not

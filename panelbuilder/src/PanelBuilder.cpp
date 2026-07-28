@@ -682,25 +682,15 @@ std::vector<Lattice::SourcePanel> LatticeBuilder::BuildBody() const {
 // outward for the outer wall, radially INWARD (toward the axis) for the
 // bore wall, forward for the leading cap, aft for the trailing cap --
 // mirroring BuildBody()'s aft-facing base cap.
-std::vector<Lattice::SourcePanel> LatticeBuilder::BuildDuct() const {
+// The shared annular-ring mesher behind BuildDuct() (contract frame,
+// offset center) and BuildPropellerDuct() (origin-centered shroud): four
+// faces -- outer wall, bore wall, leading/trailing caps -- in solver axes.
+namespace {
+
+std::vector<Lattice::SourcePanel> AnnularRingPanels(double xLeadSolver, double xTrailSolver,
+                                                    double rInner, double rOuter, double yOffset,
+                                                    double zOffset, int sectors, int axialPanels) {
     std::vector<Lattice::SourcePanel> panels;
-    if (!m_Options.IncludeDuct) return panels;
-
-    const Geometry::DuctGeometry& duct = m_Contract.Duct;
-    if (!duct.IsStated) return panels;
-
-    const int sectors = m_Options.DuctCircumferentialPanels;
-    if (sectors < MinDuctSectors) return panels;
-    const int axialPanels = std::max(1, m_Options.DuctAxialPanels);
-
-    const double rInner = duct.InnerDiameter * Math::Half;
-    const double rOuter = duct.OuterDiameter * Math::Half;
-
-    const double xLeadSolver = -(duct.Center.x + duct.Chord * Math::Half);
-    const double xTrailSolver = -(duct.Center.x - duct.Chord * Math::Half);
-    const double yOffset = duct.Center.y;
-    const double zOffset = -duct.Center.z;
-
     const auto surfacePoint = [&](double x, double r, double angle) {
         return Solver::Vec3(x, yOffset + r * std::cos(angle), zOffset + r * std::sin(angle));
     };
@@ -775,6 +765,37 @@ std::vector<Lattice::SourcePanel> LatticeBuilder::BuildDuct() const {
     emitCap(xTrailSolver, Solver::Vec3(1.0, 0.0, 0.0), DuctTrailingCapSurfaceName, axialPanels);
 
     return panels;
+}
+
+} // namespace
+
+std::vector<Lattice::SourcePanel> LatticeBuilder::BuildDuct() const {
+    if (!m_Options.IncludeDuct) return {};
+
+    const Geometry::DuctGeometry& duct = m_Contract.Duct;
+    if (!duct.IsStated) return {};
+
+    const int sectors = m_Options.DuctCircumferentialPanels;
+    if (sectors < MinDuctSectors) return {};
+    const int axialPanels = std::max(1, m_Options.DuctAxialPanels);
+
+    // Contract frame is x-forward / z-down, the solver x-aft / z-up.
+    return AnnularRingPanels(-(duct.Center.x + duct.Chord * Math::Half),
+                             -(duct.Center.x - duct.Chord * Math::Half),
+                             duct.InnerDiameter * Math::Half, duct.OuterDiameter * Math::Half,
+                             duct.Center.y, -duct.Center.z, sectors, axialPanels);
+}
+
+std::vector<Lattice::SourcePanel> BuildPropellerDuct(double innerRadius, double outerRadius,
+                                                     double chord, int circumferentialPanels,
+                                                     int axialPanels) {
+    if (innerRadius <= 0.0 || outerRadius <= innerRadius || chord <= 0.0 ||
+        circumferentialPanels < MinDuctSectors || axialPanels < 1)
+        return {};
+    // Origin-centered shroud about +x: mid-chord at the rotor plane, the
+    // same axes BuildPropellerLattice poses the blades in.
+    return AnnularRingPanels(-Math::Half * chord, Math::Half * chord, innerRadius, outerRadius, 0.0,
+                             0.0, circumferentialPanels, axialPanels);
 }
 
 

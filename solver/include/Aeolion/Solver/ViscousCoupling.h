@@ -170,28 +170,68 @@ struct ViscousCoupledResult {
     std::vector<StripState> Strips;
     Vec3 InducedMoment{0, 0, 0}; ///< From the circulation forces, about RefPoint [N*m].
     Vec3 ProfileMoment{0, 0, 0}; ///< From the section-drag forces, about RefPoint [N*m].
+    Vec3 SourceForce{0, 0, 0};   ///< Pressure force on the source panels (e.g. a duct shroud) [N].
+    Vec3 SourceMoment{0, 0, 0};  ///< Its moment about RefPoint [N*m].
+    std::vector<double> sigma;   ///< Converged source strengths, aligned with `sources`.
     int Iterations = 0;
     bool Converged = false;
     double MaxResidual = 0.0;
 };
 
 /**
- * Level-2 sectional lift-feedback solve over a single-row lattice. `strips`
- * must align one-to-one with `panels`. The inviscid linear solve seeds the
- * circulation; relaxed fixed-point iteration then drives
+ * Sectional lift-feedback solve over a single-row lattice. `strips` must
+ * align one-to-one with `panels`. The inviscid linear solve seeds the
+ * circulation; the accelerated fixed point then drives
  * R_i = cl_VLM,i - cl_sect,i to zero.
+ *
+ * `sources` (optional) is a source-panel body sharing the solve -- for a
+ * propeller, the duct shroud. The interaction is two-way: every coupling
+ * iteration re-solves the source strengths against the CURRENT blade
+ * circulation (their boundary condition sees the propwash), and the strip
+ * velocities include the sources' induced flow (the blades see the duct).
+ * The sources' own loads are the same pressure integral the airframe
+ * solve uses, reported in SourceForce/SourceMoment and folded into the
+ * Base totals. In the rotating frame this is consistent for bodies of
+ * revolution about +x: the frame's rotation moves such a surface only
+ * tangentially to itself, so its no-through-flow condition is unchanged
+ * (up to faceting).
  */
 [[nodiscard]] inline ViscousCoupledResult SolveViscousCoupled(
     const std::vector<Panel>& panels, const std::vector<StripSection>& strips,
     const FreestreamConditions& fc, const ReferenceGeometry& ref, double trail,
-    const SectionModel& model, const ViscousCouplingOptions& options = {}) {
+    const SectionModel& model, const ViscousCouplingOptions& options = {},
+    const std::vector<SourcePanel>& sources = {}) {
     const std::size_t n = panels.size();
+    const std::size_t nb = sources.size();
     ViscousCoupledResult res;
     if (n == 0 || strips.size() != n) return res;
 
-    // Seed with the inviscid solution -- the lattice's own boundary
-    // condition is the right starting point for the fixed point.
-    std::vector<double> gamma = Solve(panels, fc, ref, trail).gamma;
+    // Seed with the inviscid solution (blades and sources coupled when
+    // sources are present) -- the lattice's own boundary condition is the
+    // right starting point for the fixed point.
+    const PanelSystem system{panels, sources};
+    std::vector<double> gamma;
+    if (nb > 0) {
+        gamma = SolveWithSystem(Prepare(system, trail), fc, ref).gamma;
+    } else {
+        gamma = Solve(panels, fc, ref, trail).gamma;
+    }
+
+    // Source-only influence block, factored once: geometry-only, reused
+    // every iteration to re-solve sigma under the current circulation.
+    LUFactorization sourceLu;
+    if (nb > 0) {
+        std::vector<double> block(nb * nb);
+        DenseMatrixView view(block.data(), static_cast<int>(nb), static_cast<int>(nb));
+        const int offset = system.VortexCount();
+        for (std::size_t i = 0; i < nb; ++i)
+            for (std::size_t j = 0; j < nb; ++j)
+                view[static_cast<int>(i), static_cast<int>(j)] =
+                    system.NormalInfluence(offset + static_cast<int>(i), offset + static_cast<int>(j), trail);
+        sourceLu = LuFactorize(view);
+    }
+    std::vector<double>& sigma = res.sigma;
+    sigma.assign(nb, 0.0);
 
     const double alpha = Math::DegToRad(fc.alphaDeg);
     const double beta = Math::DegToRad(fc.betaDeg);
@@ -202,12 +242,36 @@ struct ViscousCoupledResult {
         return Vinf - Cross(omegaRate, point - fc.RefPoint);
     };
 
+    // Velocity induced by the source body at an arbitrary point, under the
+    // current sigma. Empty sources collapse it to zero.
+    const auto sourceVelocity = [&](const Vec3& point) {
+        Vec3 v(0, 0, 0);
+        for (std::size_t k = 0; k < nb; ++k)
+            v = v + SourcePanelVelocity(point, sources[k]) * sigma[k];
+        return v;
+    };
+
+    // Re-solve the source strengths against the current circulation: the
+    // body's boundary condition sees the blades' full induced flow.
+    const auto updateSources = [&]() {
+        if (nb == 0) return;
+        std::vector<double> rhs(nb);
+        for (std::size_t i = 0; i < nb; ++i) {
+            Vec3 v = kinematicVelocity(sources[i].ControlPoint);
+            for (std::size_t j = 0; j < n; ++j)
+                v = v + HorseshoeVelocity(sources[i].ControlPoint, panels[j], gamma[j], trail);
+            rhs[i] = sources[i].PrescribedNormalVelocity - Dot(v, sources[i].Normal);
+        }
+        sigma = LuSolve(sourceLu, rhs);
+    };
+
     // Local velocity at a strip's bound-vortex midpoint under the CURRENT
-    // circulation -- own bound vortex excluded (singular there), exactly the
-    // near-field force evaluation's convention.
+    // circulation and source strengths -- own bound vortex excluded
+    // (singular there), exactly the near-field force evaluation's
+    // convention.
     const auto localVelocity = [&](std::size_t i) {
         const Vec3 mid = (panels[i].A + panels[i].B) * Math::Half;
-        Vec3 v = kinematicVelocity(mid);
+        Vec3 v = kinematicVelocity(mid) + sourceVelocity(mid);
         for (std::size_t j = 0; j < n; ++j) {
             v = v + ((j == i) ? HorseshoeVelocityNoBound(mid, panels[j], gamma[j], trail)
                               : HorseshoeVelocity(mid, panels[j], gamma[j], trail));
@@ -238,6 +302,7 @@ struct ViscousCoupledResult {
     double fNormPrev = 1e30;
     std::vector<std::vector<double>> historyX, historyF; // iterates and map residuals
     for (res.Iterations = 1; res.Iterations <= options.MaxIterations; ++res.Iterations) {
+        updateSources();
         res.MaxResidual = 0.0;
         std::vector<double> target(n, 0.0);
 
@@ -374,6 +439,7 @@ struct ViscousCoupledResult {
     const Vec3 dragDir = Vinf.Normalized();
     const Vec3 liftDir = Cross(dragDir, Vec3(0, 1, 0)).Normalized();
     const Vec3 sideDir = Cross(liftDir, dragDir).Normalized();
+    updateSources(); // sigma current for the final circulation
 
     Vec3 totalForce(0, 0, 0);
     res.Base.gamma = gamma;
@@ -409,7 +475,35 @@ struct ViscousCoupledResult {
         areaSum += panels[i].PlanformArea;
     }
 
-    const Vec3 totalMoment = res.InducedMoment + res.ProfileMoment;
+    // Source-body pressure loads under the converged state -- identical in
+    // form to the airframe solve's body-pressure integral, with the local
+    // velocity carrying the blades' full induced flow (this is where the
+    // duct's lip-suction thrust appears).
+    const double qInf = Math::Half * fc.rho * fc.Vinf * fc.Vinf;
+    for (std::size_t k = 0; k < nb; ++k) {
+        const SourcePanel& body = sources[k];
+        if (body.Permeable) continue; // a transpiring face has no wall to press on
+        Vec3 v = kinematicVelocity(body.ControlPoint);
+        for (std::size_t j = 0; j < n; ++j)
+            v = v + HorseshoeVelocity(body.ControlPoint, panels[j], gamma[j], trail);
+        for (std::size_t other = 0; other < nb; ++other) {
+            v = v + ((other == k)
+                         ? body.Normal * (sigma[other] * SourceSelfInfluence)
+                         : SourcePanelVelocity(body.ControlPoint, sources[other]) * sigma[other]);
+        }
+        // Gauge pressure p - p_inf = qInf - 1/2 rho |V|^2, acting inward:
+        // the outward force is (1/2 rho |V|^2 - qInf) * A * n. Identical to
+        // the airframe solve's cp form, and well-behaved at the hover floor
+        // speed where qInf is negligible.
+        const Vec3 F = body.Normal * ((Math::Half * fc.rho * Dot(v, v) - qInf) * body.Area);
+        res.SourceForce = res.SourceForce + F;
+        res.SourceMoment = res.SourceMoment + Cross(body.ControlPoint - fc.RefPoint, F);
+        res.Base.LiftBySurface[body.Surface] += Dot(F, liftDir);
+        res.Base.DragBySurface[body.Surface] += Dot(F, dragDir);
+    }
+    totalForce = totalForce + res.SourceForce;
+
+    const Vec3 totalMoment = res.InducedMoment + res.ProfileMoment + res.SourceMoment;
     res.Base.L = Dot(totalForce, liftDir);
     res.Base.Di = Dot(totalForce, dragDir);
     res.Base.Y = Dot(totalForce, sideDir);

@@ -469,6 +469,38 @@ inviscid lattice's, profile torque positive and exactly zero when the
 drag polar is zeroed, camber surfacing as a negative :math:`\alpha_0`,
 and the advance trend surviving the coupling.
 
+The ducted propeller
+--------------------
+
+``PanelBuilder::BuildPropellerDuct`` meshes a shroud for the isolated
+propeller: the same closed annular ring the airframe duct uses (outer
+wall, bore wall, two caps of constant-strength source panels, outward
+normals -- one shared mesher behind both), centered on the rotor plane
+about +x. Passed as the coupled solve's ``sources``, the interaction is
+two-way: every coupling iteration re-solves the source strengths against
+the CURRENT blade circulation (the duct's no-through-flow condition sees
+the propwash), and the strip velocities include the sources' induced
+flow (the blades see the duct's constriction). The duct's own load is
+the same surface-pressure integral the airframe solve uses --
+:math:`\mathbf{F} = (\tfrac{1}{2}\rho |V|^2 - q_\infty)\, A\, \hat{n}`
+per panel, well-behaved at the hover floor speed where the gauge
+:math:`q_\infty` is negligible -- and this is where a shroud earns its
+keep: the bore-lip suction ahead of the disk points upstream. On the
+reference blade with a snug shroud (4% tip clearance), hover thrust
+rises from 7.60 N open to 8.82 N ducted, the duct itself carrying
++1.17 N; a loosely-fitted ring (the 1.8.0 contract duct's large
+clearance) correctly earns almost nothing.
+
+One frame subtlety makes this legitimate: the solve runs in the
+blade-fixed rotating frame, where the duct rotates backwards -- but a
+body of revolution about the rotation axis moves only tangentially to
+itself, so its no-through-flow boundary condition is unchanged (exactly,
+up to the faceting of the ring into sectors). ``TestPropellerDuct``
+pins the mesh closure (divergence-theorem volume, outward normals) and
+the interaction: convergence, axisymmetric force cancellation, a
+nonzero duct share of the axial force, and a measurable shift of the
+blade circulation when the shroud is present.
+
 Level 3: the transpiration-coupled boundary-layer section solver
 ----------------------------------------------------------------
 

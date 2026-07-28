@@ -130,6 +130,7 @@ private:
     Geometry::Propeller m_Prop;
     std::vector<Solver::Panel> m_PropPanels;
     std::vector<Solver::StripSection> m_PropStrips;
+    std::vector<Lattice::SourcePanel> m_PropDuctPanels; // shroud source mesh (empty = no duct)
     Solver::SolveResult m_PropSolve;
     Solver::ViscousCoupledResult m_PropCoupled; // populated when m_PropUseViscous
     LatticeRenderer m_PropLattice;              // the solved blade lattice, field-colored
@@ -141,6 +142,7 @@ private:
     double m_PropDensity = 1.225;    // [kg/m^3], sea-level ISA
     bool m_PropUseViscous = true;    // Level-2 sectional lift feedback vs bare inviscid lattice
     int m_PropSectionModel = 1;      // 0 = analytic polar, 1 = transpiration-coupled boundary layer
+    bool m_PropDuctEnabled = true;   // shroud the prop (contract duct shape if stated, default otherwise)
     bool m_PropDirty = true;         // geometry/operating point/display changed -> remesh + re-solve
 
     double m_LastMouseX = 0.0, m_LastMouseY = 0.0;

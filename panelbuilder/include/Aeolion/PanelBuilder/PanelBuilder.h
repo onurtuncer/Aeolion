@@ -429,6 +429,26 @@ struct LatticeOptions {
  */
 [[nodiscard]] Solver::SectionModel MakePropellerSectionModel(const Geometry::Propeller& prop);
 
+// Default shroud discretization: finer than the airframe duct's default --
+// an isolated propeller study affords it, and the lip-suction pressure
+// gradient the duct's thrust contribution lives in wants axial resolution.
+inline constexpr int DefaultShroudCircumferentialPanels = 24;
+inline constexpr int DefaultShroudAxialPanels = 6;
+
+/**
+ * A duct shroud for the isolated-propeller solve: the same closed annular
+ * ring BuildDuct() meshes from a contract (outer wall, bore wall, two
+ * caps; source panels, outward normals), but centered on the origin about
+ * +x with mid-chord at the rotor plane -- the axes BuildPropellerLattice
+ * poses the blades in. Feed it to the solve's `sources` and the blades
+ * see the duct's induced flow while the duct sees the propwash: the
+ * ducted-fan interaction, including the bore's lip-suction thrust.
+ */
+[[nodiscard]] std::vector<Lattice::SourcePanel> BuildPropellerDuct(
+    double innerRadius, double outerRadius, double chord,
+    int circumferentialPanels = DefaultShroudCircumferentialPanels,
+    int axialPanels = DefaultShroudAxialPanels);
+
 // --- the builder ------------------------------------------------------------
 /**
  * Builds the solver's lattice from a parsed geometry handoff, on the

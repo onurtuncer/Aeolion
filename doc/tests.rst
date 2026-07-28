@@ -175,6 +175,20 @@ plus the prescribed momentum-theory hover inflow (a purely axial wake
 destroys the lattice geometry at hover; a purely tangential one never
 leaves the disk plane).
 
+TestPropellerDuct
+-----------------
+
+The ducted-fan interaction (``PanelBuilder::BuildPropellerDuct`` sharing
+the viscous-coupled solve as its source body): the shroud mesh must
+enclose exactly its annular volume with outward normals
+(divergence-theorem closure, the TestDuctPanels style); the coupled solve
+must converge with the shroud present; axisymmetry must cancel the
+ducted system's in-plane forces; the duct must carry a nonzero share of
+the axial force through its pressure field; and the blade circulation
+must shift measurably when the shroud is present -- the two-way
+interaction being the point of panelling the duct at all. See
+theory.rst, "The ducted propeller".
+
 Fixture data
 ------------
 
