@@ -29,6 +29,7 @@
 #include "Aeolion/Geometry/DuctGeometry.h"
 #include "Aeolion/Geometry/MeshTopology.h"
 #include "Aeolion/Geometry/PlanformStation.h"
+#include "Aeolion/Geometry/Propeller.h"
 #include "Aeolion/Geometry/PropulsionSpec.h"
 #include "Aeolion/Geometry/WingPlacement.h"
 #include "Aeolion/Solver/WingParams.h"
@@ -679,13 +680,53 @@ inline constexpr double TrapezoidFitTolerance = 1e-9;
     return wing;
 }
 
-// The former bridge to the BEMT propeller solver (ToPropGeometry) moved
-// out with BEMT itself, which is now a separate project
-// (https://github.com/onurtuncer/BEMT) this repo does not depend on.
-// PropulsionSpec stays: the propulsion_bemt block is contract vocabulary,
-// stating radii as fractions of the disk radius because that is the form
-// the blade is designed in. Whatever propulsion method consumes it next
-// owns the conversion to its own working units.
+// --- contract-to-metric propeller conversion ---------------------------
+// PropulsionSpec states radii as fractions of the disk radius, because
+// that is the form the blade is designed in; Geometry::Propeller wants
+// metres, because that is the form every consumer works in. This is that
+// conversion, and it is the only place it should happen. (The BEMT solver
+// that used to sit behind this bridge is now a separate project this repo
+// does not depend on; the metric Propeller struct is what any in-repo
+// consumer -- the viewer today, a calculation method tomorrow -- poses
+// itself on.)
+//
+// The hub radius is the innermost blade station: the contract defines the
+// blade only outboard of it (see PropulsionSpec.h), so that station IS the
+// cutout rather than a point on a blade that continues inward.
+//
+// Blade count came into the schema at 1.4.0. Older contracts leave it zero,
+// so the caller must supply one; that is refused loudly here rather than
+// silently defaulting, because a wrong blade count changes everything a
+// consumer derives from the propeller and would still look plausible.
+inline constexpr int MinBladeCount = 2;
+
+/**
+ * Convert a contract's fraction-of-disk-radius blade stations to the metric
+ * Geometry::Propeller every consumer works with. bladeCountOverride is
+ * required for contracts older than schema 1.4.0, which carry no blade
+ * count of their own.
+ */
+[[nodiscard]] inline Propeller ToPropeller(const PropulsionSpec& spec, int bladeCountOverride = 0) {
+    if (spec.BladeStations.size() < MinBladeStations)
+        throw ContractError("propulsion_bemt: no blade stations to build a propeller from");
+    Detail::RequirePositive(spec.DiskRadius, "propulsion_bemt.disk_radius");
+
+    const int blades = (bladeCountOverride > 0) ? bladeCountOverride : spec.BladeCount;
+    if (blades < MinBladeCount)
+        throw ContractError(std::format(
+            "propulsion_bemt: blade count {} is unusable; this contract states none (schema < 1.4.0), "
+            "so the caller must supply one",
+            blades));
+
+    Propeller prop;
+    prop.BladeCount = blades;
+    prop.Radius = spec.DiskRadius;
+    prop.HubRadius = spec.BladeStations.front().RadiusFraction * spec.DiskRadius;
+    prop.Stations.reserve(spec.BladeStations.size());
+    for (const BladeStationSpec& station : spec.BladeStations)
+        prop.Stations.push_back({station.RadiusFraction * spec.DiskRadius, station.Chord, station.TwistDeg});
+    return prop;
+}
 
 /** Read and parse a handoff document from disk. */
 [[nodiscard]] inline HandoffContract LoadHandoff(const std::string& path) {

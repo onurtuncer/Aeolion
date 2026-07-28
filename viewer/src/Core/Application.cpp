@@ -28,6 +28,17 @@ constexpr int DefaultWindowWidth = 1600;
 constexpr int DefaultWindowHeight = 900;
 constexpr float RotateDegPerPixel = 0.25f;
 constexpr float CameraFrameDistanceFactor = 1.4f; // orbit distance = this * span when framing
+constexpr float PropFrameDistanceFactor = 3.2f;   // orbit distance = this * tip radius on the propeller screen
+
+// Built-in default propeller (used until a contract states propulsion_bemt):
+// a small 2-blade fixed-pitch prop with a conventional taper + washout.
+constexpr int DefaultPropBlades = 2;
+constexpr double DefaultPropRadius = 0.15;   // [m]
+constexpr double DefaultPropHubRadius = 0.02; // [m]
+constexpr int DefaultPropStations = 12;
+constexpr double DefaultPropGeometricPitch = 0.12; // [m], sets the twist(r) = atan(P / 2*pi*r) washout
+constexpr double DefaultPropRootChord = 0.032;     // [m]
+constexpr double DefaultPropTaper = 0.55;          // chord = root * (1 - taper * r/R)
 
 // Deflection slider range used when a control surface states no
 // deflection_limits_deg (schema < 1.4.0, where MinDeg == MaxDeg == 0 means
@@ -71,8 +82,10 @@ void ColorBar(double minValue, double maxValue) {
 
 } // namespace
 
-Application::Application(const std::string& geometryPath, const std::string& screenshotPath)
+Application::Application(const std::string& geometryPath, const std::string& screenshotPath,
+                         Screen initialScreen)
     : m_Window("Aeolion Viewer", DefaultWindowWidth, DefaultWindowHeight),
+      m_Screen(initialScreen),
       m_ScreenshotPath(screenshotPath) {
     // Sensible default study: a moderately swept, tapered, washed-out wing.
     // Ignored once LoadHandoff() below switches to handoff mode.
@@ -85,15 +98,23 @@ Application::Application(const std::string& geometryPath, const std::string& scr
     m_Wing.NPanelsSemiSpan = 16;
     m_Wing.CosineSpacing = true;
 
+    BuildDefaultPropeller();
+
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
     ImGui_ImplGlfw_InitForOpenGL(m_Window.Handle(), true);
     ImGui_ImplOpenGL3_Init("#version 330");
 
-    if (!geometryPath.empty()) LoadHandoff(geometryPath);
+    if (!geometryPath.empty()) {
+        LoadHandoff(geometryPath);
+        // Prefer the contract's own propeller over the built-in default when
+        // the handoff carries a propulsion_bemt block.
+        if (!m_Contract.Propulsion.BladeStations.empty()) AdoptContractPropeller();
+    }
 
-    FrameView();
+    if (m_Screen == Screen::Propeller) FrameProp();
+    else FrameView();
 }
 
 Application::~Application() {
@@ -199,6 +220,45 @@ void Application::Resolve() {
     m_Derivatives.reset(); // stale for the new geometry/condition; recompute on demand
 }
 
+void Application::BuildDefaultPropeller() {
+    m_Prop = Geometry::Propeller{};
+    m_Prop.BladeCount = DefaultPropBlades;
+    m_Prop.Radius = DefaultPropRadius;
+    m_Prop.HubRadius = DefaultPropHubRadius;
+    m_Prop.Stations.clear();
+    m_Prop.Stations.reserve(DefaultPropStations);
+    for (int i = 0; i < DefaultPropStations; ++i) {
+        const double frac = static_cast<double>(i) / (DefaultPropStations - 1); // 0..1
+        const double r = m_Prop.HubRadius + frac * (m_Prop.Radius - m_Prop.HubRadius);
+        const double rOverR = r / m_Prop.Radius;
+        const double chord = DefaultPropRootChord * (1.0 - DefaultPropTaper * rOverR);
+        // Ideal fixed-pitch twist: the chordline of every element subtends the
+        // same helix, so twist(r) = atan(pitch / (2*pi*r)) -- steep at the
+        // root, shallow at the tip.
+        const double twistDeg = Math::RadToDeg(std::atan2(DefaultPropGeometricPitch, 2.0 * std::numbers::pi * r));
+        m_Prop.Stations.push_back({r, chord, twistDeg});
+    }
+    m_PropFromContract = false;
+    m_PropDirty = true;
+}
+
+void Application::AdoptContractPropeller() {
+    try {
+        m_Prop = Geometry::ToPropeller(m_Contract.Propulsion);
+        m_PropFromContract = true;
+        m_PropDirty = true;
+    } catch (const std::exception& e) {
+        // Older contracts (schema < 1.4.0) state no blade count, so
+        // ToPropeller throws; keep the built-in default rather than fail.
+        AE_WARN("propeller: contract propulsion_bemt unusable ({}); keeping the default propeller", e.what());
+    }
+}
+
+void Application::FrameProp() {
+    m_Camera.SetTarget(glm::vec3(0.0f, 0.0f, 0.0f));
+    m_Camera.SetDistance(static_cast<float>(m_Prop.Radius) * PropFrameDistanceFactor);
+}
+
 void Application::HandleCameraInput() {
     GLFWwindow* window = m_Window.Handle();
     double mouseX = 0.0, mouseY = 0.0;
@@ -225,7 +285,32 @@ void Application::HandleCameraInput() {
         m_Camera.Zoom(static_cast<float>(scroll));
 }
 
+void Application::DrawScreenSelector() {
+    // A menu-bar toggle between the airframe and propeller screens. Switching
+    // reframes the camera, since the two subjects differ in scale by ~30x.
+    if (ImGui::BeginMainMenuBar()) {
+        ImGui::TextUnformatted("Screen:");
+        if (ImGui::MenuItem("Airframe", nullptr, m_Screen == Screen::Airframe) &&
+            m_Screen != Screen::Airframe) {
+            m_Screen = Screen::Airframe;
+            FrameView();
+        }
+        if (ImGui::MenuItem("Propeller", nullptr, m_Screen == Screen::Propeller) &&
+            m_Screen != Screen::Propeller) {
+            m_Screen = Screen::Propeller;
+            FrameProp();
+        }
+        ImGui::EndMainMenuBar();
+    }
+}
+
 void Application::DrawUI() {
+    DrawScreenSelector();
+    if (m_Screen == Screen::Propeller) {
+        DrawPropellerUI();
+        return;
+    }
+
     // --- controls -----------------------------------------------------------
     ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(360, 560), ImGuiCond_FirstUseEver);
@@ -378,6 +463,88 @@ void Application::DrawUI() {
     ImGui::End();
 }
 
+void Application::DrawPropellerUI() {
+    // --- controls -----------------------------------------------------------
+    ImGui::SetNextWindowPos(ImVec2(10, 28), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(360, 460), ImGuiCond_FirstUseEver);
+    ImGui::Begin("Propeller");
+
+    if (ImGui::CollapsingHeader("Geometry", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Text("source: %s", m_PropFromContract ? "handoff contract" : "built-in default");
+        ImGui::Text("radius: %.4f m   hub: %.4f m", m_Prop.Radius, m_Prop.HubRadius);
+        ImGui::Text("stations: %zu", m_Prop.Stations.size());
+        int blades = m_Prop.BladeCount;
+        if (ImGui::SliderInt("Blade count", &blades, 2, 6)) {
+            m_Prop.BladeCount = blades;
+            m_PropDirty = true;
+        }
+    }
+
+    if (ImGui::CollapsingHeader("Display", ImGuiTreeNodeFlags_DefaultOpen)) {
+        const char* fieldNames[] = {"Twist [deg]", "Chord [m]"};
+        int field = static_cast<int>(m_PropDisplay.Field);
+        if (ImGui::Combo("Field", &field, fieldNames, IM_ARRAYSIZE(fieldNames))) {
+            m_PropDisplay.Field = static_cast<PropFieldMode>(field);
+            m_PropDirty = true;
+        }
+        m_PropDirty |= ImGui::Checkbox("Blades", &m_PropDisplay.ShowBlades);
+        m_PropDirty |= ImGui::Checkbox("Hub", &m_PropDisplay.ShowHub);
+        m_PropDirty |= ImGui::Checkbox("Disk & axis", &m_PropDisplay.ShowDisk);
+        m_PropDirty |= ImGui::Checkbox("Wireframe", &m_PropDisplay.ShowWireframe);
+        if (ImGui::Button("Frame view")) FrameProp();
+    }
+    ImGui::End();
+
+    // --- geometry summary ---------------------------------------------------
+    // Purely geometric quantities; the aerodynamic operating point and its
+    // thrust/power/efficiency readouts left with the BEMT solver, and come
+    // back when this repo grows its own propeller calculation method.
+    ImGui::SetNextWindowPos(ImVec2(static_cast<float>(m_Window.FramebufferWidth()) - 370, 28),
+                            ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(360, 460), ImGuiCond_FirstUseEver);
+    ImGui::Begin("Propeller geometry");
+
+    const double diskArea = std::numbers::pi * m_Prop.Radius * m_Prop.Radius;
+    // Blade planform area by the trapezoid rule over the chord distribution;
+    // solidity is the classic sigma = N * bladeArea / diskArea.
+    double bladeArea = 0.0;
+    for (std::size_t i = 0; i + 1 < m_Prop.Stations.size(); ++i) {
+        const double dr = m_Prop.Stations[i + 1].r - m_Prop.Stations[i].r;
+        bladeArea += 0.5 * (m_Prop.Stations[i].Chord + m_Prop.Stations[i + 1].Chord) * dr;
+    }
+    if (ImGui::BeginTable("prop_geom", 2, ImGuiTableFlags_SizingStretchProp)) {
+        ReadoutRow("Blades", static_cast<double>(m_Prop.BladeCount), "%.0f");
+        ReadoutRow("Tip radius [m]", m_Prop.Radius, "%.4f");
+        ReadoutRow("Hub radius [m]", m_Prop.HubRadius, "%.4f");
+        ReadoutRow("Disk area [m^2]", diskArea, "%.4f");
+        if (diskArea > 0.0)
+            ReadoutRow("Solidity", m_Prop.BladeCount * bladeArea / diskArea, "%.4f");
+        if (!m_Prop.Stations.empty()) {
+            ReadoutRow("Root twist [deg]", m_Prop.Stations.front().TwistDeg, "%.2f");
+            ReadoutRow("Tip twist [deg]", m_Prop.Stations.back().TwistDeg, "%.2f");
+        }
+        ImGui::EndTable();
+    }
+
+    ImGui::SeparatorText("Field range");
+    ColorBar(m_Propeller.FieldMin(), m_Propeller.FieldMax());
+
+    ImGui::SeparatorText("Radial distribution (hub -> tip)");
+    if (!m_Prop.Stations.empty()) {
+        const std::size_t n = m_Prop.Stations.size();
+        std::vector<float> chord(n), twist(n);
+        for (std::size_t i = 0; i < n; ++i) {
+            chord[i] = static_cast<float>(m_Prop.Stations[i].Chord);
+            twist[i] = static_cast<float>(m_Prop.Stations[i].TwistDeg);
+        }
+        ImGui::PlotLines("##chord", chord.data(), static_cast<int>(n), 0, "chord [m]",
+                         FLT_MAX, FLT_MAX, ImVec2(-1, 80));
+        ImGui::PlotLines("##twist", twist.data(), static_cast<int>(n), 0, "twist [deg]",
+                         FLT_MAX, FLT_MAX, ImVec2(-1, 80));
+    }
+    ImGui::End();
+}
+
 void Application::Run(int maxFrames) {
     int frame = 0;
     while (!m_Window.ShouldClose()) {
@@ -396,6 +563,10 @@ void Application::Run(int maxFrames) {
             m_Lattice.Update(m_Panels, m_Result, m_Display, span, m_SourcePanels);
             m_DisplayDirty = false;
         }
+        if (m_PropDirty) {
+            m_Propeller.Update(m_Prop, m_PropDisplay);
+            m_PropDirty = false;
+        }
 
         int width = m_Window.FramebufferWidth();
         int height = m_Window.FramebufferHeight();
@@ -406,7 +577,10 @@ void Application::Run(int maxFrames) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glEnable(GL_DEPTH_TEST);
 
-        m_Lattice.Draw(m_Camera.ViewProjection());
+        if (m_Screen == Screen::Propeller)
+            m_Propeller.Draw(m_Camera.ViewProjection());
+        else
+            m_Lattice.Draw(m_Camera.ViewProjection());
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();

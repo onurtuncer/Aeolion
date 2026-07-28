@@ -50,10 +50,12 @@ it is a momentum method, not a panel method, so it lives at
 [onurtuncer/BEMT](https://github.com/onurtuncer/BEMT) (plain `BEMT::`
 namespace, its own `Vec3`) and Aeolion carries **no dependency on it** —
 propeller work here will use separate calculation methods. Do not
-reintroduce BEMT sources, a BEMT `FetchContent`, or BEMT-typed bridges;
-the contract's `propulsion_bemt` block (`Geometry::PropulsionSpec`)
-stays as schema vocabulary for whatever propulsion method consumes it
-next.
+reintroduce BEMT sources, a BEMT `FetchContent`, or BEMT-typed bridges.
+Propeller vocabulary is Aeolion's own: the contract's `propulsion_bemt`
+block parses into `Geometry::PropulsionSpec` (fraction-of-disk radii),
+and `Geometry::ToPropeller` converts it to the metric
+`Geometry::Propeller` every in-repo consumer (the viewer's propeller
+screen today, a calculation method tomorrow) poses itself on.
 
 Prefer STATIC over SHARED for Aeolion's own libraries — a DLL would need
 `__declspec` plumbing on every exported symbol for no ABI-stability or

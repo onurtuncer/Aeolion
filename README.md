@@ -84,7 +84,9 @@ viewer/                          aeolion_viewer (exe, GL application)
   include/Renderer/      Shader, Buffer, VertexArray, OrbitCamera (GL, no aero)
   include/Visualization/ LatticeRenderer (Solver::Panel + Lattice::SourcePanel
                           -> GPU meshes, colored by a chosen scalar field) +
-                          ColorMap (viridis)
+                          PropellerRenderer (Geometry::Propeller -> twisted
+                          blade surfaces, hub, disk; geometry only, no solve)
+                          + ColorMap (viridis)
 
 include/Aeolion/     header-only library (the rest of the toolkit)
                      one folder per namespace; each holds its module header
@@ -109,6 +111,9 @@ include/Aeolion/     header-only library (the rest of the toolkit)
     ControlSurface.h     hinged surface + which body it binds to
     MeshTopology.h       requested lattice discretization
     PropulsionSpec.h     propeller blade geometry (the propulsion_bemt block)
+    Propeller.h          the metric propeller consumers work with (blade
+                          count, radii, chord/twist stations) -- built from
+                          PropulsionSpec by HandoffContract.h's ToPropeller()
     BodyGeometry.h       fuselage body of revolution (axial x radius
                           stations)
     DuctGeometry.h        the duct: a single annular ring (chord, inner/outer
@@ -126,6 +131,8 @@ tests/                 the core header-only library's OWN tests, wired into
                        ctest the same way as every other module's tests/
   TestHandoffContract.cpp       JSON handoff parsing, contract invariants,
                                  surface binding, trapezoid reduction
+  TestPropeller.cpp             contract-to-metric propeller conversion
+                                 (r/R -> metres, refusals)
   Data/                  one real geometry handoff JSON per schema revision
                          tested against -- shared by every module's tests,
                          not just this folder's
@@ -200,6 +207,7 @@ parametric-wing demo.
 ./aeolion_viewer                              # interactive, parametric wing demo
 ./aeolion_viewer --geometry geometry.json     # load a real handoff instead (wing + fuselage)
 ./aeolion_viewer --frames N                   # render N frames then exit (smoke test)
+./aeolion_viewer --screen propeller           # open on the propeller screen
 ./aeolion_viewer --geometry geometry.json --screenshot out.ppm --frames 5
                                                # headless-ish capture: PPM screenshot, then exit
 ```
@@ -208,6 +216,15 @@ In handoff mode the Planform sliders are replaced by a read-only geometry
 summary (design ID, panel counts, trim eta); the Freestream and Display
 controls still apply. Screenshot output is a binary PPM (P6); convert with
 any image tool (e.g. `Pillow`: `Image.open("out.ppm").save("out.png")`).
+
+A menu-bar toggle (or `--screen propeller`) switches to the **propeller
+screen**: the handoff's `propulsion_bemt` blade geometry (or a built-in
+default prop) drawn as twisted, tapered blade surfaces colored by twist or
+chord, with hub, actuator-disk circle, rotation axis, and radial
+chord/twist plots plus disk area and solidity readouts. It is a geometry
+view -- the aerodynamic solve behind it left with the external BEMT
+project, and the screen is the seam where this repo's own propeller
+calculation method will plug in.
 
 ## Validation
 

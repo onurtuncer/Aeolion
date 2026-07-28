@@ -22,6 +22,7 @@ add_executable(aeolion_viewer
     src/Renderer/Shader.cpp
     src/Renderer/VertexArray.cpp
     src/Visualization/LatticeRenderer.cpp
+    src/Visualization/PropellerRenderer.cpp
 )
 
 target_include_directories(aeolion_viewer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
