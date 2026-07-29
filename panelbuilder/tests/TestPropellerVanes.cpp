@@ -98,11 +98,14 @@ VaneRun Solve(const std::vector<double>& deflectionsDeg) {
                                             Solver::AnalyticSectionModel{}, {}, duct);
 
     const auto surfaces = MakeVaneSet();
+    const auto slipstream = Solver::SlipstreamField(run.Rotor, 0.0, Rho, duct);
+    // Vane wakes leave along the local mean flow (at hover, the slipstream
+    // itself): helically with the swirl, not hardcoded downstream.
+    const auto localFlow = [&](const Math::Vec3& point) { return slipstream(point); };
     const auto vanePanels = PanelBuilder::BuildDuctVanes(surfaces, shroudInner, 0.5 * shroudChord,
-                                                         shroudChord, deflectionsDeg);
+                                                         shroudChord, deflectionsDeg, localFlow);
     const auto vaneStrips =
         PanelBuilder::BuildDuctVaneStrips(surfaces, shroudInner, shroudChord, deflectionsDeg);
-    const auto slipstream = Solver::SlipstreamField(run.Rotor, 0.0, Rho, duct);
 
     Solver::FreestreamConditions vaneFc = fc;
     vaneFc.p = 0.0; // static frame: the vanes do not rotate
@@ -137,7 +140,22 @@ void TestMeshAndAlignment() {
     CHECK(strips.size() == panels.size(), "vane strips must align one-to-one with vane panels");
     for (const auto& panel : panels) {
         CHECK(std::fabs(panel.Normal.Norm() - 1.0) < 1e-9, "vane normals must be unit");
-        CHECK(panel.TrailDirA.x == 1.0, "vane wakes must trail downstream");
+        CHECK(panel.TrailDirA.x == 1.0, "with no stated flow, vane wakes default to downstream");
+    }
+
+    // With a local flow stated, the wake must leave along it -- in a
+    // swirling jet that means helically, with real tangential components,
+    // not hardcoded axial.
+    const auto swirling = [](const Math::Vec3& point) {
+        const Math::Vec3 that = Math::Cross(Math::Vec3(1.0, 0.0, 0.0), point).Normalized();
+        return Math::Vec3(5.0, 0.0, 0.0) + that * 3.0;
+    };
+    const auto swirled = PanelBuilder::BuildDuctVanes(surfaces, 0.156, 0.0375, 0.075, {}, swirling);
+    for (const auto& panel : swirled) {
+        CHECK(std::fabs(panel.TrailDirA.Norm() - 1.0) < 1e-9, "flow-aligned legs must be unit");
+        const double tangential = std::hypot(panel.TrailDirA.y, panel.TrailDirA.z);
+        CHECK(tangential > 0.3, "in a swirling jet the wake must leave with the swirl");
+        CHECK(panel.TrailDirA.x > 0.0, "and still convect downstream");
     }
 }
 

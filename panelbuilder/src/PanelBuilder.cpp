@@ -1017,10 +1017,21 @@ std::vector<Solver::StripSection> BuildPropellerStrips(const Geometry::Propeller
 std::vector<Lattice::Panel> BuildDuctVanes(const std::vector<Geometry::ControlSurface>& surfaces,
                                            double exitRadius, double exitX, double ductChord,
                                            const std::vector<double>& deflectionsDeg,
+                                           const std::function<Math::Vec3(const Math::Vec3&)>& localFlow,
                                            int radialPanels, int chordwisePanels) {
     std::vector<Lattice::Panel> panels;
     if (exitRadius <= 0.0 || ductChord <= 0.0 || radialPanels < 1 || chordwisePanels < 1)
         return panels;
+
+    // Trailing-leg direction at a wake-root point: the local mean flow
+    // when the caller states one (in a propwash that includes the swirl,
+    // so the wake leaves helically, not axially -- the blade lattice's own
+    // convention), straight downstream otherwise.
+    const auto trailDirection = [&](const Math::Vec3& point) {
+        if (!localFlow) return Math::Vec3(1.0, 0.0, 0.0);
+        const Math::Vec3 unit = localFlow(point).Normalized();
+        return (unit.Norm() > Math::Half) ? unit : Math::Vec3(1.0, 0.0, 0.0);
+    };
 
     int vaneIndex = -1;
     for (std::size_t s = 0; s < surfaces.size(); ++s) {
@@ -1066,10 +1077,8 @@ std::vector<Lattice::Panel> BuildDuctVanes(const std::vector<Geometry::ControlSu
                 panel.A = platePoint(rIn, fBound);
                 panel.B = platePoint(rOut, fBound);
                 panel.ControlPoint = (platePoint(rIn, fControl) + platePoint(rOut, fControl)) * Math::Half;
-                // The jet convects the wake downstream regardless of the
-                // plate's deflection.
-                panel.TrailDirA = Math::Vec3(1.0, 0.0, 0.0);
-                panel.TrailDirB = Math::Vec3(1.0, 0.0, 0.0);
+                panel.TrailDirA = trailDirection(panel.A);
+                panel.TrailDirB = trailDirection(panel.B);
 
                 const Math::Vec3 corner00 = platePoint(rIn, f0);
                 const Math::Vec3 corner01 = platePoint(rIn, f1);

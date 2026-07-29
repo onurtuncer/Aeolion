@@ -629,9 +629,11 @@ the prescribed swirl is not DEPLETED by the vanes' own deswirling -- a
 high-solidity vane set can therefore recover more torque than the jet
 carries, which a coupled or momentum-budgeted model would forbid;
 unsteady blade-passing loads on the vanes are absent by construction
-(the field is the time mean); and the vanes' wakes trail straight
-downstream regardless of the jet's contraction. ``TestPropellerVanes``
-pins the physics: exact cruciform symmetry
+(the field is the time mean); and while each vane's trailing legs leave
+along the LOCAL mean flow at their roots -- helically, with the swirl,
+the blade lattice's own wake convention -- they remain straight lines,
+and the vane's own turning of the jet is not folded into its wake
+direction. ``TestPropellerVanes`` pins the physics: exact cruciform symmetry
 undeflected, counter-torque opposing the rotor's, opposite commands
 pulling the control wrench opposite ways about the (swirl-biased)
 neutral, a side-force differential that is a real fraction of the

@@ -362,14 +362,19 @@ void Application::ResolveProp() {
     m_PropVaneStrips.clear();
     m_PropVaneCoupled = {};
     if (m_PropVanesEnabled && m_PropUseViscous && m_UseHandoff) {
+        const auto slipstream =
+            Solver::SlipstreamField(m_PropCoupled, m_PropSpeed, m_PropDensity, m_PropDuctPanels);
+        // The vanes' wakes leave along the local mean flow -- freestream
+        // plus slipstream, swirl included -- not hardcoded downstream.
+        const auto localFlow = [&](const Math::Vec3& point) {
+            return Math::Vec3(m_PropSpeed, 0.0, 0.0) + slipstream(point);
+        };
         m_PropVanePanels = PanelBuilder::BuildDuctVanes(m_Contract.ControlSurfaces, shroudInner,
                                                         0.5 * shroudChord, shroudChord,
-                                                        m_VaneDeflectionDeg);
+                                                        m_VaneDeflectionDeg, localFlow);
         if (!m_PropVanePanels.empty()) {
             m_PropVaneStrips = PanelBuilder::BuildDuctVaneStrips(
                 m_Contract.ControlSurfaces, shroudInner, shroudChord, m_VaneDeflectionDeg);
-            const auto slipstream =
-                Solver::SlipstreamField(m_PropCoupled, m_PropSpeed, m_PropDensity, m_PropDuctPanels);
 
             Solver::FreestreamConditions vaneFc = fc;
             vaneFc.p = 0.0; // the vanes do not rotate: static frame, slipstream via the field

@@ -476,10 +476,19 @@ inline constexpr int DefaultVaneChordwisePanels = 1;
  * ductChord the chord its ChordFraction scales. `deflectionsDeg` aligns
  * with `surfaces` (extra/missing entries read as zero). Panels are named
  * "vane<index>" per source surface, since contract vane names collide.
+ *
+ * `localFlow`, when provided, is the local MEAN flow (freestream plus
+ * slipstream) at a point; each trailing leg then leaves along it at the
+ * leg's own root -- in a propwash that means helically, with the swirl,
+ * exactly the convention the blade lattice uses for its own wake. Empty
+ * means straight downstream (+x). Two approximations remain either way,
+ * stated in theory.rst: the legs are straight lines, and the vane's OWN
+ * turning of the jet is not folded into its wake direction.
  */
 [[nodiscard]] std::vector<Lattice::Panel> BuildDuctVanes(
     const std::vector<Geometry::ControlSurface>& surfaces, double exitRadius, double exitX,
     double ductChord, const std::vector<double>& deflectionsDeg,
+    const std::function<Math::Vec3(const Math::Vec3&)>& localFlow = {},
     int radialPanels = DefaultVaneRadialPanels, int chordwisePanels = DefaultVaneChordwisePanels);
 
 /**
