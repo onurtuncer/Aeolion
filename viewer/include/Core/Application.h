@@ -133,6 +133,19 @@ private:
     std::vector<Lattice::SourcePanel> m_PropDuctPanels; // shroud source mesh (empty = no duct)
     Solver::SolveResult m_PropSolve;
     Solver::ViscousCoupledResult m_PropCoupled; // populated when m_PropUseViscous
+
+    // --- duct-jet vanes -----------------------------------------------------
+    // The contract's downstream control vanes, solved in the STATIC frame
+    // (they do not rotate with the blades) against the time-mean slipstream
+    // reconstructed from the converged rotor+duct loading by annular
+    // momentum theory (Solver::SlipstreamField), through the same viscous
+    // sectional feedback as the blades. Their forces complete the
+    // propulsive wrench.
+    std::vector<Solver::Panel> m_PropVanePanels;
+    std::vector<Solver::StripSection> m_PropVaneStrips;
+    Solver::ViscousCoupledResult m_PropVaneCoupled;
+    LatticeRenderer m_PropVaneLattice;
+    std::vector<double> m_VaneDeflectionDeg; // aligned with m_Contract.ControlSurfaces
     LatticeRenderer m_PropLattice;              // the solved blade lattice, field-colored
     LatticeDisplayOptions m_PropLatticeDisplay; // grid/axes off; see constructor
     PropellerDisplayOptions m_PropDisplay;      // hub/disk/axis decoration (geometry ribbon off)
@@ -143,6 +156,7 @@ private:
     bool m_PropUseViscous = true;    // Level-2 sectional lift feedback vs bare inviscid lattice
     int m_PropSectionModel = 1;      // 0 = analytic polar, 1 = transpiration-coupled boundary layer
     bool m_PropDuctEnabled = true;   // shroud the prop (contract duct shape if stated, default otherwise)
+    bool m_PropVanesEnabled = true;  // solve the contract's duct-jet vanes in the mean slipstream
     bool m_PropDirty = true;         // geometry/operating point/display changed -> remesh + re-solve
 
     double m_LastMouseX = 0.0, m_LastMouseY = 0.0;

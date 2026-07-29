@@ -449,6 +449,49 @@ inline constexpr int DefaultShroudAxialPanels = 6;
     int circumferentialPanels = DefaultShroudCircumferentialPanels,
     int axialPanels = DefaultShroudAxialPanels);
 
+// --- duct-jet control vanes -------------------------------------------------
+// The contract's DuctJet control surfaces are all-moving plates in the jet
+// at the duct exit (see Geometry/ControlSurface.h): each spans RADIALLY
+// along its hinge axis from EtaStart to EtaEnd of the exit radius, with a
+// chord of ChordFraction times the duct chord running downstream from the
+// hinge line at the exit plane. Deflection rotates the whole plate about
+// its hinge line by the right-hand rule about the (frame-converted) axis.
+//
+// The vanes are meshed as ordinary lifting surfaces -- radial strips of
+// horseshoe panels, wake trailing downstream (+x). One Weissinger row per
+// strip by default, so the mesh aligns one-to-one with BuildDuctVaneStrips
+// and the vanes run through the SAME viscous sectional-feedback solve as
+// the blades -- which is what keeps their control authority honest: an
+// inviscid vane lattice knows no stall, and the contract's 20-degree
+// stops sit well past a low-Reynolds flat plate's. (Multi-row meshes are
+// geometrically fine here -- static frame, axial chord and wake -- but
+// only for inviscid-only use.)
+inline constexpr int DefaultVaneRadialPanels = 5;
+inline constexpr int DefaultVaneChordwisePanels = 1;
+
+/**
+ * Mesh every DuctJet-bound surface in `surfaces` (others are skipped) as
+ * lifting-surface panels at the duct exit: exitX is the exit plane's
+ * axial station, exitRadius the bore radius its eta band scales,
+ * ductChord the chord its ChordFraction scales. `deflectionsDeg` aligns
+ * with `surfaces` (extra/missing entries read as zero). Panels are named
+ * "vane<index>" per source surface, since contract vane names collide.
+ */
+[[nodiscard]] std::vector<Lattice::Panel> BuildDuctVanes(
+    const std::vector<Geometry::ControlSurface>& surfaces, double exitRadius, double exitX,
+    double ductChord, const std::vector<double>& deflectionsDeg,
+    int radialPanels = DefaultVaneRadialPanels, int chordwisePanels = DefaultVaneChordwisePanels);
+
+/**
+ * The per-strip section frames for the vanes' viscous solve, aligned
+ * one-to-one with BuildDuctVanes' single-row panels: deflected chord and
+ * lift directions, chord, radial width, and a flat plate's zero
+ * zero-lift angle.
+ */
+[[nodiscard]] std::vector<Solver::StripSection> BuildDuctVaneStrips(
+    const std::vector<Geometry::ControlSurface>& surfaces, double exitRadius, double ductChord,
+    const std::vector<double>& deflectionsDeg, int radialPanels = DefaultVaneRadialPanels);
+
 // --- the builder ------------------------------------------------------------
 /**
  * Builds the solver's lattice from a parsed geometry handoff, on the

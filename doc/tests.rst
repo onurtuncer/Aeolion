@@ -189,6 +189,20 @@ must shift measurably when the shroud is present -- the two-way
 interaction being the point of panelling the duct at all. See
 theory.rst, "The ducted propeller".
 
+TestPropellerVanes
+------------------
+
+The downstream duct-jet vanes (``PanelBuilder::BuildDuctVanes`` +
+``Solver::SlipstreamField`` + the static-frame viscous-coupled solve):
+mesh/strip alignment; exact cruciform symmetry undeflected (side forces
+and control moments at machine zero); undeflected counter-torque
+opposing the rotor's :math:`M_x` (the vanes recover swirl); opposite
+commands pulling the side force and control moment opposite ways about
+the swirl-biased neutral, with a differential that is a real fraction
+of the thrust -- the hover control authority thrust-vectoring vanes
+exist for; and drag cost for commanding against the swirl. See
+theory.rst, "Downstream control vanes and the propulsive wrench".
+
 Fixture data
 ------------
 

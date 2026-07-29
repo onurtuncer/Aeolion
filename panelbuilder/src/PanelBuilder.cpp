@@ -1014,6 +1014,119 @@ std::vector<Solver::StripSection> BuildPropellerStrips(const Geometry::Propeller
     return strips;
 }
 
+std::vector<Lattice::Panel> BuildDuctVanes(const std::vector<Geometry::ControlSurface>& surfaces,
+                                           double exitRadius, double exitX, double ductChord,
+                                           const std::vector<double>& deflectionsDeg,
+                                           int radialPanels, int chordwisePanels) {
+    std::vector<Lattice::Panel> panels;
+    if (exitRadius <= 0.0 || ductChord <= 0.0 || radialPanels < 1 || chordwisePanels < 1)
+        return panels;
+
+    int vaneIndex = -1;
+    for (std::size_t s = 0; s < surfaces.size(); ++s) {
+        const Geometry::ControlSurface& surface = surfaces[s];
+        if (surface.Binding != Geometry::ControlSurfaceBinding::DuctJet) continue;
+        ++vaneIndex;
+
+        // Contract frame (x-forward/z-down) to solver frame (x-aft/z-up):
+        // the 180-degree rotation about y (see ControlSurface.h). The hinge
+        // axis doubles as the vane's radial span direction.
+        const Math::Vec3 span =
+            Math::Vec3(-surface.HingeAxis.x, surface.HingeAxis.y, -surface.HingeAxis.z).Normalized();
+        if (span.Norm() < Math::Half) continue; // degenerate stated axis
+
+        const double r0 = surface.EtaStart * exitRadius;
+        const double r1 = surface.EtaEnd * exitRadius;
+        const double chord = surface.ChordFraction * ductChord;
+        if (r1 <= r0 || chord <= 0.0) continue;
+
+        const double deflection =
+            (s < deflectionsDeg.size()) ? Math::DegToRad(deflectionsDeg[s]) : 0.0;
+        const Math::Vec3 hingePoint(exitX, 0.0, 0.0); // the hinge line: span direction through here
+
+        // Undeflected plate point at radius r, chord fraction f (0 = the
+        // hinge at the exit plane, 1 = trailing edge); then the deflection
+        // rotation about the hinge line, right-hand rule about `span`.
+        const auto platePoint = [&](double r, double f) {
+            const Math::Vec3 flat = span * r + Math::Vec3(exitX + f * chord, 0.0, 0.0);
+            return hingePoint + Math::RotateAboutAxis(flat - hingePoint, span, deflection);
+        };
+
+        const std::string name = "vane" + std::to_string(vaneIndex);
+        for (int k = 0; k < radialPanels; ++k) {
+            const double rIn = r0 + (r1 - r0) * k / radialPanels;
+            const double rOut = r0 + (r1 - r0) * (k + 1) / radialPanels;
+            for (int m = 0; m < chordwisePanels; ++m) {
+                const double f0 = static_cast<double>(m) / chordwisePanels;
+                const double f1 = static_cast<double>(m + 1) / chordwisePanels;
+                const double fBound = (m + Math::QuarterChord) / chordwisePanels;
+                const double fControl = (m + Math::ThreeQuarterChord) / chordwisePanels;
+
+                Lattice::Panel panel;
+                panel.A = platePoint(rIn, fBound);
+                panel.B = platePoint(rOut, fBound);
+                panel.ControlPoint = (platePoint(rIn, fControl) + platePoint(rOut, fControl)) * Math::Half;
+                // The jet convects the wake downstream regardless of the
+                // plate's deflection.
+                panel.TrailDirA = Math::Vec3(1.0, 0.0, 0.0);
+                panel.TrailDirB = Math::Vec3(1.0, 0.0, 0.0);
+
+                const Math::Vec3 corner00 = platePoint(rIn, f0);
+                const Math::Vec3 corner01 = platePoint(rIn, f1);
+                const Math::Vec3 corner10 = platePoint(rOut, f0);
+                const Math::Vec3 corner11 = platePoint(rOut, f1);
+                panel.Normal = Math::Cross(corner10 - corner00, corner01 - corner00).Normalized();
+                // Planar quad: half the cross product of its diagonals.
+                panel.Area = Math::Cross(corner11 - corner00, corner10 - corner01).Norm() * Math::Half;
+                panel.PlanformArea = panel.Area;
+                panel.SpanwiseWidth = rOut - rIn;
+                panel.Surface = name;
+                panel.StripIndex = vaneIndex * radialPanels + k;
+                panels.push_back(panel);
+            }
+        }
+    }
+    return panels;
+}
+
+std::vector<Solver::StripSection> BuildDuctVaneStrips(
+    const std::vector<Geometry::ControlSurface>& surfaces, double exitRadius, double ductChord,
+    const std::vector<double>& deflectionsDeg, int radialPanels) {
+    std::vector<Solver::StripSection> strips;
+    if (exitRadius <= 0.0 || ductChord <= 0.0 || radialPanels < 1) return strips;
+
+    for (std::size_t s = 0; s < surfaces.size(); ++s) {
+        const Geometry::ControlSurface& surface = surfaces[s];
+        if (surface.Binding != Geometry::ControlSurfaceBinding::DuctJet) continue;
+
+        const Math::Vec3 span =
+            Math::Vec3(-surface.HingeAxis.x, surface.HingeAxis.y, -surface.HingeAxis.z).Normalized();
+        if (span.Norm() < Math::Half) continue;
+
+        const double r0 = surface.EtaStart * exitRadius;
+        const double r1 = surface.EtaEnd * exitRadius;
+        const double chord = surface.ChordFraction * ductChord;
+        if (r1 <= r0 || chord <= 0.0) continue;
+
+        const double deflection =
+            (s < deflectionsDeg.size()) ? Math::DegToRad(deflectionsDeg[s]) : 0.0;
+        const Math::Vec3 chordDir =
+            Math::RotateAboutAxis(Math::Vec3(1.0, 0.0, 0.0), span, deflection);
+
+        for (int k = 0; k < radialPanels; ++k) {
+            Solver::StripSection strip;
+            strip.ChordDir = chordDir;
+            strip.LiftDir = Math::Cross(chordDir, span); // unit: the pair is orthonormal
+            strip.Chord = chord;
+            strip.Width = (r1 - r0) / radialPanels;
+            strip.Eta = 0.0;      // flat plates carry no section shape to key by
+            strip.Alpha0Deg = 0.0;
+            strips.push_back(strip);
+        }
+    }
+    return strips;
+}
+
 Solver::SectionModel MakePropellerSectionModel(const Geometry::Propeller& prop) {
     Solver::BoundaryLayerSectionModel model;
     if (!prop.Sections.empty()) {

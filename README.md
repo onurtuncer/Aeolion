@@ -20,6 +20,15 @@ source panels -- all one coupled potential-flow solve). See
 [doc/theory.rst](doc/theory.rst) for the math and
 [doc/_static/viewer_airframe.png](doc/_static/viewer_airframe.png) full-size.*
 
+![aeolion_viewer's propeller screen: the ducted fan with the contract's four duct-jet vanes, blades and vanes colored by their solved circulation, propulsive-wrench readouts live](doc/_static/viewer_propeller.png)
+
+*The propeller screen on the same handoff: the rotating-frame blade
+lattice inside the contract's duct ring, the four duct-jet vanes solved
+in the reconstructed slipstream, and the full propulsive wrench (net
+thrust, side forces, control moments, swirl counter-torque) reported
+live. See "Downstream control vanes" in
+[doc/theory.rst](doc/theory.rst).*
+
 ## Layout
 
 Every compiled/header-only module is a top-level component that owns its
@@ -90,6 +99,10 @@ panelbuilder/                    aeolion_panelbuilder (STATIC library)
     TestPropellerDuct.cpp         ducted-fan interaction: shroud closure,
                                    coupled convergence, duct thrust share,
                                    blade loading shifted by the shroud
+    TestPropellerVanes.cpp        duct-jet vanes in the reconstructed
+                                   slipstream: cruciform symmetry, swirl
+                                   counter-torque, control wrench about the
+                                   swirl-biased neutral, drag cost
 
 viewer/                          aeolion_viewer (exe, GL application)
                                  interactive OpenGL visualizer, not part of
@@ -264,7 +277,14 @@ saturated polar beyond it. The full numerical method is documented in
 default-proportioned one): the duct's source panels share the coupled
 solve, the blades see its induced flow, the duct sees the propwash, and
 its pressure integral reports the lip-suction thrust share -- +16% total
-at hover for a snug shroud on the test blade. That caps the stalled root loading and adds real
+at hover for a snug shroud on the test blade. The contract's **duct-jet
+vanes** complete the propulsive wrench: meshed at the duct exit with
+per-vane deflection sliders, solved in the static frame against the
+time-mean slipstream reconstructed from the converged rotor loading by
+annular momentum theory (`Solver::SlipstreamField`), through the same
+viscous section models as the blades -- side forces and control moments
+real at zero airspeed, swirl recovered as counter-torque, stall-limited
+authority near the stops. That caps the stalled root loading and adds real
 **profile torque**, reported separately from the induced part.
 Remaining caveats: quasi-steady prescribed straight-line wake (no
 roll-up or contraction), single chordwise row (integrated loads, not

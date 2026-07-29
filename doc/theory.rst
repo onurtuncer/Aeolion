@@ -501,6 +501,124 @@ the interaction: convergence, axisymmetric force cancellation, a
 nonzero duct share of the axial force, and a measurable shift of the
 blade circulation when the shroud is present.
 
+.. figure:: _static/ducted_vs_open.png
+   :width: 100%
+   :alt: Static thrust vs rpm, ducted vs open propeller, with the duct's
+         own contribution shown separately.
+
+   The static comparison on the tip-loaded reference blade: the snug
+   shroud lifts total thrust ~15% at every rpm at essentially unchanged
+   shaft torque, the duct's own share being its bore-lip suction.
+
+Downstream control vanes and the propulsive wrench
+--------------------------------------------------
+
+.. figure:: _static/viewer_propeller.png
+   :width: 100%
+   :alt: The viewer's propeller screen: ducted fan with four duct-jet
+         vanes, blades and vanes colored by solved circulation, and the
+         propulsive-wrench readouts.
+
+   The viewer's propeller screen on the 1.8.0 handoff: the
+   rotating-frame blade lattice inside the contract's duct ring, the
+   four duct-jet vanes solved in the reconstructed slipstream, and the
+   propulsive wrench reported live.
+
+The contract's ``DuctJet`` control surfaces are all-moving plates in the
+jet at the duct exit (``Geometry/ControlSurface.h``): each spans
+RADIALLY along its hinge axis from ``EtaStart`` to ``EtaEnd`` of the
+exit radius, with a chord of ``ChordFraction`` times the duct chord
+running downstream from the hinge line, and deflects as a rigid rotation
+about that hinge (right-hand rule about the frame-converted axis).
+``PanelBuilder::BuildDuctVanes`` meshes them as ordinary lifting
+surfaces -- one Weissinger row per radial strip, wake trailing
+downstream -- and ``BuildDuctVaneStrips`` supplies the aligned section
+frames (deflected chord and lift directions; a flat plate's zero
+zero-lift angle).
+
+**The frame split.** The blades solve in the rotating frame; the vanes
+are inertial-fixed and cannot share it (a non-axisymmetric surface
+swept backwards through a rotating frame has a time-dependent boundary
+condition -- the axisymmetric duct escapes this, the vanes do not). The
+coupling is therefore partitioned: the rotor+duct solve converges
+first, and the vanes are solved separately in the STATIC frame
+(:math:`p = 0`), reading the rotor system only through a prescribed
+slipstream field in the external-velocity hook. One-way: the vanes'
+influence back on the rotor is not represented.
+
+**The slipstream the vanes see** (``Solver::SlipstreamField``) is the
+time-mean propwash reconstructed from the CONVERGED radial load
+distribution by annular momentum theory -- not by averaging the
+lattice's own induced field. The distinction was found the hard way:
+the quasi-steady solve's prescribed straight trailing legs never wrap
+into the downstream helical wake cylinder, so their Biot-Savart field
+carries almost no axial jet a few chord lengths aft of the disk (vanes
+placed there saw swirl but no jet). Momentum theory applied per annulus
+to the loads the lattice actually solved is consistent by construction:
+
+.. math::
+
+   dT = 4\pi r \rho\, (V_{ax} + v_i)\, v_i \, dr
+   \;\Rightarrow\;
+   v_i = \tfrac{1}{2}\Bigl(-V_{ax} + \sqrt{V_{ax}^2 + \tfrac{dT}{\pi r \rho\, dr}}\Bigr),
+   \qquad
+   dQ = 4\pi r^3 \rho\, (V_{ax} + v_i)\, w_i \, dr \;\Rightarrow\; w_i,
+
+with :math:`dT, dQ` summed over the blades from the per-strip forces
+(``StripState::Force``). Downstream of the disk the axial component
+develops from its at-disk value toward the classical far-wake doubling
+over about a diameter; the swirl :math:`w_i` is carried unchanged --
+the same engineering shape the retired BEMT project's slipstream used,
+now posed on solved lattice loads. The duct's induced flow is added
+exactly (a static axisymmetric source body needs no averaging).
+
+**The vane solve** is the same viscous sectional-feedback solve as the
+blades (``SolveViscousCoupled`` with the slipstream as its external
+field), with the transpiration-coupled boundary-layer section model by
+default. This is what keeps the control predictions honest, in three
+regimes: within about 9 degrees of the section's zero-lift line the
+boundary layer is genuinely SOLVED, separation onset included (laminar
+separation and the turbulent :math:`c_f \to 0` ramp move with the
+pressure distribution and feed back through :math:`\delta^*`); from 9
+to 13 degrees the solution blends into the saturated polar; beyond it
+stall is MODELLED -- tanh saturation, then the flat-plate deep-stall
+decay :math:`c_l \to c_n \cos\alpha`, :math:`c_n \sim 1.8\sin\alpha`
+past 25 degrees -- because no integral method marches through strong
+separation. At hover the swirl alone puts the vanes near 16-20 degrees
+of local incidence before any command, so their hover aerodynamics are
+separation-dominated by nature; commands toward the local flow
+direction re-attach them, and in forward flight the swirl angle shrinks
+and the vanes operate in the genuinely-solved regime.
+
+**The propulsive wrench** is the sum of the two solves' near-field
+loads about the same reference point (the hub): rotor circulatory +
+profile forces, duct surface pressure, vane circulatory + profile
+forces. The vanes' drag debits the net thrust; their side forces and
+:math:`M_y/M_z` are the control authority (real at zero airspeed --
+the propwash is their dynamic pressure); and even undeflected they
+recover part of the swirl as counter-torque, :math:`M_x` opposing the
+rotor's. Two numerical points, both load-bearing: the coupling residual
+is weighted by local dynamic pressure (a :math:`c_l` mismatch on a
+strip in dead air -- a vane tip in the jet's shear edge sits near 85
+degrees of incidence at 7% of the jet's :math:`q` -- is the same
+fraction of a FORCE mismatch, and must not hold the solve hostage), and
+the deep-stall decay above is what makes such strips satisfiable at
+all.
+
+Stated limitations of the partitioned scheme: the coupling is one-way
+(the vanes do not thin the jet or unload the rotor), and in particular
+the prescribed swirl is not DEPLETED by the vanes' own deswirling -- a
+high-solidity vane set can therefore recover more torque than the jet
+carries, which a coupled or momentum-budgeted model would forbid;
+unsteady blade-passing loads on the vanes are absent by construction
+(the field is the time mean); and the vanes' wakes trail straight
+downstream regardless of the jet's contraction. ``TestPropellerVanes``
+pins the physics: exact cruciform symmetry
+undeflected, counter-torque opposing the rotor's, opposite commands
+pulling the control wrench opposite ways about the (swirl-biased)
+neutral, a side-force differential that is a real fraction of the
+thrust, and drag cost for commanding against the swirl.
+
 Level 3: the transpiration-coupled boundary-layer section solver
 ----------------------------------------------------------------
 
