@@ -47,6 +47,15 @@ inline constexpr double MinSwirlFactor = 0.05;          // the budget never quit
 using VaneBuilder = std::function<std::pair<std::vector<Panel>, std::vector<StripSection>>(
     const std::function<Vec3(const Vec3&)>& localFlow)>;
 
+/**
+ * The rotor side of the self-consistent wake: given the previous pass's
+ * solved axial inflow vi(r) (empty on the seed pass), return the blade
+ * panels with their trailing-leg pitch posed on it
+ * (BuildPropellerLattice's axialInflow parameter).
+ */
+using RotorBuilder =
+    std::function<std::vector<Panel>(const std::function<double(double)>& axialInflow)>;
+
 struct RotorVaneOptions {
     int MaxOuterIterations = DefaultOuterIterations;
     double Tolerance = DefaultOuterTolerance;
@@ -60,6 +69,7 @@ struct RotorVaneOptions {
 struct RotorVaneResult {
     ViscousCoupledResult Rotor;  ///< Converged rotor(+duct) state of the final pass.
     ViscousCoupledResult Vanes;  ///< Converged vane state of the final pass.
+    std::vector<Panel> BladePanels;           ///< The final pass's blade mesh (self-consistent wake).
     std::vector<Panel> VanePanels;            ///< The final pass's vane mesh...
     std::vector<StripSection> VaneStrips;     ///< ...and its aligned strips.
     double SwirlFactor = 1.0;    ///< The budget's converged swirl scale.
@@ -81,62 +91,82 @@ struct RotorVaneResult {
     const SectionModel& rotorModel, const std::vector<SourcePanel>& ductSources,
     const VaneBuilder& vaneBuilder, const FreestreamConditions& vaneFc,
     const ReferenceGeometry& vaneRef, double vaneTrail, const SectionModel& vaneModel,
-    double axialSpeed, double rho, const RotorVaneOptions& options = {}) {
+    double axialSpeed, double rho, const RotorVaneOptions& options = {},
+    const RotorBuilder& rotorBuilder = nullptr) {
     RotorVaneResult res;
+    res.BladePanels = bladePanels;
 
     std::vector<double> feedbackGamma; // under-relaxed vane circulation driving the rotor
+    std::function<double(double)> solvedInflow = {}; // vi(r) of the previous pass; empty = seed
     double previousThrust = 0.0, previousMx = 0.0;
 
     for (res.OuterIterations = 1; res.OuterIterations <= options.MaxOuterIterations;
          ++res.OuterIterations) {
+        // 0. The self-consistent wake: remesh the blades with the previous
+        // pass's solved vi(r) setting each trailing leg's helix pitch (the
+        // seed pass uses the builder's fixed-lambda floor).
+        if (rotorBuilder) res.BladePanels = rotorBuilder(solvedInflow);
+
         // 1. Rotor + duct, feeling the vanes' azimuthal-mean field.
         std::function<Vec3(const Vec3&)> vaneField = nullptr;
         if (!res.VanePanels.empty() && !feedbackGamma.empty())
             vaneField = MeanInducedField(res.VanePanels, feedbackGamma, vaneTrail,
                                          options.AzimuthSamples);
-        res.Rotor = SolveViscousCoupled(bladePanels, bladeStrips, fc, ref, trail, rotorModel,
+        res.Rotor = SolveViscousCoupled(res.BladePanels, bladeStrips, fc, ref, trail, rotorModel,
                                         options.RotorOptions, ductSources, vaneField);
 
-        // 2. The slipstream from the fresh loading, under the current budget.
+        // 2. Band the fresh loading: the slipstream for the vanes, the
+        // inflow for the next pass's wake pitch.
+        solvedInflow = AxialInflowFromBands(ComputeSlipstreamBands(res.Rotor, axialSpeed, rho));
         const auto slipstream =
             SlipstreamField(res.Rotor, axialSpeed, rho, ductSources, res.SwirlFactor);
         const auto localFlow = [&](const Vec3& point) {
             return Vec3(axialSpeed, 0.0, 0.0) + slipstream(point);
         };
 
-        // 3. Remesh and re-solve the vanes in it.
-        auto [vanePanels, vaneStrips] = vaneBuilder(localFlow);
-        res.VanePanels = std::move(vanePanels);
-        res.VaneStrips = std::move(vaneStrips);
-        if (res.VanePanels.empty()) {
-            res.Converged = true; // nothing to couple
-            break;
+        // 3. Remesh and re-solve the vanes in it (when there are vanes at
+        // all -- the driver also serves the vane-less self-consistent-wake
+        // iteration).
+        double gammaShift = 0.0, gammaScale = 1.0;
+        double jetTorque = 0.0, recovered = 0.0;
+        if (vaneBuilder) {
+            auto [vanePanels, vaneStrips] = vaneBuilder(localFlow);
+            res.VanePanels = std::move(vanePanels);
+            res.VaneStrips = std::move(vaneStrips);
         }
-        res.Vanes = SolveViscousCoupled(res.VanePanels, res.VaneStrips, vaneFc, vaneRef, vaneTrail,
-                                        vaneModel, options.VaneOptions, {}, slipstream);
-
-        // 4. The swirl budget: the jet's angular-momentum flux is the shaft
-        // torque (blade circulatory + profile moments; the duct's pressure
-        // moment is axisymmetrically ~zero and carries no swirl).
-        const double jetTorque = -(res.Rotor.InducedMoment.x + res.Rotor.ProfileMoment.x);
-        const double recovered = res.Vanes.Base.Mx;
-        if (options.SwirlBudget && jetTorque > Math::Tiny && recovered > jetTorque)
-            res.SwirlFactor =
-                std::max(res.SwirlFactor * jetTorque / recovered, MinSwirlFactor);
-
-        // 5. Relax the feedback circulation; measure the outer residual.
-        const std::vector<double>& fresh = res.Vanes.Base.gamma;
-        double gammaShift = 0.0, gammaScale = Math::Tiny;
-        if (feedbackGamma.size() != fresh.size()) {
-            feedbackGamma = fresh;
-            gammaShift = 1.0; // first sight of this mesh topology: not converged yet
-            gammaScale = 1.0;
+        if (!vaneBuilder || res.VanePanels.empty()) {
+            if (!rotorBuilder) {
+                res.Converged = true; // nothing at all to iterate
+                break;
+            }
         } else {
-            for (std::size_t i = 0; i < fresh.size(); ++i) {
-                gammaShift = std::max(gammaShift, std::fabs(fresh[i] - feedbackGamma[i]));
-                gammaScale = std::max(gammaScale, std::fabs(fresh[i]));
-                feedbackGamma[i] =
-                    (1.0 - options.Relaxation) * feedbackGamma[i] + options.Relaxation * fresh[i];
+            res.Vanes = SolveViscousCoupled(res.VanePanels, res.VaneStrips, vaneFc, vaneRef,
+                                            vaneTrail, vaneModel, options.VaneOptions, {},
+                                            slipstream);
+
+            // 4. The swirl budget: the jet's angular-momentum flux is the
+            // shaft torque (blade circulatory + profile moments; the duct's
+            // pressure moment is axisymmetrically ~zero, carrying no swirl).
+            jetTorque = -(res.Rotor.InducedMoment.x + res.Rotor.ProfileMoment.x);
+            recovered = res.Vanes.Base.Mx;
+            if (options.SwirlBudget && jetTorque > Math::Tiny && recovered > jetTorque)
+                res.SwirlFactor =
+                    std::max(res.SwirlFactor * jetTorque / recovered, MinSwirlFactor);
+
+            // 5. Relax the feedback circulation.
+            const std::vector<double>& fresh = res.Vanes.Base.gamma;
+            gammaScale = Math::Tiny;
+            if (feedbackGamma.size() != fresh.size()) {
+                feedbackGamma = fresh;
+                gammaShift = 1.0; // first sight of this mesh topology: not converged yet
+                gammaScale = 1.0;
+            } else {
+                for (std::size_t i = 0; i < fresh.size(); ++i) {
+                    gammaShift = std::max(gammaShift, std::fabs(fresh[i] - feedbackGamma[i]));
+                    gammaScale = std::max(gammaScale, std::fabs(fresh[i]));
+                    feedbackGamma[i] = (1.0 - options.Relaxation) * feedbackGamma[i] +
+                                       options.Relaxation * fresh[i];
+                }
             }
         }
 

@@ -24,9 +24,18 @@ namespace Aeolion::PanelBuilder {
 
 // Momentum-theory hover inflow ratio, lambda = v_i / (Omega * R): the
 // prescribed-wake axial-convection floor BuildPropellerLattice() gives its
-// trailing legs at low advance speed (see the comment at its use).
-// lambda = sqrt(C_T / 2) ~ 0.07 for ordinary propeller disk loadings.
+// trailing legs at low advance speed WHEN NO SOLVED INFLOW IS STATED --
+// the seed of the self-consistent wake iteration (see the comment at its
+// use). lambda = sqrt(C_T / 2) ~ 0.07 for ordinary propeller disk
+// loadings.
 inline constexpr double HoverInflowRatio = 0.07;
+
+// With a solved vi(r) stated, unloaded stations (hub cutout edge, an
+// unloaded tip) would get near-zero axial convection and put their legs
+// back in the disk plane -- the pathology the floor exists to prevent.
+// Their wake in reality convects with the neighboring flow, so the axial
+// component is floored at this fraction of the blade's own maximum.
+inline constexpr double MinWakeAxialFraction = 0.25;
 
 LatticeBuilder::LatticeBuilder(Geometry::HandoffContract contract, LatticeOptions options)
     : m_Contract(std::move(contract)), m_Options(options) {
@@ -820,7 +829,8 @@ int ApplyBaseEfflux(std::vector<Lattice::SourcePanel>& body,
 }
 
 std::vector<Lattice::Panel> BuildPropellerLattice(const Geometry::Propeller& prop,
-                                                  double axialSpeed, double omega) {
+                                                  double axialSpeed, double omega,
+                                                  const std::function<double(double)>& axialInflow) {
     std::vector<Lattice::Panel> panels;
     const std::size_t ns = prop.Stations.size();
     if (ns < 2 || prop.BladeCount < 1) return panels;
@@ -833,20 +843,35 @@ std::vector<Lattice::Panel> BuildPropellerLattice(const Geometry::Propeller& pro
     // velocity (axial inflow plus the -Omega x r sweep the rotation term
     // hands the blade), i.e. the linearized helix -- see the header note.
     //
-    // The axial part is floored at the momentum-theory hover inflow,
-    // lambda ~ 0.07 (v_i = lambda * Omega * R, the classic value for
-    // ordinary propeller disk loadings, since C_T ~ 0.01 gives
-    // lambda = sqrt(C_T/2) ~ 0.07). At exact hover the kinematic axial
-    // inflow is zero and a straight leg would otherwise lie IN the rotor
-    // plane forever, slicing past every strip outboard of its root (a
-    // straight tangent line leaves its circle and crosses all larger
+    // The axial part: with a SOLVED vi(r) stated, each leg convects at
+    // axialSpeed + vi at its own radius -- the self-consistent,
+    // radially-varying wake pitch -- floored per MinWakeAxialFraction.
+    // Without one (the seed pass), the momentum-theory hover-inflow floor
+    // applies, lambda ~ 0.07 (v_i = lambda * Omega * R, the classic value
+    // for ordinary disk loadings, since C_T ~ 0.01 gives
+    // lambda = sqrt(C_T/2) ~ 0.07). Either way the axial part must not
+    // vanish: at exact hover a straight leg would otherwise lie IN the
+    // rotor plane forever, slicing past every strip outboard of its root
+    // (a straight tangent line leaves its circle and crosses all larger
     // radii) -- a real wake convects out of the disk plane, and without
-    // this floor the solve is pathologically sensitive to the station
+    // the floor the solve is pathologically sensitive to the station
     // layout.
+    double inflowPeak = 0.0;
+    if (axialInflow)
+        for (const Geometry::BladeStation& station : prop.Stations)
+            inflowPeak = std::max(inflowPeak, axialInflow(station.r));
     const double hoverInflow = HoverInflowRatio * std::fabs(omega) * prop.Radius;
     auto trailDirection = [&](const Math::Vec3& point) {
+        double axialComponent;
+        if (axialInflow) {
+            const double r = std::hypot(point.y, point.z);
+            axialComponent = std::max(axialSpeed + axialInflow(r),
+                                      MinWakeAxialFraction * (axialSpeed + inflowPeak));
+        } else {
+            axialComponent = std::max(axialSpeed, hoverInflow);
+        }
         const Math::Vec3 sweep = Math::Cross(axial * omega, point);
-        const Math::Vec3 local = axial * std::max(axialSpeed, hoverInflow) - sweep;
+        const Math::Vec3 local = axial * axialComponent - sweep;
         const Math::Vec3 unit = local.Normalized();
         return (unit.Norm() > 0.5) ? unit : axial; // no flow at all -> fall back to axial
     };

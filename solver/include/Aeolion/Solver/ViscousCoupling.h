@@ -591,25 +591,35 @@ struct ViscousCoupledResult {
 // represented.
 inline constexpr double SlipstreamFarWakeDiameters = 2.0; // development length = this * radius
 
-/** Time-mean slipstream of a converged rotor(+duct) solve, for downstream
- * static surfaces. axialSpeed is the freestream through the disk.
- * swirlFactor scales the tangential component -- the two-way coupling's
- * momentum-budget handle (see theory.rst, "Two-way rotor-vane
- * coupling"). */
-[[nodiscard]] inline std::function<Vec3(const Vec3&)> SlipstreamField(
-    const ViscousCoupledResult& rotor, double axialSpeed, double rho,
-    std::vector<SourcePanel> sources = {}, double swirlFactor = 1.0) {
-    // Collapse the strips (all blades) into radial bands of dT and dQ.
-    struct Band {
-        double r = 0.0, width = 0.0, dT = 0.0, dQ = 0.0, vi = 0.0, wi = 0.0;
-    };
-    std::vector<Band> bands;
+/** One annular band of the collapsed rotor loading, with its
+ * momentum-theory induced velocities. */
+struct SlipstreamBand {
+    double r = 0.0, width = 0.0, dT = 0.0, dQ = 0.0, vi = 0.0, wi = 0.0;
+};
+
+/** The banded rotor loading (sorted by radius) and its tip extent. */
+struct SlipstreamBands {
+    std::vector<SlipstreamBand> Bands;
+    double TipRadius = 0.0;
+};
+
+/**
+ * Collapse a converged rotor solve's strips (all blades) into radial
+ * bands of dT and dQ, and solve each band's annular momentum balance for
+ * the induced velocities vi (axial) and wi (swirl). This is the shared
+ * core of the slipstream reconstruction AND the self-consistent wake
+ * pitch (theory.rst).
+ */
+[[nodiscard]] inline SlipstreamBands ComputeSlipstreamBands(const ViscousCoupledResult& rotor,
+                                                            double axialSpeed, double rho) {
+    SlipstreamBands result;
+    std::vector<SlipstreamBand>& bands = result.Bands;
     for (const StripState& strip : rotor.Strips) {
         const double r = std::hypot(strip.Mid.y, strip.Mid.z);
         const double thrust = -strip.Force.x;
         const double torque = -(strip.Mid.y * strip.Force.z - strip.Mid.z * strip.Force.y);
         bool merged = false;
-        for (Band& band : bands) {
+        for (SlipstreamBand& band : bands) {
             if (std::fabs(band.r - r) < 1e-9) {
                 band.dT += thrust;
                 band.dQ += torque;
@@ -619,10 +629,10 @@ inline constexpr double SlipstreamFarWakeDiameters = 2.0; // development length 
         }
         if (!merged) bands.push_back({r, 0.0, thrust, torque, 0.0, 0.0});
     }
-    std::sort(bands.begin(), bands.end(), [](const Band& a, const Band& b) { return a.r < b.r; });
-    double tipRadius = 0.0;
+    std::sort(bands.begin(), bands.end(),
+              [](const SlipstreamBand& a, const SlipstreamBand& b) { return a.r < b.r; });
     for (std::size_t i = 0; i < bands.size(); ++i) {
-        Band& band = bands[i];
+        SlipstreamBand& band = bands[i];
         const double below = (i > 0) ? bands[i - 1].r : band.r;
         const double above = (i + 1 < bands.size()) ? bands[i + 1].r : band.r;
         band.width = std::max(Math::Half * (above - below) + ((i == 0 || i + 1 == bands.size())
@@ -635,11 +645,44 @@ inline constexpr double SlipstreamFarWakeDiameters = 2.0; // development length 
         const double denomQ = 4.0 * std::numbers::pi * band.r * band.r * band.r * rho *
                               std::max(axialSpeed + band.vi, 1e-6) * band.width;
         band.wi = band.dQ / std::max(denomQ, Math::Tiny);
-        tipRadius = std::max(tipRadius, band.r + Math::Half * band.width);
+        result.TipRadius = std::max(result.TipRadius, band.r + Math::Half * band.width);
     }
+    return result;
+}
 
-    return [bands = std::move(bands), sources = std::move(sources), sigma = rotor.sigma, tipRadius,
-            swirlFactor](const Vec3& point) {
+/**
+ * The axial induced-velocity distribution vi(r) of banded rotor loading,
+ * as a callable (linear interpolation between band centers, zero outside
+ * the disk) -- the wake-pitch input BuildPropellerLattice consumes for
+ * the self-consistent wake.
+ */
+[[nodiscard]] inline std::function<double(double)> AxialInflowFromBands(SlipstreamBands bands) {
+    return [bands = std::move(bands)](double r) {
+        const std::vector<SlipstreamBand>& b = bands.Bands;
+        if (b.empty() || r > bands.TipRadius || r < 0.0) return 0.0;
+        std::size_t hi = 0;
+        while (hi + 1 < b.size() && b[hi + 1].r < r) ++hi;
+        const std::size_t lo = hi;
+        if (hi + 1 < b.size()) ++hi;
+        const double span = b[hi].r - b[lo].r;
+        const double t = (span > Math::Tiny) ? std::clamp((r - b[lo].r) / span, 0.0, 1.0) : 0.0;
+        return b[lo].vi + t * (b[hi].vi - b[lo].vi);
+    };
+}
+
+/** Time-mean slipstream of a converged rotor(+duct) solve, for downstream
+ * static surfaces. axialSpeed is the freestream through the disk.
+ * swirlFactor scales the tangential component -- the two-way coupling's
+ * momentum-budget handle (see theory.rst, "Two-way rotor-vane
+ * coupling"). */
+[[nodiscard]] inline std::function<Vec3(const Vec3&)> SlipstreamField(
+    const ViscousCoupledResult& rotor, double axialSpeed, double rho,
+    std::vector<SourcePanel> sources = {}, double swirlFactor = 1.0) {
+    SlipstreamBands banded = ComputeSlipstreamBands(rotor, axialSpeed, rho);
+    const double tipRadius = banded.TipRadius;
+
+    return [bands = std::move(banded.Bands), sources = std::move(sources), sigma = rotor.sigma,
+            tipRadius, swirlFactor](const Vec3& point) {
         Vec3 v(0, 0, 0);
         // The duct's induced flow, exact (static, axisymmetric body).
         for (std::size_t m = 0; m < sources.size() && m < sigma.size(); ++m)

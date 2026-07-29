@@ -404,9 +404,16 @@ struct LatticeOptions {
  * inflow along +x, omega [rad/s] about +x). Solve with
  * FreestreamConditions{ Vinf = axialSpeed, p = omega, RefPoint = hub
  * center (the origin) }.
+ *
+ * `axialInflow`, when provided, is the SOLVED induced axial velocity
+ * vi(r) (Solver::AxialInflowFromBands over a converged result): each
+ * trailing leg's helix pitch then uses its own radius's convection,
+ * axialSpeed + vi(r), instead of the fixed momentum-theory floor -- the
+ * self-consistent wake (theory.rst). Empty means the fixed-lambda seed.
  */
-[[nodiscard]] std::vector<Lattice::Panel> BuildPropellerLattice(const Geometry::Propeller& prop,
-                                                                double axialSpeed, double omega);
+[[nodiscard]] std::vector<Lattice::Panel> BuildPropellerLattice(
+    const Geometry::Propeller& prop, double axialSpeed, double omega,
+    const std::function<double(double radius)>& axialInflow = {});
 
 /**
  * The per-strip section frames and section data for the Level-2 viscous

@@ -352,9 +352,17 @@ loads directly: thrust :math:`= -F_x` (upstream), shaft torque
 :math:`= -M_x` (opposing :math:`+\Omega`), power :math:`= Q\,\Omega`.
 
 Each trailing leg leaves along the **local relative wind** at its root
-(the tangential sweep plus the axial inflow, floored at the
-momentum-theory hover inflow :math:`\lambda \approx 0.07\,\Omega R`) --
-a prescribed linearized helix. Both parts are load-bearing, not
+(the tangential sweep plus the axial inflow) -- a prescribed linearized
+helix whose pitch is made **self-consistent with the solved loading**:
+the outer driver's ``RotorBuilder`` hook rebuilds the lattice each pass
+with the previous pass's banded induced velocity :math:`v_i(r)` (the
+same annular momentum balance the slipstream uses) setting each leg's
+axial convection at its own radius, iterated to a fixed point -- on the
+reference blade, two passes, with the converged pitch varying threefold
+across the span and steepening with disk loading. The fixed
+momentum-theory floor :math:`\lambda \approx 0.07\,\Omega R` remains
+only as the SEED pass's pitch (and as the per-leg lower bound protecting
+unloaded stations from in-plane legs). Both parts are load-bearing, not
 cosmetic: at hover the local wind is almost purely tangential, and
 trailing the wake axially instead leaves the legs near-perpendicular to
 the flow, destroying the quarter/three-quarter chord lattice geometry

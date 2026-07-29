@@ -338,12 +338,28 @@ void Application::ResolveProp() {
         // vanes), so the standalone solve is skipped.
         m_PropStrips = PanelBuilder::BuildPropellerStrips(m_Prop);
         if (!useTwoWay) {
+            // Self-consistent wake without vanes: the same outer driver,
+            // vane side empty, remeshing the blades each pass with the
+            // solved vi(r) as the trailing-leg pitch.
             const Solver::SectionModel model =
                 (m_PropSectionModel == 1) ? PanelBuilder::MakePropellerSectionModel(m_Prop)
                                           : Solver::SectionModel(Solver::AnalyticSectionModel{});
-            m_PropCoupled = Solver::SolveViscousCoupled(m_PropPanels, m_PropStrips, fc, ref, trail,
-                                                        model, {}, m_PropDuctPanels);
+            const Solver::RotorBuilder rotorBuilder =
+                [&](const std::function<double(double)>& inflow) {
+                    return PanelBuilder::BuildPropellerLattice(m_Prop, m_PropSpeed, omega, inflow);
+                };
+            Solver::RotorVaneOptions wakeOptions;
+            wakeOptions.RotorOptions.Tolerance = (m_PropSectionModel == 1) ? 2e-2 : 1e-3;
+            wakeOptions.RotorOptions.MaxIterations = 400;
+            const Solver::RotorVaneResult joint = Solver::SolveRotorVaneCoupled(
+                m_PropPanels, m_PropStrips, fc, ref, trail, model, m_PropDuctPanels, nullptr, fc,
+                ref, trail, model, m_PropSpeed, m_PropDensity, wakeOptions, rotorBuilder);
+            m_PropCoupled = joint.Rotor;
             m_PropSolve = m_PropCoupled.Base;
+            m_PropPanels = joint.BladePanels;
+            m_PropOuterIterations = joint.OuterIterations;
+            m_PropOuterResidual = joint.Residual;
+            m_PropOuterConverged = joint.Converged;
         }
     } else {
         if (m_PropDuctPanels.empty()) {
@@ -406,12 +422,17 @@ void Application::ResolveProp() {
         coupled.RotorOptions.MaxIterations = 400;
         coupled.VaneOptions = coupled.RotorOptions;
 
+        const Solver::RotorBuilder rotorBuilder = [&](const std::function<double(double)>& inflow) {
+            return PanelBuilder::BuildPropellerLattice(m_Prop, m_PropSpeed, omega, inflow);
+        };
         Solver::RotorVaneResult joint = Solver::SolveRotorVaneCoupled(
             m_PropPanels, m_PropStrips, fc, ref, trail, rotorModel, m_PropDuctPanels, vaneBuilder,
-            vaneFc, vaneRef, vaneTrail, vaneModel, m_PropSpeed, m_PropDensity, coupled);
+            vaneFc, vaneRef, vaneTrail, vaneModel, m_PropSpeed, m_PropDensity, coupled,
+            rotorBuilder);
 
         m_PropCoupled = joint.Rotor; // the rotor state that FELT the vanes
         m_PropSolve = m_PropCoupled.Base;
+        m_PropPanels = joint.BladePanels; // the self-consistent-wake blade mesh
         m_PropVaneCoupled = joint.Vanes;
         m_PropVanePanels = std::move(joint.VanePanels);
         m_PropVaneStrips = std::move(joint.VaneStrips);
@@ -803,6 +824,8 @@ void Application::DrawPropellerUI() {
                     m_PropCoupled.MaxResidual);
         if (!m_PropCoupled.Converged)
             ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "coupling did not converge");
+        if (m_PropOuterIterations > 0)
+            ImGui::Text("self-consistent wake: %d outer pass(es)", m_PropOuterIterations);
     }
 
     ImGui::SeparatorText("Geometry");

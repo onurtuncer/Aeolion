@@ -6,10 +6,16 @@
 
 ## Scope
 
-Describe Aeolion itself: 3D VLM + BEMT + component-buildup drag toolkit,
-JSON-contract geometry input, validation methodology (thin-wing theory,
-Oswald efficiency, FOM<=1/eta<=1 physical bounds). Draws directly on the
-README's "Validation" and "Known limitations" sections.
+Describe Aeolion itself: 3D VLM + source-panel toolkit with the
+rotating-frame propeller lattice, leveled viscous coupling
+(analytic polar through the transpiration-coupled boundary-layer
+section solver), the two-way ducted-fan solve, the rotor-vane
+coupling with its swirl momentum budget, the component-buildup drag
+estimate, and JSON-contract geometry input. Validation methodology
+(thin-wing theory, Oswald efficiency, FOM<=1/eta<=1 physical bounds)
+draws directly on the README's "Validation" and "Known limitations"
+sections. BEMT is *not* part of Aeolion (excised into its own
+repository at fb6d007) and must not appear in the paper.
 
 ## Style files
 

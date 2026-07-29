@@ -1,8 +1,7 @@
-% References cited in paper.md, standard BibTeX format.
-% JOSS's build pipeline (pandoc + citeproc) reads this directly --
-% no LaTeX class/bibliography style is involved for JOSS.
+% References for paper.tex (BibTeX, styled by style/aiaa.bst).
+% Keys kept identical to ../joss/paper.bib where the sources overlap.
 % NOTE: verify every field (esp. DOIs and report numbers) against the
-% actual sources before submission.
+% actual sources before submission; TODO entries below need filling.
 
 @book{katzPlotkin2001,
   author    = {Katz, Joseph and Plotkin, Allen},
@@ -22,16 +21,6 @@
   pages   = {142--158},
   year    = {2008},
   doi     = {10.2514/1.29958}
-}
-
-@book{lapack1999,
-  author    = {Anderson, E. and Bai, Z. and Bischof, C. and Blackford, S. and Demmel, J. and Dongarra, J. and Du Croz, J. and Greenbaum, A. and Hammarling, S. and McKenney, A. and Sorensen, D.},
-  title     = {{LAPACK} Users' Guide},
-  edition   = {3},
-  publisher = {Society for Industrial and Applied Mathematics},
-  address   = {Philadelphia, PA},
-  year      = {1999},
-  doi       = {10.1137/1.9780898719604}
 }
 
 @article{anderson1965,
@@ -73,23 +62,21 @@
 }
 
 @misc{avl,
-  author = {Drela, Mark and Youngren, Harold},
-  title  = {{AVL} -- Athena Vortex Lattice},
-  url    = {https://web.mit.edu/drela/Public/web/avl/},
-  note   = {Software, accessed 2026}
+  author       = {Drela, Mark and Youngren, Harold},
+  title        = {{AVL} -- Athena Vortex Lattice},
+  howpublished = {\url{https://web.mit.edu/drela/Public/web/avl/}},
+  note         = {Software, accessed 2026}
 }
 
 @misc{xrotor,
-  author = {Drela, Mark and Youngren, Harold},
-  title  = {{XROTOR}: An Interactive Program for the Design and Analysis of Ducted and Free-Tip Propellers and Windmills},
-  url    = {https://web.mit.edu/drela/Public/web/xrotor/},
-  note   = {Software, accessed 2026}
+  author       = {Drela, Mark and Youngren, Harold},
+  title        = {{XROTOR}: An Interactive Program for the Design and Analysis of Ducted and Free-Tip Propellers and Windmills},
+  howpublished = {\url{https://web.mit.edu/drela/Public/web/xrotor/}},
+  note         = {Software, accessed 2026}
 }
 
-@inproceedings{openvsp2022,
-  author    = {McDonald, Robert A. and Gloudemans, James R.},
-  title     = {Open Vehicle Sketch Pad: An Open Source Parametric Geometry and Analysis Tool for Conceptual Aircraft Design},
-  booktitle = {AIAA SciTech 2022 Forum},
-  year      = {2022},
-  doi       = {10.2514/6.2022-0004}
-}
+% TODO: introduction literature review --
+%  - ducted-fan tail-sitter / jet-vane control references
+%  - swirl-recovery vane literature
+%  - actuator-disk-in-VLM propeller-airframe interaction references
+%  - the Aeolion JOSS paper, once it has a DOI
