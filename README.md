@@ -113,6 +113,9 @@ panelbuilder/                    aeolion_panelbuilder (STATIC library)
                                    convergence, momentum budget binding,
                                    rotor feeling vane blockage, control
                                    response surviving
+    TestSelfConsistentWake.cpp    wake pitch iterated to a fixed point of
+                                   the solved loading: radial variation,
+                                   steepening with disk loading
 
 viewer/                          aeolion_viewer (exe, GL application)
                                  interactive OpenGL visualizer, not part of
@@ -263,9 +266,11 @@ the airframe -- the rotation enters as the solver's roll rate about +x, so
 every blade panel sees its true `Omega x r` onset flow. The blades sit on
 their CST camber surface when the contract states blade sections (schema
 >= 1.8.0), with chords wrapped on their radius cylinders, one Weissinger
-row per radial strip, and trailing legs along the local relative wind
-plus the momentum-theory hover inflow (a prescribed linearized helical
-wake). The solved lattice renders colored by circulation / sectional cl /
+row per radial strip, and trailing legs along the local relative wind --
+a prescribed linearized helix whose pitch is iterated to
+self-consistency with the solved radial loading (the momentum-theory
+inflow constant survives only as the seed).
+The solved lattice renders colored by circulation / sectional cl /
 lift per span, with RPM, axial-speed, and density controls and
 dimensional thrust / torque / power / disk-loading readouts. On top of
 the lattice sits **viscous coupling** (`Solver::SolveViscousCoupled`, on

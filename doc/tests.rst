@@ -216,6 +216,17 @@ cruciform symmetry surviving; and the control response surviving the
 budget, now nearly antisymmetric about neutral since the budgeted swirl
 bias is small. See theory.rst, "Two-way rotor-vane coupling".
 
+TestSelfConsistentWake
+----------------------
+
+The Level-A wake (theory.rst, the self-consistent trailing-leg pitch):
+the outer iteration converges; the converged pitch is a FIXED POINT of
+the loading (rebuilding the lattice from the final solved
+:math:`v_i(r)` reproduces the final mesh's trailing legs); the pitch
+varies radially with the loading rather than following one global
+constant; and a heavier disk loading steepens the wake helix -- the load
+dependence a hardcoded :math:`\lambda` could not express.
+
 Fixture data
 ------------
 

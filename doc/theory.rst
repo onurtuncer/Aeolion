@@ -379,9 +379,10 @@ it -- the mean-line slope at the 3/4-chord boundary condition -- but
 resolving chordwise loading distributions awaits a vortex-ring wake or
 finite-core filaments.
 
-Limitations of the bare lattice, stated plainly: quasi-steady with a
-prescribed straight-line wake -- no roll-up or contraction, so
-heavily-loaded static (hover) thrust reads optimistic; torque and power
+Limitations of the bare lattice, stated plainly: quasi-steady with
+straight-line wake legs (self-consistent in pitch, but with no
+curvature, roll-up, or contraction), so heavily-loaded static (hover)
+thrust reads optimistic; torque and power
 are induced only (potential flow carries no profile drag); one chordwise
 row (integrated loads, not pressure distributions); thin camber surface,
 no thickness; and no stall. ``TestPropellerLattice`` pins the physics
