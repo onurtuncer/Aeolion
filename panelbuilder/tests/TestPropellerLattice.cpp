@@ -77,15 +77,34 @@ void TestLatticeStructure() {
         CHECK(rB <= prop.Radius + 1e-12, "no panel may reach outboard of the tip");
         CHECK(std::fabs(panel.TrailDirA.Norm() - 1.0) < 1e-9, "trailing-leg directions must be unit");
         // At hover the local wind is dominantly tangential: the leg must
-        // leave along it (opposing the blade's own +Omega sweep), with the
+        // LEAVE along it (opposing the blade's own +Omega sweep), with the
         // prescribed momentum-theory inflow as its axial part -- never
-        // purely axial, and never lying in the disk plane.
+        // purely axial, and never lying in the disk plane. With the curved
+        // near wake, "leave" means the first helix segment.
         const Solver::Vec3 sweepA = Solver::Cross(Solver::Vec3(Omega, 0.0, 0.0), panel.A);
         const Solver::Vec3 expectedA =
             (Solver::Vec3(0.07 * Omega * prop.Radius, 0.0, 0.0) - sweepA).Normalized();
-        CHECK(Solver::Dot(panel.TrailDirA, expectedA) > 0.999,
-              "each trailing leg must follow the local relative wind plus prescribed inflow");
-        CHECK(panel.TrailDirA.x > 0.0, "the wake must convect out of the disk plane (+x)");
+        CHECK(!panel.TrailPathA.empty(), "the propeller wake must carry its curved near path");
+        // The first path point is a CHORD of the helix over one 30-degree
+        // arc step, which trails the root tangent by about half the step
+        // (cos 15 deg ~ 0.966) plus the contraction's radial pull.
+        const Solver::Vec3 departure = (panel.TrailPathA.front() - panel.A).Normalized();
+        CHECK(Solver::Dot(departure, expectedA) > 0.93,
+              "each trailing leg must depart near the local relative wind plus prescribed inflow");
+        CHECK(departure.x > 0.0, "the wake must convect out of the disk plane (+x)");
+        // The helix itself: axial positions monotone downstream, radius
+        // contracting, and a finite core protecting the near passes.
+        double previousX = panel.A.x;
+        for (const auto& point : panel.TrailPathA) {
+            CHECK(point.x >= previousX, "the wake helix must advance monotonically downstream");
+            previousX = point.x;
+        }
+        const double rootRadius = std::hypot(panel.A.y, panel.A.z);
+        const double endRadius =
+            std::hypot(panel.TrailPathA.back().y, panel.TrailPathA.back().z);
+        CHECK(endRadius < rootRadius, "the wake must contract downstream");
+        CHECK(endRadius > 0.6 * rootRadius, "but never beyond the far-wake area halving");
+        CHECK(panel.WakeCoreRadius > 0.0, "curved legs must carry a finite vortex core");
     }
 }
 

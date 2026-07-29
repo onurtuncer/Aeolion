@@ -386,6 +386,10 @@ struct LatticeOptions {
 // refinement). Rebuild the lattice whenever rpm or inflow change; it is
 // cheap.
 //
+// Turns of curved (helical, contracting, cored) near wake ahead of each
+// trailing leg's straight far tail -- the Level-B wake (theory.rst).
+inline constexpr int DefaultPropellerWakeRevolutions = 2;
+
 // ONE chordwise row per strip, deliberately (Weissinger): the chords are
 // wrapped on their radius cylinders, and a straight trailing leg leaves a
 // curved chord immediately -- the surface falls away from its tangent
@@ -410,10 +414,16 @@ struct LatticeOptions {
  * trailing leg's helix pitch then uses its own radius's convection,
  * axialSpeed + vi(r), instead of the fixed momentum-theory floor -- the
  * self-consistent wake (theory.rst). Empty means the fixed-lambda seed.
+ *
+ * `wakeRevolutions` turns of CURVED near wake precede each leg's straight
+ * far tail (the Level-B wake: a discretized contracting helix with a
+ * finite vortex core -- theory.rst); zero recovers the straight-leg
+ * model.
  */
 [[nodiscard]] std::vector<Lattice::Panel> BuildPropellerLattice(
     const Geometry::Propeller& prop, double axialSpeed, double omega,
-    const std::function<double(double radius)>& axialInflow = {});
+    const std::function<double(double radius)>& axialInflow = {},
+    int wakeRevolutions = DefaultPropellerWakeRevolutions);
 
 /**
  * The per-strip section frames and section data for the Level-2 viscous

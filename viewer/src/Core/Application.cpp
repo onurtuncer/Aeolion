@@ -408,15 +408,15 @@ void Application::ResolveProp() {
         vaneRef.Chord = shroudChord;
         const double vaneTrail = Solver::DefaultTrailSpanFactor * 2.0 * shroudInner;
 
-        // Same section-model choice for both sides; the BL model's empty
-        // camber callable is exactly a flat plate, and its piecewise
-        // interior needs the coarser tolerance (theory.rst).
         const Solver::SectionModel rotorModel =
             (m_PropSectionModel == 1) ? Solver::SectionModel(PanelBuilder::MakePropellerSectionModel(m_Prop))
                                       : Solver::SectionModel(Solver::AnalyticSectionModel{});
-        const Solver::SectionModel vaneModel =
-            (m_PropSectionModel == 1) ? Solver::SectionModel(Solver::BoundaryLayerSectionModel{})
-                                      : Solver::SectionModel(Solver::AnalyticSectionModel{});
+        // The vanes take the analytic polar regardless: under the Level-B
+        // helical wake the hover jet's swirl angles sit beyond the BL
+        // section model's convergent envelope (it defers such strips to
+        // this same polar anyway), and the budget iteration needs the
+        // smooth model to close -- theory.rst, "Validity envelope".
+        const Solver::SectionModel vaneModel = Solver::AnalyticSectionModel{};
         Solver::RotorVaneOptions coupled;
         coupled.RotorOptions.Tolerance = (m_PropSectionModel == 1) ? 2e-2 : 1e-3;
         coupled.RotorOptions.MaxIterations = 400;

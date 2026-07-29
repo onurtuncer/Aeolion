@@ -37,6 +37,17 @@ inline constexpr double HoverInflowRatio = 0.07;
 // component is floored at this fraction of the blade's own maximum.
 inline constexpr double MinWakeAxialFraction = 0.25;
 
+// --- the Level-B curved near wake (theory.rst) ------------------------------
+// Each trailing leg's first revolutions follow the actual helix a shed
+// particle traces in the rotating frame: azimuth unwinding against the
+// rotation, axial convection at the local (developing) induced velocity,
+// radius contracting toward the far-wake area halving. The straight far
+// tail continues from the helix end.
+inline constexpr int WakeSegmentsPerRevolution = 12;
+inline constexpr double WakeContractionRatio = 0.70710678118654752; // far-wake r/r0 = 1/sqrt(2)
+inline constexpr double WakeDevelopmentRadii = 2.0; // axial development length = this * radius
+inline constexpr double WakeCoreWidthFraction = 0.3;    // leg core radius = this * strip width
+
 LatticeBuilder::LatticeBuilder(Geometry::HandoffContract contract, LatticeOptions options)
     : m_Contract(std::move(contract)), m_Options(options) {
     // Breakpoints and the spanwise march depend only on the contract and
@@ -830,7 +841,8 @@ int ApplyBaseEfflux(std::vector<Lattice::SourcePanel>& body,
 
 std::vector<Lattice::Panel> BuildPropellerLattice(const Geometry::Propeller& prop,
                                                   double axialSpeed, double omega,
-                                                  const std::function<double(double)>& axialInflow) {
+                                                  const std::function<double(double)>& axialInflow,
+                                                  int wakeRevolutions) {
     std::vector<Lattice::Panel> panels;
     const std::size_t ns = prop.Stations.size();
     if (ns < 2 || prop.BladeCount < 1) return panels;
@@ -861,19 +873,50 @@ std::vector<Lattice::Panel> BuildPropellerLattice(const Geometry::Propeller& pro
         for (const Geometry::BladeStation& station : prop.Stations)
             inflowPeak = std::max(inflowPeak, axialInflow(station.r));
     const double hoverInflow = HoverInflowRatio * std::fabs(omega) * prop.Radius;
+    auto axialConvection = [&](double r) {
+        if (axialInflow)
+            return std::max(axialSpeed + axialInflow(r),
+                            MinWakeAxialFraction * (axialSpeed + inflowPeak));
+        return std::max(axialSpeed, hoverInflow);
+    };
     auto trailDirection = [&](const Math::Vec3& point) {
-        double axialComponent;
-        if (axialInflow) {
-            const double r = std::hypot(point.y, point.z);
-            axialComponent = std::max(axialSpeed + axialInflow(r),
-                                      MinWakeAxialFraction * (axialSpeed + inflowPeak));
-        } else {
-            axialComponent = std::max(axialSpeed, hoverInflow);
-        }
+        const double r = std::hypot(point.y, point.z);
         const Math::Vec3 sweep = Math::Cross(axial * omega, point);
-        const Math::Vec3 local = axial * axialComponent - sweep;
+        const Math::Vec3 local = axial * axialConvection(r) - sweep;
         const Math::Vec3 unit = local.Normalized();
         return (unit.Norm() > 0.5) ? unit : axial; // no flow at all -> fall back to axial
+    };
+
+    // The Level-B helical near wake from a leg root: azimuth unwinds
+    // against the rotation at Omega, axial position advances at the
+    // developing local convection (doubling toward the far wake, the same
+    // law the slipstream uses), radius contracts toward the far-wake area
+    // halving. Zero revolutions (or a non-rotating case) leaves the leg a
+    // straight line.
+    const double developmentLength = WakeDevelopmentRadii * prop.Radius;
+    auto wakePath = [&](const Math::Vec3& root) {
+        std::vector<Math::Vec3> path;
+        if (wakeRevolutions < 1 || std::fabs(omega) < Math::Tiny) return path;
+        const double r0 = std::hypot(root.y, root.z);
+        if (r0 < Math::Tiny) return path;
+        const double vi0 = axialConvection(r0);
+        const double deltaTheta = Math::Two * std::numbers::pi / WakeSegmentsPerRevolution;
+        const double deltaT = deltaTheta / std::fabs(omega);
+        double phi = std::atan2(root.z, root.y);
+        double x = root.x;
+        path.reserve(static_cast<std::size_t>(wakeRevolutions) * WakeSegmentsPerRevolution);
+        for (int k = 0; k < wakeRevolutions * WakeSegmentsPerRevolution; ++k) {
+            phi -= (omega > 0.0 ? 1.0 : -1.0) * deltaTheta; // the wake sweeps opposite the rotation
+            const double development =
+                std::clamp((x - root.x) / developmentLength, 0.0, 1.0);
+            x += vi0 * (1.0 + development) * deltaT;
+            const double contraction =
+                WakeContractionRatio +
+                (1.0 - WakeContractionRatio) * std::exp(-std::max(x - root.x, 0.0) / prop.Radius);
+            const double r = r0 * contraction;
+            path.push_back(Math::Vec3(x, r * std::cos(phi), r * std::sin(phi)));
+        }
+        return path;
     };
 
     for (int blade = 0; blade < prop.BladeCount; ++blade) {
@@ -951,8 +994,17 @@ std::vector<Lattice::Panel> BuildPropellerLattice(const Geometry::Propeller& pro
                 panel.A = surfacePoint(inboard, fBound);
                 panel.B = surfacePoint(outboard, fBound);
                 panel.ControlPoint = (surfacePoint(inboard, fControl) + surfacePoint(outboard, fControl)) * Math::Half;
-                panel.TrailDirA = trailDirection(panel.A);
-                panel.TrailDirB = trailDirection(panel.B);
+                // Curved near wake, then the straight far tail along the
+                // local wind AT THE HELIX END (at the root when there is no
+                // helix).
+                panel.TrailPathA = wakePath(panel.A);
+                panel.TrailPathB = wakePath(panel.B);
+                panel.TrailDirA =
+                    trailDirection(panel.TrailPathA.empty() ? panel.A : panel.TrailPathA.back());
+                panel.TrailDirB =
+                    trailDirection(panel.TrailPathB.empty() ? panel.B : panel.TrailPathB.back());
+                if (!panel.TrailPathA.empty())
+                    panel.WakeCoreRadius = WakeCoreWidthFraction * width;
 
                 // Control-point normal from the surface tangents there: the
                 // radial tangent between the stations, and the chordwise

@@ -379,10 +379,67 @@ it -- the mean-line slope at the 3/4-chord boundary condition -- but
 resolving chordwise loading distributions awaits a vortex-ring wake or
 finite-core filaments.
 
-Limitations of the bare lattice, stated plainly: quasi-steady with
-straight-line wake legs (self-consistent in pitch, but with no
-curvature, roll-up, or contraction), so heavily-loaded static (hover)
-thrust reads optimistic; torque and power
+The curved near wake (Level B)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The self-consistent pitch above still leaves each trailing leg a
+*straight line* -- correct in direction at its root, but a straight leg
+cannot build the contracted helical vortex system that sits behind a
+real static rotor, and it is that system whose induction at the disk
+carries most of the induced power at hover. The straight-leg solve
+therefore reads systematically optimistic there (hover figures of merit
+*above* the momentum-theory ideal). Level B replaces the near wake with
+the helix a shed vortex particle actually traces in the rotating frame,
+discretized as a polyline (``Lattice::Panel::TrailPathA/B``; empty paths
+mean a straight leg, so every fixed-wing case is untouched).
+
+Each leg's first ``wakeRevolutions`` revolutions (default 2, at 12
+segments per revolution) march in the shed particle's kinematics:
+
+* **azimuth** unwinds opposite the blade's sweep,
+  :math:`\Delta\theta` per segment, so the filament trails the blade
+  the way smoke trails a static rotor;
+* **axial position** convects at the leg's own banded induced velocity
+  :math:`v_i(r)` (the same annular momentum balance that sets the
+  departure pitch), ramping linearly from :math:`v_i` at the disk to
+  :math:`2 v_i` over a development length of :math:`2R` -- the
+  far-wake doubling of momentum theory;
+* **radius** relaxes exponentially (length scale :math:`R`) from the
+  root radius toward :math:`r_0/\sqrt{2}`, the far-wake area halving
+  that conserves mass through the accelerating jet.
+
+Beyond the last polyline point the leg continues as the usual straight
+far tail, along the direction evaluated at the helix *end* (already
+contracted and doubled), out to the standard trail length, so the far
+field remains closed. Induction of every polyline segment uses the same
+Biot-Savart segment kernel as the bound vortex, but with a finite
+**Vatistas-style algebraic core**,
+
+.. math::
+
+   \mathbf{V} = \frac{\Gamma}{4\pi}
+   \frac{h^2}{h^2 + r_c^2}\,(\ldots),
+   \qquad r_c = 0.3\,\Delta r,
+
+where :math:`h` is the perpendicular distance to the segment and
+:math:`\Delta r` the shedding strip's radial width. The core is not
+cosmetic: successive helix passes bring neighboring blades' filaments
+within a discretization step of control points, and the raw
+:math:`1/h` kernel would make the solve hostage to exactly where a
+polyline vertex happens to land. On the reference blade the effect is
+exactly the missing physics: hover thrust drops and shaft torque rises
+together, pulling the figure of merit from above the ideal down into
+the physical range (``TestSelfConsistentWake`` pins the drop, and pins
+that a *collinear* polyline reproduces the straight-leg kernel
+identically).
+
+What Level B still is not: the helix is *prescribed* from momentum-theory
+kinematics, not force-free (no relaxation of the filaments in their own
+induced field), and there is no roll-up of the sheet into discrete tip
+vortices. Those are the Level-C rungs.
+
+Limitations of the bare lattice, stated plainly: quasi-steady, with a
+prescribed (not force-free) near-wake helix and no roll-up; torque and power
 are induced only (potential flow carries no profile drag); one chordwise
 row (integrated loads, not pressure distributions); thin camber surface,
 no thickness; and no stall. ``TestPropellerLattice`` pins the physics
@@ -903,6 +960,17 @@ outer Anderson-accelerated coupling converge at hover, where a
 propeller's root strips run far past stall (the reference blade: 17
 outer iterations with the boundary-layer model, against a residual
 plateau of ~0.1 when the raw model was forced everywhere).
+
+The same envelope decides where the model is *worth running at all*.
+The duct-jet control vanes at hover under the Level-B wake sit in a
+weaker, swirlier jet whose incidences are tens of degrees -- almost the
+whole span would be handed to the analytic polar anyway, while the
+model's piecewise interior denies the budget iteration the smoothness
+it needs to close. The vane side of the coupled solve therefore uses
+the analytic polar directly; the boundary-layer model earns its keep on
+the vanes in attached-incidence jets
+(``TestPropellerVanes``' mild-jet case), and on the blades, whose
+outboard strips live inside the envelope at every condition.
 
 Remaining limitations, plainly: the wake behind the trailing edge
 carries no displacement effect (no wake :math:`\delta^*` coupling); the

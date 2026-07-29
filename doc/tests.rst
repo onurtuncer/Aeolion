@@ -203,6 +203,21 @@ of the thrust -- the hover control authority thrust-vectoring vanes
 exist for; and drag cost for commanding against the swirl. See
 theory.rst, "Downstream control vanes and the propulsive wrench".
 
+The mechanics diagnostics run the analytic polar (under the Level-B
+wake the hover jet parks the vane tip in reversed jet-edge flow and a
+deflected vane's span deep post-stall -- outside any section model's
+matching contract; the coupling's reversed-flow residual exclusion and
+the deflected cases' coarse plateau tolerance are both documented in
+the test). The PROPER boundary-layer vane treatment is pinned by the
+mild-jet case: the transpiration-coupled section model on the full
+cruciform in a brisk, mildly swirling jet (chord Reynolds number near
+3e5, every strip attached), converging tight with exact four-fold
+symmetry and counter-torque of the correct sign. Below roughly
+Re :math:`2 \times 10^5` the flat plate's laminar-separation polar is
+non-monotonic and the coupled cruciform genuinely bifurcates into
+asymmetric equilibria -- real physics, noted in the test, but not a
+unique fixed point a symmetry assertion can pin.
+
 TestRotorVaneCoupling
 ---------------------
 
@@ -226,6 +241,15 @@ the loading (rebuilding the lattice from the final solved
 varies radially with the loading rather than following one global
 constant; and a heavier disk loading steepens the wake helix -- the load
 dependence a hardcoded :math:`\lambda` could not express.
+
+The Level-B wake (theory.rst, "The curved near wake") is pinned here
+too: a polyline leg whose vertices lie exactly on the straight
+direction reproduces the straight-leg kernel's induction to machine
+precision (the kernel-consistency check), and the helical contracted
+cored wake must pull the hover figure of merit DOWN versus straight
+legs while the rotor still thrusts -- the induced power a straight-leg
+wake cannot carry, and the reason the straight-leg hover solve read
+optimistic.
 
 Fixture data
 ------------

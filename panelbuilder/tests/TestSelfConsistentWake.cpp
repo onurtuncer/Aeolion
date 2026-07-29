@@ -45,9 +45,10 @@ Geometry::Propeller MakeTestProp(double chordScale) {
     return prop;
 }
 
-Solver::RotorVaneResult SolveWake(const Geometry::Propeller& prop) {
+Solver::RotorVaneResult SolveWake(const Geometry::Propeller& prop,
+                                  int wakeRevolutions = PanelBuilder::DefaultPropellerWakeRevolutions) {
     const auto strips = PanelBuilder::BuildPropellerStrips(prop);
-    const auto seed = PanelBuilder::BuildPropellerLattice(prop, 0.0, Omega);
+    const auto seed = PanelBuilder::BuildPropellerLattice(prop, 0.0, Omega, {}, wakeRevolutions);
 
     Solver::FreestreamConditions fc;
     fc.Vinf = HoverFloorSpeed;
@@ -64,7 +65,7 @@ Solver::RotorVaneResult SolveWake(const Geometry::Propeller& prop) {
     const double trail = Solver::DefaultTrailSpanFactor * 2.0 * prop.Radius;
 
     const Solver::RotorBuilder rotorBuilder = [&](const std::function<double(double)>& inflow) {
-        return PanelBuilder::BuildPropellerLattice(prop, 0.0, Omega, inflow);
+        return PanelBuilder::BuildPropellerLattice(prop, 0.0, Omega, inflow, wakeRevolutions);
     };
 
     return Solver::SolveRotorVaneCoupled(seed, strips, fc, ref, trail,
@@ -73,9 +74,15 @@ Solver::RotorVaneResult SolveWake(const Geometry::Propeller& prop) {
                                          rotorBuilder);
 }
 
-// The wake helix pitch of a panel's A-leg: the axial (out-of-disk-plane)
-// component of its unit trailing direction.
-double AxialPitch(const Solver::Panel& panel) { return panel.TrailDirA.x; }
+// The wake helix pitch of a panel's A-leg at DEPARTURE: the axial
+// (out-of-disk-plane) component of the leg's first direction -- the first
+// helix segment when the curved near wake is present.
+double AxialPitch(const Solver::Panel& panel) {
+    const Solver::Vec3 direction = panel.TrailPathA.empty()
+                                       ? panel.TrailDirA
+                                       : (panel.TrailPathA.front() - panel.A).Normalized();
+    return direction.x;
+}
 
 void TestConvergesToAFixedPoint() {
     const auto prop = MakeTestProp(1.0);
@@ -90,7 +97,8 @@ void TestConvergesToAFixedPoint() {
     // reproduce the final mesh's trailing legs.
     const auto inflow = Solver::AxialInflowFromBands(
         Solver::ComputeSlipstreamBands(wake.Rotor, 0.0, Rho));
-    const auto rebuilt = PanelBuilder::BuildPropellerLattice(prop, 0.0, Omega, inflow);
+    const auto rebuilt = PanelBuilder::BuildPropellerLattice(
+        prop, 0.0, Omega, inflow, PanelBuilder::DefaultPropellerWakeRevolutions);
     CHECK(rebuilt.size() == wake.BladePanels.size(), "the rebuild must match the mesh");
     double worst = 0.0;
     for (std::size_t i = 0; i < rebuilt.size(); ++i)
@@ -132,11 +140,62 @@ void TestHeavierLoadingSteepensTheWake() {
           "lambda could not express");
 }
 
+void TestPolylineLegMatchesStraight() {
+    // Kernel consistency: a curved-path leg whose points lie exactly on
+    // the straight direction must reproduce the single-segment leg's
+    // induction (zero core, so the regularization cannot differ).
+    Solver::Panel straight;
+    straight.A = Solver::Vec3(0.0, 0.0, 0.0);
+    straight.B = Solver::Vec3(0.0, 1.0, 0.0);
+    straight.TrailDirA = Solver::Vec3(1.0, 0.0, 0.0);
+    straight.TrailDirB = Solver::Vec3(1.0, 0.0, 0.0);
+
+    Solver::Panel polyline = straight;
+    polyline.TrailPathA = {Solver::Vec3(0.3, 0.0, 0.0), Solver::Vec3(0.7, 0.0, 0.0)};
+    polyline.TrailPathB = {Solver::Vec3(0.3, 1.0, 0.0), Solver::Vec3(0.7, 1.0, 0.0)};
+
+    // Identical total extent: the polyline's far tail starts 0.7 further
+    // along, so the straight comparison leg gets that much more trail.
+    const Solver::Vec3 probe(0.4, 0.5, 0.8);
+    const Solver::Vec3 a = Solver::HorseshoeVelocity(probe, straight, 1.0, 50.7);
+    const Solver::Vec3 b = Solver::HorseshoeVelocity(probe, polyline, 1.0, 50.0);
+    CHECK((a - b).Norm() < 1e-9 * a.Norm() + 1e-15,
+          "a collinear polyline leg must reproduce the straight leg's induction");
+}
+
+void TestCurvedWakeAddsInducedPower() {
+    // The point of the curved wake: straight legs cannot build the
+    // contracted downstream cylinder that generates real induced power, so
+    // the straight-leg hover figure of merit reads optimistic. The helical
+    // wake must pull it DOWN -- more induced torque for comparable thrust.
+    const auto prop = MakeTestProp(1.0);
+    const auto straight = SolveWake(prop, 0);
+    const auto curved = SolveWake(prop, PanelBuilder::DefaultPropellerWakeRevolutions);
+    CHECK(straight.Converged && curved.Converged, "both wake models must converge");
+
+    const auto figureOfMerit = [&](const Solver::RotorVaneResult& wake) {
+        const double thrust = -wake.Rotor.Base.Di;
+        const double torque = -(wake.Rotor.InducedMoment.x + wake.Rotor.ProfileMoment.x);
+        const double power = torque * Omega;
+        const double diskArea = std::numbers::pi * prop.Radius * prop.Radius;
+        return thrust * std::sqrt(thrust / (2.0 * Rho * diskArea)) / std::max(power, 1e-12);
+    };
+    const double fomStraight = figureOfMerit(straight);
+    const double fomCurved = figureOfMerit(curved);
+    std::cout << "figure of merit: straight legs=" << fomStraight << "  helical wake=" << fomCurved
+              << "  (T " << -straight.Rotor.Base.Di << " -> " << -curved.Rotor.Base.Di << " N)\n";
+    CHECK(fomCurved < fomStraight,
+          "the helical contracted wake must add induced power the straight legs cannot carry");
+    CHECK(-curved.Rotor.Base.Di > 0.0, "and the rotor must still thrust");
+}
+
 } // namespace
 
 int main() {
     TestConvergesToAFixedPoint();
     TestHeavierLoadingSteepensTheWake();
+    TestPolylineLegMatchesStraight();
+    TestCurvedWakeAddsInducedPower();
 
     if (failures == 0) { std::cout << "PASS: TestSelfConsistentWake\n"; return 0; }
     std::cerr << failures << " check(s) failed in TestSelfConsistentWake\n";

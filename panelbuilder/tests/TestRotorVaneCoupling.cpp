@@ -101,6 +101,11 @@ Solver::RotorVaneResult SolveJoint(const std::vector<double>& deflectionsDeg) {
     vaneRef.Span = 2.0 * shroudInner;
     vaneRef.Chord = shroudChord;
 
+    // Both sides on the analytic polar: the helical-wake jet's swirl
+    // angles sit beyond the BL section model's convergent envelope (it
+    // hands such strips to this same analytic polar anyway), and the
+    // budget iteration needs the smooth model to close. BL-vane coverage
+    // lives in TestPropellerVanes' mild-jet case, inside the envelope.
     return Solver::SolveRotorVaneCoupled(panels, strips, fc, ref, trail,
                                          Solver::AnalyticSectionModel{}, duct, vaneBuilder, vaneFc,
                                          vaneRef, Solver::DefaultTrailSpanFactor * 2.0 * shroudInner,

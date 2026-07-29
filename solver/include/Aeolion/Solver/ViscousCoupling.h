@@ -170,6 +170,17 @@ struct ViscousCouplingOptions {
      * relaxation stalls -- see theory.rst.
      */
     int AndersonDepth = 4;
+
+    /**
+     * Strips whose |alpha_eff| exceeds this are excluded from the
+     * CONVERGENCE measure (their circulation is still capped and
+     * relaxed). Strip theory carries no cl-matching contract in reversed
+     * flow -- a vane tip behind the jet's shear edge can sit near
+     * -100 degrees -- and such a strip both wedges the residual open AND,
+     * if it runs away, inflates the reference dynamic pressure until the
+     * weighted residual of the raw state reads deceptively small.
+     */
+    double ResidualIncidenceLimitDeg = 75.0;
 };
 
 /** Converged per-strip state, for reporting, radial plots, and slipstream
@@ -381,15 +392,28 @@ struct ViscousCoupledResult {
 
         // The convergence measure is the DYNAMIC-PRESSURE-WEIGHTED residual:
         // a cl mismatch on a strip carrying a fraction of the reference
-        // dynamic pressure is the same fraction of a force mismatch. This
-        // is what lets a strip parked at near-perpendicular flow in dead
-        // air (a vane tip in the jet's shear edge, where cl matching is
-        // ill-conditioned and irrelevant to the wrench) not hold the whole
-        // solve hostage.
+        // dynamic pressure is the same fraction of a force mismatch --
+        // and it is taken only over strips inside the incidence limit
+        // (see ViscousCouplingOptions::ResidualIncidenceLimitDeg):
+        // reversed-flow strips have no cl-matching contract to converge.
+        const auto eligible = [&](std::size_t i) {
+            return std::fabs(res.Strips[i].alphaEffDeg) <= options.ResidualIncidenceLimitDeg;
+        };
+        double eligibleVrelMaxSq = 0.0;
         for (std::size_t i = 0; i < n; ++i)
+            if (eligible(i))
+                eligibleVrelMaxSq =
+                    std::max(eligibleVrelMaxSq, res.Strips[i].Vrel * res.Strips[i].Vrel);
+        const bool anyEligible = eligibleVrelMaxSq > Math::Tiny;
+        if (!anyEligible) eligibleVrelMaxSq = vrelMaxSq;
+        for (std::size_t i = 0; i < n; ++i) {
+            if (anyEligible && !eligible(i)) continue;
             res.MaxResidual = std::max(
-                res.MaxResidual,
-                std::fabs(rawResidual[i]) * (res.Strips[i].Vrel * res.Strips[i].Vrel / vrelMaxSq));
+                res.MaxResidual, std::fabs(rawResidual[i]) *
+                                     std::min(res.Strips[i].Vrel * res.Strips[i].Vrel /
+                                                  eligibleVrelMaxSq,
+                                              1.0));
+        }
 
         if (res.MaxResidual < options.Tolerance) {
             res.Converged = true;

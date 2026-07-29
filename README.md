@@ -115,7 +115,9 @@ panelbuilder/                    aeolion_panelbuilder (STATIC library)
                                    response surviving
     TestSelfConsistentWake.cpp    wake pitch iterated to a fixed point of
                                    the solved loading: radial variation,
-                                   steepening with disk loading
+                                   steepening with disk loading; Level-B
+                                   helix: polyline kernel consistency,
+                                   figure of merit dropping vs straight legs
 
 viewer/                          aeolion_viewer (exe, GL application)
                                  interactive OpenGL visualizer, not part of
@@ -305,8 +307,17 @@ which the rotor feels the vanes' azimuthal-mean field, the vanes read
 the momentum-budgeted slipstream, and the recovered counter-torque is
 bounded by the jet's angular-momentum flux. That caps the stalled root loading and adds real
 **profile torque**, reported separately from the induced part.
-Remaining caveats: quasi-steady prescribed straight-line wake (no
-roll-up or contraction), single chordwise row (integrated loads, not
+The near wake is a **prescribed helix** (Level B): each trailing leg's
+first revolutions follow the shed particle's kinematics -- azimuth
+unwinding against the rotation, axial convection at the banded induced
+velocity ramping to the far-wake doubling, radius contracting toward
+the momentum-theory area halving -- as a polyline of finite-core
+(Vatistas) segments, with the straight far tail continuing from the
+helix end. This is what carries the hover induced power straight legs
+cannot, and it pulls the static figure of merit from above the ideal
+down into the physical range.
+Remaining caveats: quasi-steady prescribed wake (no force-free
+relaxation or roll-up), single chordwise row (integrated loads, not
 pressure distributions), no thickness, incompressible (Ma carried but
 unused).
 
