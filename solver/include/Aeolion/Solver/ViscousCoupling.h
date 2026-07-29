@@ -592,10 +592,13 @@ struct ViscousCoupledResult {
 inline constexpr double SlipstreamFarWakeDiameters = 2.0; // development length = this * radius
 
 /** Time-mean slipstream of a converged rotor(+duct) solve, for downstream
- * static surfaces. axialSpeed is the freestream through the disk. */
+ * static surfaces. axialSpeed is the freestream through the disk.
+ * swirlFactor scales the tangential component -- the two-way coupling's
+ * momentum-budget handle (see theory.rst, "Two-way rotor-vane
+ * coupling"). */
 [[nodiscard]] inline std::function<Vec3(const Vec3&)> SlipstreamField(
     const ViscousCoupledResult& rotor, double axialSpeed, double rho,
-    std::vector<SourcePanel> sources = {}) {
+    std::vector<SourcePanel> sources = {}, double swirlFactor = 1.0) {
     // Collapse the strips (all blades) into radial bands of dT and dQ.
     struct Band {
         double r = 0.0, width = 0.0, dT = 0.0, dQ = 0.0, vi = 0.0, wi = 0.0;
@@ -635,8 +638,8 @@ inline constexpr double SlipstreamFarWakeDiameters = 2.0; // development length 
         tipRadius = std::max(tipRadius, band.r + Math::Half * band.width);
     }
 
-    return [bands = std::move(bands), sources = std::move(sources), sigma = rotor.sigma,
-            tipRadius](const Vec3& point) {
+    return [bands = std::move(bands), sources = std::move(sources), sigma = rotor.sigma, tipRadius,
+            swirlFactor](const Vec3& point) {
         Vec3 v(0, 0, 0);
         // The duct's induced flow, exact (static, axisymmetric body).
         for (std::size_t m = 0; m < sources.size() && m < sigma.size(); ++m)
@@ -660,7 +663,41 @@ inline constexpr double SlipstreamFarWakeDiameters = 2.0; // development length 
         const double development = std::clamp(point.x / devLength, 0.0, 1.0);
         const Vec3 rhat(0.0, point.y / r, point.z / r);
         const Vec3 that = Cross(Vec3(1.0, 0.0, 0.0), rhat); // +Omega sense about +x
-        return v + Vec3(1.0, 0.0, 0.0) * (vi * (1.0 + development)) + that * wi;
+        return v + Vec3(1.0, 0.0, 0.0) * (vi * (1.0 + development)) + that * (wi * swirlFactor);
+    };
+}
+
+// The azimuthal-mean induced field of a STATIC panel system, as seen by
+// the rotating frame: a blade sweeps past the static system once per
+// revolution, and its quasi-steady boundary condition sees the time mean
+// of that encounter,
+//
+//     v(P) = (1/K) sum_j R_x(-theta_j) . v( R_x(theta_j) . P ).
+//
+// This is the vane-to-rotor half of the two-way coupling (theory.rst),
+// and it is legitimate in THIS direction because the static system's
+// near field is fully represented -- its wakes are explicit legs, unlike
+// the rotor's prescribed wake, which is why the rotor-to-vane direction
+// uses the momentum reconstruction above instead.
+inline constexpr int DefaultAzimuthSamples = 16;
+
+/** Azimuthal-mean induced field of static panels (e.g. the vane system). */
+[[nodiscard]] inline std::function<Vec3(const Vec3&)> MeanInducedField(
+    std::vector<Panel> panels, std::vector<double> gamma, double trail,
+    int azimuthSamples = DefaultAzimuthSamples) {
+    return [panels = std::move(panels), gamma = std::move(gamma), trail,
+            azimuthSamples](const Vec3& point) {
+        Vec3 mean(0, 0, 0);
+        const int samples = std::max(azimuthSamples, 1);
+        for (int j = 0; j < samples; ++j) {
+            const double theta = Math::Two * std::numbers::pi * j / samples;
+            const Vec3 rotated = RotateAboutX(point, theta);
+            Vec3 v(0, 0, 0);
+            for (std::size_t i = 0; i < panels.size() && i < gamma.size(); ++i)
+                v = v + HorseshoeVelocity(rotated, panels[i], gamma[i], trail);
+            mean = mean + RotateAboutX(v, -theta);
+        }
+        return mean * (1.0 / samples);
     };
 }
 

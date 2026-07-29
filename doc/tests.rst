@@ -203,6 +203,19 @@ of the thrust -- the hover control authority thrust-vectoring vanes
 exist for; and drag cost for commanding against the swirl. See
 theory.rst, "Downstream control vanes and the propulsive wrench".
 
+TestRotorVaneCoupling
+---------------------
+
+The two-way rotor-vane coupling (``Solver::SolveRotorVaneCoupled``):
+outer convergence of the block Gauss-Seidel alternation; the momentum
+budget binding on the high-solidity cruciform (recovered vane torque at
+but not beyond the jet's angular-momentum flux -- the one-way scheme
+was measured at three times it); the rotor's loading shifting when the
+vanes are present (the two-way proof) while remaining a perturbation;
+cruciform symmetry surviving; and the control response surviving the
+budget, now nearly antisymmetric about neutral since the budgeted swirl
+bias is small. See theory.rst, "Two-way rotor-vane coupling".
+
 Fixture data
 ------------
 

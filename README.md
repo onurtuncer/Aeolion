@@ -109,6 +109,10 @@ panelbuilder/                    aeolion_panelbuilder (STATIC library)
                                    slipstream: cruciform symmetry, swirl
                                    counter-torque, control wrench about the
                                    swirl-biased neutral, drag cost
+    TestRotorVaneCoupling.cpp     two-way rotor-vane coupling: outer
+                                   convergence, momentum budget binding,
+                                   rotor feeling vane blockage, control
+                                   response surviving
 
 viewer/                          aeolion_viewer (exe, GL application)
                                  interactive OpenGL visualizer, not part of
@@ -290,7 +294,11 @@ time-mean slipstream reconstructed from the converged rotor loading by
 annular momentum theory (`Solver::SlipstreamField`), through the same
 viscous section models as the blades -- side forces and control moments
 real at zero airspeed, swirl recovered as counter-torque, stall-limited
-authority near the stops. That caps the stalled root loading and adds real
+authority near the stops. The rotor-vane exchange is **two-way**
+(`Solver::SolveRotorVaneCoupled`): a block Gauss-Seidel alternation in
+which the rotor feels the vanes' azimuthal-mean field, the vanes read
+the momentum-budgeted slipstream, and the recovered counter-torque is
+bounded by the jet's angular-momentum flux. That caps the stalled root loading and adds real
 **profile torque**, reported separately from the induced part.
 Remaining caveats: quasi-steady prescribed straight-line wake (no
 roll-up or contraction), single chordwise row (integrated loads, not

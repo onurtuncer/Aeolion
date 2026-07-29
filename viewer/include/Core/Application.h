@@ -14,6 +14,7 @@
 #include "Visualization/PropellerRenderer.h"
 
 #include "Aeolion/Geometry/HandoffContract.h"
+#include "Aeolion/Solver/RotorVaneCoupling.h"
 #include "Aeolion/PanelBuilder/PanelBuilder.h"
 #include "Aeolion/Solver/Solver.h"
 
@@ -150,6 +151,10 @@ private:
     Solver::ViscousCoupledResult m_PropVaneCoupled;
     LatticeRenderer m_PropVaneLattice;
     std::vector<double> m_VaneDeflectionDeg; // aligned with m_Contract.ControlSurfaces
+    int m_PropOuterIterations = 0;    // two-way rotor-vane outer passes
+    double m_PropSwirlFactor = 1.0;   // the momentum budget's converged swirl scale
+    double m_PropOuterResidual = 0.0;
+    bool m_PropOuterConverged = true;
     LatticeRenderer m_PropLattice;              // the solved blade lattice, field-colored
     LatticeDisplayOptions m_PropLatticeDisplay; // grid/axes off; see constructor
     PropellerDisplayOptions m_PropDisplay;      // hub/disk/axis decoration (geometry ribbon off)

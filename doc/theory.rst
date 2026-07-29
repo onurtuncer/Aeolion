@@ -639,6 +639,85 @@ pulling the control wrench opposite ways about the (swirl-biased)
 neutral, a side-force differential that is a real fraction of the
 thrust, and drag cost for commanding against the swirl.
 
+Two-way rotor-vane coupling
+---------------------------
+
+The partitioned vane solve above is one-way: the vanes read the rotor's
+jet, the rotor never feels the vanes. ``Solver::SolveRotorVaneCoupled``
+closes the loop as a **block Gauss-Seidel (alternating) iteration
+between the two frames**, with a momentum budget on the swirl. The frame
+split itself is kept -- it is physics, not convenience: the blades'
+boundary condition lives in the rotating frame, the vanes' in the
+static frame, and no single quasi-steady frame holds both.
+
+Per outer iteration :math:`k`:
+
+1. **Rotor + duct solve** (rotating frame), with the vanes' influence
+   entering through the external-velocity hook as the AZIMUTHAL MEAN of
+   the vane system's induced field under the previous vane circulation,
+
+   .. math::
+
+      \bar{\mathbf{v}}_{vane}(P) \;=\; \frac{1}{K} \sum_{j=0}^{K-1}
+        R_x(-\theta_j)\, \mathbf{v}_{vane}\bigl( R_x(\theta_j)\, P \bigr),
+      \qquad \theta_j = 2\pi j / K :
+
+   a blade sweeps past the static vane system once per revolution, and
+   its quasi-steady rotating-frame condition sees the time mean of that
+   encounter. Averaging is legitimate in THIS direction because the vane
+   system's near field is fully represented (its wakes are explicit
+   straight legs); it is exactly the operation that was unusable in the
+   other direction, where the rotor's prescribed wake carries no
+   downstream cylinder to average.
+
+2. **Slipstream reconstruction** from the NEW rotor loading (the annular
+   momentum form above), with the swirl component scaled by the current
+   budget factor :math:`s \in (0, 1]`.
+
+3. **Vane remesh and solve** (static frame) in that slipstream -- remesh,
+   because the vanes' trailing legs follow the local mean flow, which
+   just changed.
+
+4. **The swirl budget.** The angular-momentum flux the jet delivers is
+   the shaft torque, :math:`\dot{L}_{jet} = Q = -M_x^{rotor}`; the vanes
+   cannot remove more than arrives. An unconstrained prescribed-field
+   vane solve can (each strip reads the full stated swirl; nothing
+   depletes it -- the one-way model was measured recovering three times
+   :math:`Q`). Whenever the extracted :math:`M_x^{vane}` exceeds the
+   budget, the swirl factor contracts toward
+
+   .. math::
+
+      s \;\leftarrow\; s \cdot \frac{Q}{M_x^{vane}},
+
+   so at convergence :math:`M_x^{vane} \le Q` holds -- the fixed point of
+   the contraction is exactly the budget-saturated state, representing
+   vanes that de-swirl the jet essentially completely.
+
+5. **Relaxation and convergence.** The vane circulation used for the
+   rotor feedback is under-relaxed between outer passes; the outer
+   residual is the relative change of the total wrench (net thrust and
+   :math:`M_x`) together with the vane-circulation change, and the loop
+   ends when all fall under tolerance.
+
+What the coupling adds physically: the vanes' blockage and upwash now
+unload or re-load the rotor (a measurable thrust shift with vanes
+present), the duct's source strengths feel the vanes through the rotor
+pass, and the recovered counter-torque is bounded by the momentum the
+jet actually carries. On the reference cruciform at hover the budget
+binds hard: the swirl factor converges near :math:`s = 0.33` and the
+vanes recover 99% of the jet's angular-momentum flux -- the
+budget-saturated state, an essentially complete de-swirl, where the
+one-way scheme had reported three times the available torque. A welcome
+side effect: with the budgeted swirl bias small, the control response
+about neutral becomes nearly antisymmetric. Still outside the model: unsteady blade-passing
+loads (every exchange is a time mean), the vanes' straight-line wakes,
+and any swirl depletion RESOLVED radially (the budget is a single
+scalar, not a band-by-band bookkeeping -- the natural refinement if a
+finer closure is ever needed). ``TestRotorVaneCoupling`` pins the outer
+convergence, the two-way blockage shift, the budget bound, and the
+survival of the control response.
+
 Level 3: the transpiration-coupled boundary-layer section solver
 ----------------------------------------------------------------
 

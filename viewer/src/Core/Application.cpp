@@ -329,18 +329,22 @@ void Application::ResolveProp() {
     ref.Chord = ref.Area / std::max(ref.Span, 1e-9);
 
     const double trail = Solver::DefaultTrailSpanFactor * 2.0 * m_Prop.Radius;
+    const bool useTwoWay = m_PropVanesEnabled && m_PropUseViscous && m_UseHandoff;
     if (m_PropUseViscous) {
-        // Level-2 sectional lift feedback: the lattice supplies alpha_eff,
-        // the analytic viscous section model supplies cl/cd, and the
-        // circulation relaxes until they agree. Base has SolveResult's
-        // shape, so everything downstream reads it unchanged.
+        // Sectional lift feedback: the lattice supplies alpha_eff, the
+        // viscous section model supplies cl/cd, and the circulation
+        // iterates until they agree. When the two-way rotor-vane driver
+        // runs below, IT owns the rotor solve (the rotor must feel the
+        // vanes), so the standalone solve is skipped.
         m_PropStrips = PanelBuilder::BuildPropellerStrips(m_Prop);
-        const Solver::SectionModel model =
-            (m_PropSectionModel == 1) ? PanelBuilder::MakePropellerSectionModel(m_Prop)
-                                      : Solver::SectionModel(Solver::AnalyticSectionModel{});
-        m_PropCoupled = Solver::SolveViscousCoupled(m_PropPanels, m_PropStrips, fc, ref, trail, model,
-                                                    {}, m_PropDuctPanels);
-        m_PropSolve = m_PropCoupled.Base;
+        if (!useTwoWay) {
+            const Solver::SectionModel model =
+                (m_PropSectionModel == 1) ? PanelBuilder::MakePropellerSectionModel(m_Prop)
+                                          : Solver::SectionModel(Solver::AnalyticSectionModel{});
+            m_PropCoupled = Solver::SolveViscousCoupled(m_PropPanels, m_PropStrips, fc, ref, trail,
+                                                        model, {}, m_PropDuctPanels);
+            m_PropSolve = m_PropCoupled.Base;
+        }
     } else {
         if (m_PropDuctPanels.empty()) {
             m_PropSolve = Solver::Solve(m_PropPanels, fc, ref, trail);
@@ -361,45 +365,63 @@ void Application::ResolveProp() {
     m_PropVanePanels.clear();
     m_PropVaneStrips.clear();
     m_PropVaneCoupled = {};
-    if (m_PropVanesEnabled && m_PropUseViscous && m_UseHandoff) {
-        const auto slipstream =
-            Solver::SlipstreamField(m_PropCoupled, m_PropSpeed, m_PropDensity, m_PropDuctPanels);
-        // The vanes' wakes leave along the local mean flow -- freestream
-        // plus slipstream, swirl included -- not hardcoded downstream.
-        const auto localFlow = [&](const Math::Vec3& point) {
-            return Math::Vec3(m_PropSpeed, 0.0, 0.0) + slipstream(point);
+    m_PropOuterIterations = 0;
+    m_PropSwirlFactor = 1.0;
+    m_PropOuterConverged = true;
+    if (useTwoWay) {
+        // TWO-WAY coupling (theory.rst, "Two-way rotor-vane coupling"): the
+        // driver alternates the rotor+duct solve (feeling the vanes'
+        // azimuthal-mean field) and the vane solve (in the momentum-
+        // budgeted slipstream), remeshing the vanes each pass since their
+        // wakes follow the evolving local flow. It supersedes the plain
+        // rotor solve above whenever vanes are present.
+        const auto vaneBuilder = [&](const std::function<Solver::Vec3(const Solver::Vec3&)>& flow)
+            -> std::pair<std::vector<Solver::Panel>, std::vector<Solver::StripSection>> {
+            return {PanelBuilder::BuildDuctVanes(m_Contract.ControlSurfaces, shroudInner,
+                                                 0.5 * shroudChord, shroudChord,
+                                                 m_VaneDeflectionDeg, flow),
+                    PanelBuilder::BuildDuctVaneStrips(m_Contract.ControlSurfaces, shroudInner,
+                                                      shroudChord, m_VaneDeflectionDeg)};
         };
-        m_PropVanePanels = PanelBuilder::BuildDuctVanes(m_Contract.ControlSurfaces, shroudInner,
-                                                        0.5 * shroudChord, shroudChord,
-                                                        m_VaneDeflectionDeg, localFlow);
-        if (!m_PropVanePanels.empty()) {
-            m_PropVaneStrips = PanelBuilder::BuildDuctVaneStrips(
-                m_Contract.ControlSurfaces, shroudInner, shroudChord, m_VaneDeflectionDeg);
 
-            Solver::FreestreamConditions vaneFc = fc;
-            vaneFc.p = 0.0; // the vanes do not rotate: static frame, slipstream via the field
-            Solver::ReferenceGeometry vaneRef;
-            for (const auto& panel : m_PropVanePanels) vaneRef.Area += panel.PlanformArea;
-            vaneRef.Span = 2.0 * shroudInner;
-            vaneRef.Chord = shroudChord;
-            const double vaneTrail = Solver::DefaultTrailSpanFactor * 2.0 * shroudInner;
+        Solver::FreestreamConditions vaneFc = fc;
+        vaneFc.p = 0.0; // the vanes do not rotate: static frame, slipstream via the field
+        Solver::ReferenceGeometry vaneRef;
+        vaneRef.Area = 1.0; // dimensional readouts only; coefficients unused for the vanes
+        vaneRef.Span = 2.0 * shroudInner;
+        vaneRef.Chord = shroudChord;
+        const double vaneTrail = Solver::DefaultTrailSpanFactor * 2.0 * shroudInner;
 
-            // Same section-model choice as the blades; the BL model's empty
-            // camber callable is exactly a flat plate. The BL model's
-            // piecewise interior needs the coarser tolerance (see
-            // theory.rst, "stabilization").
-            const Solver::SectionModel vaneModel =
-                (m_PropSectionModel == 1) ? Solver::SectionModel(Solver::BoundaryLayerSectionModel{})
-                                          : Solver::SectionModel(Solver::AnalyticSectionModel{});
-            Solver::ViscousCouplingOptions vaneOptions;
-            vaneOptions.Tolerance = (m_PropSectionModel == 1) ? 2e-2 : 1e-3;
-            vaneOptions.MaxIterations = 400;
-            m_PropVaneCoupled =
-                Solver::SolveViscousCoupled(m_PropVanePanels, m_PropVaneStrips, vaneFc, vaneRef,
-                                            vaneTrail, vaneModel, vaneOptions, {}, slipstream);
+        // Same section-model choice for both sides; the BL model's empty
+        // camber callable is exactly a flat plate, and its piecewise
+        // interior needs the coarser tolerance (theory.rst).
+        const Solver::SectionModel rotorModel =
+            (m_PropSectionModel == 1) ? Solver::SectionModel(PanelBuilder::MakePropellerSectionModel(m_Prop))
+                                      : Solver::SectionModel(Solver::AnalyticSectionModel{});
+        const Solver::SectionModel vaneModel =
+            (m_PropSectionModel == 1) ? Solver::SectionModel(Solver::BoundaryLayerSectionModel{})
+                                      : Solver::SectionModel(Solver::AnalyticSectionModel{});
+        Solver::RotorVaneOptions coupled;
+        coupled.RotorOptions.Tolerance = (m_PropSectionModel == 1) ? 2e-2 : 1e-3;
+        coupled.RotorOptions.MaxIterations = 400;
+        coupled.VaneOptions = coupled.RotorOptions;
+
+        Solver::RotorVaneResult joint = Solver::SolveRotorVaneCoupled(
+            m_PropPanels, m_PropStrips, fc, ref, trail, rotorModel, m_PropDuctPanels, vaneBuilder,
+            vaneFc, vaneRef, vaneTrail, vaneModel, m_PropSpeed, m_PropDensity, coupled);
+
+        m_PropCoupled = joint.Rotor; // the rotor state that FELT the vanes
+        m_PropSolve = m_PropCoupled.Base;
+        m_PropVaneCoupled = joint.Vanes;
+        m_PropVanePanels = std::move(joint.VanePanels);
+        m_PropVaneStrips = std::move(joint.VaneStrips);
+        m_PropOuterIterations = joint.OuterIterations;
+        m_PropSwirlFactor = joint.SwirlFactor;
+        m_PropOuterResidual = joint.Residual;
+        m_PropOuterConverged = joint.Converged;
+        if (!m_PropVanePanels.empty())
             m_PropVaneLattice.Update(m_PropVanePanels, m_PropVaneCoupled.Base, m_PropLatticeDisplay,
                                      2.0 * shroudInner);
-        }
     }
 
     m_PropLattice.Update(m_PropPanels, m_PropSolve, m_PropLatticeDisplay, 2.0 * m_Prop.Radius,
@@ -771,6 +793,10 @@ void Application::DrawPropellerUI() {
         }
         if (!m_PropVaneCoupled.Converged)
             ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "vane coupling did not converge");
+        ImGui::Text("two-way: %d outer pass(es), swirl factor %.2f, residual %.2e",
+                    m_PropOuterIterations, m_PropSwirlFactor, m_PropOuterResidual);
+        if (!m_PropOuterConverged)
+            ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "outer coupling did not converge");
     }
     if (m_PropUseViscous) {
         ImGui::Text("coupling: %d iteration(s), residual %.2e", m_PropCoupled.Iterations,
