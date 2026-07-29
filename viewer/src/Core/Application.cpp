@@ -140,6 +140,10 @@ Application::Application(const std::string& geometryPath, const std::string& scr
     else FrameView();
 }
 
+void Application::OrbitBy(double yawDeg, double pitchDeg) {
+    m_Camera.Rotate(static_cast<float>(yawDeg), static_cast<float>(pitchDeg));
+}
+
 Application::~Application() {
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();

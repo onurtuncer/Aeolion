@@ -45,6 +45,10 @@ public:
                          Screen initialScreen = Screen::Airframe);
     ~Application();
 
+    /** Rotate the orbit camera from its framed pose (degrees) -- lets a
+     *  scripted screenshot pick its viewpoint. */
+    void OrbitBy(double yawDeg, double pitchDeg);
+
     Application(const Application&) = delete;
     Application& operator=(const Application&) = delete;
 

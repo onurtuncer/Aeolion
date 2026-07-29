@@ -524,6 +524,24 @@ Downstream control vanes and the propulsive wrench
    four duct-jet vanes solved in the reconstructed slipstream, and the
    propulsive wrench reported live.
 
+.. figure:: _static/viewer_vanes_aft.png
+   :width: 100%
+   :alt: Aft view down the duct bore: the four duct-jet vanes in their
+         cruciform arrangement around the hub, each colored by its solved
+         radial loading, the blade strips visible inside the bore.
+
+   Looking upstream at the duct exit: the contract's four-vane cruciform
+   around the hub, each vane colored by its own solved circulation.
+
+.. figure:: _static/viewer_vanes_side.png
+   :width: 100%
+   :alt: Side view: the vanes extending downstream from the duct exit
+         plane, blades inside the ring.
+
+   From the side: the vanes' chords run downstream from their hinge
+   lines at the exit plane; the blade lattice sits at the rotor plane at
+   the ring's mid-chord.
+
 The contract's ``DuctJet`` control surfaces are all-moving plates in the
 jet at the duct exit (``Geometry/ControlSurface.h``): each spans
 RADIALLY along its hinge axis from ``EtaStart`` to ``EtaEnd`` of the

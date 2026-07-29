@@ -28,6 +28,12 @@ in the reconstructed slipstream, and the full propulsive wrench (net
 thrust, side forces, control moments, swirl counter-torque) reported
 live. See "Downstream control vanes" in
 [doc/theory.rst](doc/theory.rst).*
+*Additional viewpoints (aft view down the bore showing the four-vane
+cruciform, and a side view of the vanes extending downstream of the
+exit plane) are in
+[doc/_static/viewer_vanes_aft.png](doc/_static/viewer_vanes_aft.png) and
+[doc/_static/viewer_vanes_side.png](doc/_static/viewer_vanes_side.png);
+`aeolion_viewer --orbit <yaw> <pitch>` reproduces any of them.*
 
 ## Layout
 

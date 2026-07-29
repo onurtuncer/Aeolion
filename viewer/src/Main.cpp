@@ -27,6 +27,7 @@ int main(int argc, char** argv) {
     int maxFrames = -1;
     std::string geometryPath;
     std::string screenshotPath;
+    double orbitYawDeg = 0.0, orbitPitchDeg = 0.0;
     Aeolion::Viewer::Screen screen = Aeolion::Viewer::Screen::Airframe;
     for (int i = 1; i < argc; ++i) {
         std::string_view arg = argv[i];
@@ -42,11 +43,19 @@ int main(int argc, char** argv) {
             if (value == "propeller") screen = Aeolion::Viewer::Screen::Propeller;
             else if (value == "airframe") screen = Aeolion::Viewer::Screen::Airframe;
             else AE_WARN("aeolion_viewer: unknown --screen '{}', staying on airframe", value);
+        } else if (arg == "--orbit" && i + 2 < argc) {
+            // Yaw and pitch offsets [deg] from the framed pose, for
+            // scripted screenshots from chosen viewpoints.
+            std::string_view yawText = argv[++i];
+            std::string_view pitchText = argv[++i];
+            std::from_chars(yawText.data(), yawText.data() + yawText.size(), orbitYawDeg);
+            std::from_chars(pitchText.data(), pitchText.data() + pitchText.size(), orbitPitchDeg);
         }
     }
 
     try {
         Aeolion::Viewer::Application app(geometryPath, screenshotPath, screen);
+        if (orbitYawDeg != 0.0 || orbitPitchDeg != 0.0) app.OrbitBy(orbitYawDeg, orbitPitchDeg);
         app.Run(maxFrames);
     } catch (const std::exception& e) {
         AE_CRITICAL("aeolion_viewer: fatal: {}", e.what());
