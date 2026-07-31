@@ -10,13 +10,19 @@
 //
 // Per outer pass: the rotor solves with the vanes' azimuthal-mean induced
 // field in its external-velocity hook (MeanInducedField); the slipstream
-// is rebuilt from the fresh rotor loading with the current swirl budget
-// factor; the vanes are REMESHED (their trailing legs follow the local
-// mean flow, which just changed) and re-solved in it; and the budget
-// factor contracts whenever the vanes extract more torque than the jet's
-// angular-momentum flux -- the shaft torque -- delivers. Convergence is
-// judged on the relative change of the total wrench (net thrust, Mx) and
-// of the vane circulation.
+// is rebuilt from the fresh rotor loading; and the swirl budget is solved
+// as a bracketed 1-D ROOT PROBLEM at frozen rotor state -- find the swirl
+// factor s at which the vanes' recovered torque equals the jet's
+// angular-momentum flux (the shaft torque), each evaluation remeshing the
+// vanes in the rescaled slipstream (their trailing legs follow the local
+// mean flow) and re-solving them. Freezing the rotor inside the root find
+// is load-bearing: driving s with a feedback law while the rotor re-solves
+// was observed both to ratchet past the fixed point onto the floor
+// (under-recovering forever after) and, driven the other way, to walk the
+// coupled pair onto a runaway branch. Only after the budget is satisfied
+// does the pass advance the (under-relaxed) vane feedback into the rotor.
+// Convergence is judged on the relative change of the total wrench (net
+// thrust, Mx), of the vane circulation, and any remaining budget excess.
 
 #pragma once
 
@@ -34,10 +40,12 @@
 namespace Aeolion::Solver {
 
 // --- outer-iteration defaults ------------------------------------------------
-inline constexpr int    DefaultOuterIterations = 12;
+inline constexpr int    DefaultOuterIterations = 24;
 inline constexpr double DefaultOuterTolerance = 1e-2;   // relative wrench / circulation change
-inline constexpr double DefaultOuterRelaxation = 0.7;   // on the vane gammas feeding back
+inline constexpr double DefaultOuterRelaxation = 0.35;  // on the vane gammas feeding back
 inline constexpr double MinSwirlFactor = 0.05;          // the budget never quite extinguishes the swirl
+inline constexpr double SwirlBudgetTolerance = 0.05;    // relative band around recovered = jet torque
+inline constexpr int    MaxSwirlBudgetEvaluations = 8;  // vane solves one pass's root find may spend
 
 /**
  * The vane side of the coupling, rebuilt every outer pass: given the
@@ -118,21 +126,36 @@ struct RotorVaneResult {
         // 2. Band the fresh loading: the slipstream for the vanes, the
         // inflow for the next pass's wake pitch.
         solvedInflow = AxialInflowFromBands(ComputeSlipstreamBands(res.Rotor, axialSpeed, rho));
-        const auto slipstream =
-            SlipstreamField(res.Rotor, axialSpeed, rho, ductSources, res.SwirlFactor);
-        const auto localFlow = [&](const Vec3& point) {
-            return Vec3(axialSpeed, 0.0, 0.0) + slipstream(point);
+
+        // 3. One vane evaluation at swirl scale s: remesh (the trailing
+        // legs follow the local mean flow, which depends on s) and
+        // re-solve in the rescaled slipstream, warm-started from the last
+        // vane circulation -- continuation, so a vane riding a post-stall
+        // branch boundary follows ONE branch across evaluations and
+        // passes instead of flipping under tiny input changes. Returns
+        // the recovered torque. The rotor state is FROZEN across
+        // evaluations.
+        const auto solveVanesAt = [&](double s) {
+            const auto scaled = SlipstreamField(res.Rotor, axialSpeed, rho, ductSources, s);
+            const auto flow = [&](const Vec3& point) {
+                return Vec3(axialSpeed, 0.0, 0.0) + scaled(point);
+            };
+            auto [vanePanels, vaneStrips] = vaneBuilder(flow);
+            res.VanePanels = std::move(vanePanels);
+            res.VaneStrips = std::move(vaneStrips);
+            if (res.VanePanels.empty()) return 0.0;
+            ViscousCouplingOptions warmOptions = options.VaneOptions;
+            warmOptions.InitialGamma = res.Vanes.Base.gamma; // empty on the first pass
+            res.Vanes = SolveViscousCoupled(res.VanePanels, res.VaneStrips, vaneFc, vaneRef,
+                                            vaneTrail, vaneModel, warmOptions, {}, scaled);
+            return res.Vanes.Base.Mx;
         };
 
-        // 3. Remesh and re-solve the vanes in it (when there are vanes at
-        // all -- the driver also serves the vane-less self-consistent-wake
-        // iteration).
         double gammaShift = 0.0, gammaScale = 1.0;
         double jetTorque = 0.0, recovered = 0.0;
         if (vaneBuilder) {
-            auto [vanePanels, vaneStrips] = vaneBuilder(localFlow);
-            res.VanePanels = std::move(vanePanels);
-            res.VaneStrips = std::move(vaneStrips);
+            jetTorque = -(res.Rotor.InducedMoment.x + res.Rotor.ProfileMoment.x);
+            recovered = solveVanesAt(res.SwirlFactor); // warm start: last pass's factor
         }
         if (!vaneBuilder || res.VanePanels.empty()) {
             if (!rotorBuilder) {
@@ -140,18 +163,49 @@ struct RotorVaneResult {
                 break;
             }
         } else {
-            res.Vanes = SolveViscousCoupled(res.VanePanels, res.VaneStrips, vaneFc, vaneRef,
-                                            vaneTrail, vaneModel, options.VaneOptions, {},
-                                            slipstream);
-
-            // 4. The swirl budget: the jet's angular-momentum flux is the
-            // shaft torque (blade circulatory + profile moments; the duct's
-            // pressure moment is axisymmetrically ~zero, carrying no swirl).
-            jetTorque = -(res.Rotor.InducedMoment.x + res.Rotor.ProfileMoment.x);
-            recovered = res.Vanes.Base.Mx;
-            if (options.SwirlBudget && jetTorque > Math::Tiny && recovered > jetTorque)
-                res.SwirlFactor =
-                    std::max(res.SwirlFactor * jetTorque / recovered, MinSwirlFactor);
+            // 4. The swirl budget as a bracketed root find on s in
+            // [MinSwirlFactor, 1]: the jet's angular-momentum flux is the
+            // shaft torque (blade circulatory + profile moments; the
+            // duct's pressure moment is axisymmetrically ~zero, carrying
+            // no swirl), and recovered torque grows with the swirl the
+            // vanes see, so seek recovered(s) = jetTorque. Untested
+            // endpoints are tried before bisecting, so the common
+            // settled-warm-start case costs one evaluation, a slack
+            // budget accepts s = 1 (recovered(1) <= Q: nothing to scale
+            // away, including a swirl-opposing negative recovery), and a
+            // row over-recovering even at the floor keeps the floor --
+            // where any excess still shows in the convergence residual
+            // rather than being declared away.
+            // The root find runs only through the FIRST HALF of the outer
+            // budget: s is a closure constant, not a state variable, and
+            // once its increments fall inside the inner solve's own noise
+            // the re-bisection just remeshes jitter into the wrench.
+            // Later passes hold s and let the rest of the state settle.
+            if (options.SwirlBudget && jetTorque > Math::Tiny &&
+                2 * res.OuterIterations <= options.MaxOuterIterations) {
+                const double band = SwirlBudgetTolerance * jetTorque;
+                double s = res.SwirlFactor;
+                double sLo = MinSwirlFactor, sHi = 1.0;
+                bool floorTested = s <= MinSwirlFactor + Math::Tiny;
+                bool fullTested = s >= 1.0 - Math::Tiny;
+                for (int evals = 1; std::fabs(recovered - jetTorque) > band &&
+                                    evals < MaxSwirlBudgetEvaluations;
+                     ++evals) {
+                    if (recovered > jetTorque) {
+                        sHi = s;
+                        if (sHi <= MinSwirlFactor + Math::Tiny) break; // floor it is
+                        s = floorTested ? Math::Half * (sLo + sHi) : MinSwirlFactor;
+                    } else {
+                        sLo = s;
+                        if (sLo >= 1.0 - Math::Tiny) break; // slack: full swirl stands
+                        s = fullTested ? Math::Half * (sLo + sHi) : 1.0;
+                    }
+                    floorTested = floorTested || s <= MinSwirlFactor + Math::Tiny;
+                    fullTested = fullTested || s >= 1.0 - Math::Tiny;
+                    recovered = solveVanesAt(s);
+                }
+                res.SwirlFactor = s;
+            }
 
             // 5. Relax the feedback circulation.
             const std::vector<double>& fresh = res.Vanes.Base.gamma;
@@ -173,9 +227,11 @@ struct RotorVaneResult {
         const double thrust = -(res.Rotor.Base.Di + res.Vanes.Base.Di);
         const double mx = res.Rotor.Base.Mx + res.Vanes.Base.Mx;
         const double wrenchScale = std::max({std::fabs(thrust), std::fabs(mx), Math::Tiny});
+        // Excess only beyond the root find's own acceptance band -- inside
+        // it the budget is satisfied by construction.
         const double budgetExcess =
             (options.SwirlBudget && jetTorque > Math::Tiny)
-                ? std::max(recovered - jetTorque, 0.0) / jetTorque
+                ? std::max((recovered - jetTorque) / jetTorque - SwirlBudgetTolerance, 0.0)
                 : 0.0;
         res.Residual = std::max({std::fabs(thrust - previousThrust) / wrenchScale,
                                  std::fabs(mx - previousMx) / wrenchScale, gammaShift / gammaScale,

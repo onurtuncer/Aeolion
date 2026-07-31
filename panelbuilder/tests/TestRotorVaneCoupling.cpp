@@ -179,6 +179,12 @@ void TestControlResponseSurvives() {
     const auto neutral = SolveJoint({});
     const auto plus = SolveJoint({8.0, 0.0, 0.0, 0.0});
     const auto minus = SolveJoint({-8.0, 0.0, 0.0, 0.0});
+    std::cout << "deflected outer: +8 residual=" << plus.Residual << " outer=" << plus.OuterIterations
+              << " s=" << plus.SwirlFactor << " vaneIters=" << plus.Vanes.Iterations
+              << " vaneRes=" << plus.Vanes.MaxResidual << "\n                 -8 residual="
+              << minus.Residual << " outer=" << minus.OuterIterations << " s=" << minus.SwirlFactor
+              << " vaneIters=" << minus.Vanes.Iterations << " vaneRes=" << minus.Vanes.MaxResidual
+              << "\n";
     CHECK(plus.Converged && minus.Converged, "deflected joint solves must converge");
 
     const double thrust = -(neutral.Rotor.Base.Di + neutral.Vanes.Base.Di);

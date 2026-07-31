@@ -737,46 +737,85 @@ Per outer iteration :math:`k`:
    downstream cylinder to average.
 
 2. **Slipstream reconstruction** from the NEW rotor loading (the annular
-   momentum form above), with the swirl component scaled by the current
-   budget factor :math:`s \in (0, 1]`.
+   momentum form above), with the swirl component scaled by the budget
+   factor :math:`s \in [s_{min}, 1]`.
 
-3. **Vane remesh and solve** (static frame) in that slipstream -- remesh,
-   because the vanes' trailing legs follow the local mean flow, which
-   just changed.
-
-4. **The swirl budget.** The angular-momentum flux the jet delivers is
-   the shaft torque, :math:`\dot{L}_{jet} = Q = -M_x^{rotor}`; the vanes
-   cannot remove more than arrives. An unconstrained prescribed-field
-   vane solve can (each strip reads the full stated swirl; nothing
-   depletes it -- the one-way model was measured recovering three times
-   :math:`Q`). Whenever the extracted :math:`M_x^{vane}` exceeds the
-   budget, the swirl factor contracts toward
+3. **The swirl budget, solved as a root problem.** The angular-momentum
+   flux the jet delivers is the shaft torque,
+   :math:`\dot{L}_{jet} = Q = -M_x^{rotor}`; the vanes cannot remove
+   more than arrives. An unconstrained prescribed-field vane solve can
+   (each strip reads the full stated swirl; nothing depletes it -- the
+   one-way model was measured recovering three times :math:`Q`, and
+   several-fold under the Level-B jet). With the ROTOR STATE FROZEN,
+   :math:`M_x^{vane}(s)` is a monotone, bracketed function of the swirl
+   factor -- each evaluation remeshes the vanes in the rescaled
+   slipstream (their trailing legs follow the local mean flow) and
+   re-solves them -- so the budget condition
 
    .. math::
 
-      s \;\leftarrow\; s \cdot \frac{Q}{M_x^{vane}},
+      M_x^{vane}(s) \;=\; Q
 
-   so at convergence :math:`M_x^{vane} \le Q` holds -- the fixed point of
-   the contraction is exactly the budget-saturated state, representing
-   vanes that de-swirl the jet essentially completely.
+   is solved directly by bracketed bisection on
+   :math:`s \in [s_{min}, 1]`, warm-started from the previous pass's
+   factor (the settled case costs a single evaluation). A slack budget
+   (:math:`M_x^{vane}(1) \le Q`) accepts :math:`s = 1`; a configuration
+   over-recovering even at the floor keeps the floor, with the excess
+   held in the convergence residual rather than declared away. Freezing
+   the rotor inside the root find is load-bearing, not a convenience:
+   driving :math:`s` with a feedback law while the rotor re-solved was
+   observed to fail BOTH ways -- a one-way multiplicative contraction
+   ratchets past the fixed point onto the floor after a severe
+   first-pass over-recovery and can never climb back (the vanes then
+   under-recover forever), while the symmetric bidirectional law lets
+   the co-evolving rotor-vane pair walk onto a runaway branch that
+   "converges" with the rotor at several times its true loading.
+
+4. **Rotor feedback.** Only after the budget is satisfied does the pass
+   advance the vanes' circulation into the rotor's boundary condition.
 
 5. **Relaxation and convergence.** The vane circulation used for the
-   rotor feedback is under-relaxed between outer passes; the outer
-   residual is the relative change of the total wrench (net thrust and
-   :math:`M_x`) together with the vane-circulation change, and the loop
+   rotor feedback is under-relaxed between outer passes (the default
+   deliberately gentle: the swirl-rich hover jet parks vane strips in
+   regimes where their inner solve plateaus, and an aggressive feedback
+   amplifies that scatter); the outer residual is the relative change of
+   the total wrench (net thrust and :math:`M_x`) together with the
+   vane-circulation change and any remaining budget excess, and the loop
    ends when all fall under tolerance.
+
+Two further stabilizers earn their keep in the swirl-rich Level-B jet.
+The root find runs only through the first half of the outer budget:
+once the factor's increments fall inside the vane solve's own noise,
+re-bisecting each pass just remeshes jitter into the wrench, so later
+passes hold :math:`s` and let the rest of the state settle. And the
+vane solve is **warm-started** from its previous circulation
+(``ViscousCouplingOptions::InitialGamma``) -- continuation across
+evaluations and passes. This matters because the post-stall section
+response is multivalued: a deflected hover vane re-solved from scratch
+can land on either branch under tiny input changes, which shows up as a
+never-decaying pass-to-pass oscillation in the outer residual, while
+warm-started it follows one branch smoothly. Relatedly, when an inner
+solve exhausts its iteration budget in a limit cycle (deep post-stall
+strips do this), it returns the CYCLE MEAN -- the arithmetic mean of
+the second half of its iterates, evaluated consistently in one final
+sweep -- rather than a random phase of the cycle; ``Converged`` stays
+false and the residual keeps the cycle's mismatch, so the mean is
+reported, not declared converged.
 
 What the coupling adds physically: the vanes' blockage and upwash now
 unload or re-load the rotor (a measurable thrust shift with vanes
 present), the duct's source strengths feel the vanes through the rotor
 pass, and the recovered counter-torque is bounded by the momentum the
-jet actually carries. On the reference cruciform at hover the budget
-binds hard: the swirl factor converges near :math:`s = 0.33` and the
-vanes recover 99% of the jet's angular-momentum flux -- the
-budget-saturated state, an essentially complete de-swirl, where the
-one-way scheme had reported three times the available torque. A welcome
-side effect: with the budgeted swirl bias small, the control response
-about neutral becomes nearly antisymmetric. Still outside the model: unsteady blade-passing
+jet actually carries. On the reference cruciform at hover under the
+Level-B wake the root find converges the factor near :math:`s = 0.32`
+with the vanes recovering ~97% of the jet's angular-momentum flux --
+essentially complete de-swirl, where the one-way scheme had reported
+several times the available torque. The branch-following continuation
+also changes what the hover control response honestly is: a vane
+commanded against tens of degrees of swirl sits post-stall, and its
+response to :math:`\pm 8^\circ` is the stalled branch's -- small and
+asymmetric -- rather than the attached-branch figures cold starts used
+to hop to. Still outside the model: unsteady blade-passing
 loads (every exchange is a time mean), the vanes' straight-line wakes,
 and any swirl depletion RESOLVED radially (the budget is a single
 scalar, not a band-by-band bookkeeping -- the natural refinement if a

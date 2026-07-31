@@ -181,6 +181,18 @@ struct ViscousCouplingOptions {
      * weighted residual of the raw state reads deceptively small.
      */
     double ResidualIncidenceLimitDeg = 75.0;
+
+    /**
+     * Optional warm start: when its size matches the panel count, the
+     * iteration starts from this circulation instead of the inviscid
+     * solve. This is CONTINUATION, and it matters where the section
+     * response is multivalued (post-stall strips): a solve near a branch
+     * boundary re-run from scratch can land on either branch under tiny
+     * input changes, which shows up in an outer driver as a
+     * never-decaying pass-to-pass oscillation; warm-started from the
+     * previous pass it follows one branch smoothly.
+     */
+    std::vector<double> InitialGamma;
 };
 
 /** Converged per-strip state, for reporting, radial plots, and slipstream
@@ -248,10 +260,14 @@ struct ViscousCoupledResult {
 
     // Seed with the inviscid solution (blades and sources coupled when
     // sources are present) -- the lattice's own boundary condition is the
-    // right starting point for the fixed point.
+    // right starting point for the fixed point -- unless the caller
+    // supplied a warm start (continuation across an outer iteration; see
+    // ViscousCouplingOptions::InitialGamma).
     const PanelSystem system{panels, sources};
     std::vector<double> gamma;
-    if (nb > 0) {
+    if (options.InitialGamma.size() == panels.size()) {
+        gamma = options.InitialGamma;
+    } else if (nb > 0) {
         gamma = SolveWithSystem(Prepare(system, trail), fc, ref, externalField).gamma;
     } else {
         gamma = Solve(panels, fc, ref, trail, externalField).gamma;
@@ -343,6 +359,19 @@ struct ViscousCoupledResult {
     double bestResidual = 1e30;
     double fNormPrev = 1e30;
     std::vector<std::vector<double>> historyX, historyF; // iterates and map residuals
+    // Tail mean of the circulation: when the iteration exhausts its budget
+    // in a limit cycle (deep post-stall strips do this), the returned state
+    // is the CYCLE MEAN -- the arithmetic mean over the second half of the
+    // budget (several full cycles, no memory of the transient), evaluated
+    // consistently in one final sweep. The mean is reproducible across
+    // repeated solves, which is what lets an outer driver (the rotor-vane
+    // coupling) converge on stable quasi-steady loads instead of sampling
+    // a random phase of the cycle. Converged stays false and MaxResidual
+    // keeps the cycle's mismatch: the mean is reported, not declared
+    // converged.
+    std::vector<double> gammaMeanSum(n, 0.0);
+    int gammaMeanCount = 0;
+    bool finalSweep = false;
     for (res.Iterations = 1; res.Iterations <= options.MaxIterations; ++res.Iterations) {
         updateSources();
         res.MaxResidual = 0.0;
@@ -415,6 +444,7 @@ struct ViscousCoupledResult {
                                               1.0));
         }
 
+        if (finalSweep) break; // strips/residual now consistent with the cycle mean
         if (res.MaxResidual < options.Tolerance) {
             res.Converged = true;
             break;
@@ -498,6 +528,17 @@ struct ViscousCoupledResult {
         while (historyX.size() > static_cast<std::size_t>(std::max(options.AndersonDepth, 1))) {
             historyX.erase(historyX.begin());
             historyF.erase(historyF.begin());
+        }
+
+        if (2 * res.Iterations > options.MaxIterations) {
+            for (std::size_t i = 0; i < n; ++i) gammaMeanSum[i] += gamma[i];
+            ++gammaMeanCount;
+        }
+        if (res.Iterations == options.MaxIterations - 1 && gammaMeanCount > 0) {
+            // Within the caps: a convex mix of capped iterates.
+            for (std::size_t i = 0; i < n; ++i)
+                gamma[i] = gammaMeanSum[i] / static_cast<double>(gammaMeanCount);
+            finalSweep = true;
         }
     }
 
