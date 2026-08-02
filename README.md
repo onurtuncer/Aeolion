@@ -118,6 +118,11 @@ panelbuilder/                    aeolion_panelbuilder (STATIC library)
                                    steepening with disk loading; Level-B
                                    helix: polyline kernel consistency,
                                    figure of merit dropping vs straight legs
+    TestVaneCascade.cpp           cascade momentum closure for vane loads
+                                   (the default): forces bounded by sector
+                                   mass flow by construction, dead air
+                                   carries nothing, coupled solve needs no
+                                   swirl budget
 
 viewer/                          aeolion_viewer (exe, GL application)
                                  interactive OpenGL visualizer, not part of

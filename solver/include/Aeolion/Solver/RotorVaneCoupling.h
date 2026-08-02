@@ -29,6 +29,7 @@
 #include "Aeolion/Lattice/Panel.h"
 #include "Aeolion/Lattice/SourcePanel.h"
 #include "Aeolion/Math/Constants.h"
+#include "Aeolion/Solver/VaneCascade.h"
 #include "Aeolion/Solver/ViscousCoupling.h"
 
 #include <cmath>
@@ -64,12 +65,25 @@ using VaneBuilder = std::function<std::pair<std::vector<Panel>, std::vector<Stri
 using RotorBuilder =
     std::function<std::vector<Panel>(const std::function<double(double)>& axialInflow)>;
 
+/**
+ * How the vane row is solved each outer pass. Cascade -- the default --
+ * is the annulus-by-annulus momentum closure (VaneCascade.h): forces
+ * bounded by each sector's mass flow by construction, no swirl-budget
+ * factor needed, deterministic and single-valued where the lattice is
+ * bistable (a deflected vane deep in the hover swirl). Lattice is the
+ * vortex-lattice strip solve with the swirl-budget root find -- the
+ * validated choice for brisk attached-incidence jets, where mutual strip
+ * induction is real signal rather than a runaway channel.
+ */
+enum class VaneClosure { Cascade, Lattice };
+
 struct RotorVaneOptions {
     int MaxOuterIterations = DefaultOuterIterations;
     double Tolerance = DefaultOuterTolerance;
     double Relaxation = DefaultOuterRelaxation;
     int AzimuthSamples = DefaultAzimuthSamples;
-    bool SwirlBudget = true; ///< Enforce vane Mx <= jet torque via the swirl factor.
+    VaneClosure Closure = VaneClosure::Cascade;
+    bool SwirlBudget = true; ///< Lattice closure only: enforce vane Mx <= jet torque via s.
     ViscousCouplingOptions RotorOptions;
     ViscousCouplingOptions VaneOptions;
 };
@@ -118,7 +132,8 @@ struct RotorVaneResult {
     // faithfully follows forever: recovered stays several-fold over the
     // budget at ANY s and the coupled pair locks onto a runaway branch.
     std::vector<double> vaneWarmStart;
-    if (options.SwirlBudget && vaneBuilder) res.SwirlFactor = MinSwirlFactor;
+    const bool lattice = options.Closure == VaneClosure::Lattice;
+    if (lattice && options.SwirlBudget && vaneBuilder) res.SwirlFactor = MinSwirlFactor;
 
     for (res.OuterIterations = 1; res.OuterIterations <= options.MaxOuterIterations;
          ++res.OuterIterations) {
@@ -156,6 +171,15 @@ struct RotorVaneResult {
             res.VanePanels = std::move(vanePanels);
             res.VaneStrips = std::move(vaneStrips);
             if (res.VanePanels.empty()) return 0.0;
+            if (!lattice) {
+                // The jet's true angular-momentum flux is the shaft
+                // torque; the cascade normalizes the sampled swirl to it
+                // up front (the reconstruction over-carries flux).
+                const double flux = -(res.Rotor.InducedMoment.x + res.Rotor.ProfileMoment.x);
+                res.Vanes = SolveVaneCascade(res.VanePanels, res.VaneStrips, vaneFc, flow,
+                                             vaneModel, flux);
+                return res.Vanes.Base.Mx;
+            }
             ViscousCouplingOptions warmOptions = options.VaneOptions;
             warmOptions.InitialGamma = vaneWarmStart; // empty = lattice seed
             res.Vanes = SolveViscousCoupled(res.VanePanels, res.VaneStrips, vaneFc, vaneRef,
@@ -194,7 +218,7 @@ struct RotorVaneResult {
             // once its increments fall inside the inner solve's own noise
             // the re-bisection just remeshes jitter into the wrench.
             // Later passes hold s and let the rest of the state settle.
-            if (options.SwirlBudget && jetTorque > Math::Tiny &&
+            if (lattice && options.SwirlBudget && jetTorque > Math::Tiny &&
                 2 * res.OuterIterations <= options.MaxOuterIterations) {
                 const double band = SwirlBudgetTolerance * jetTorque;
                 double s = res.SwirlFactor;
@@ -225,7 +249,8 @@ struct RotorVaneResult {
             // solve never needs to exceed the flux by that much) -- drop
             // the warm start so the next evaluation reseeds from the
             // lattice instead of faithfully following the bad branch.
-            if (jetTorque > Math::Tiny && recovered > 2.0 * jetTorque) vaneWarmStart.clear();
+            if (lattice && jetTorque > Math::Tiny && recovered > 2.0 * jetTorque)
+                vaneWarmStart.clear();
 
             // 5. Relax the feedback circulation.
             const std::vector<double>& fresh = res.Vanes.Base.gamma;
@@ -248,9 +273,11 @@ struct RotorVaneResult {
         const double mx = res.Rotor.Base.Mx + res.Vanes.Base.Mx;
         const double wrenchScale = std::max({std::fabs(thrust), std::fabs(mx), Math::Tiny});
         // Excess only beyond the root find's own acceptance band -- inside
-        // it the budget is satisfied by construction.
+        // it the budget is satisfied by construction. The cascade closure
+        // conserves angular momentum per sector, so it carries no excess
+        // term at all.
         const double budgetExcess =
-            (options.SwirlBudget && jetTorque > Math::Tiny)
+            (lattice && options.SwirlBudget && jetTorque > Math::Tiny)
                 ? std::max((recovered - jetTorque) / jetTorque - SwirlBudgetTolerance, 0.0)
                 : 0.0;
         res.Residual = std::max({std::fabs(thrust - previousThrust) / wrenchScale,

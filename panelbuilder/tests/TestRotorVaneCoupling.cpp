@@ -106,10 +106,15 @@ Solver::RotorVaneResult SolveJoint(const std::vector<double>& deflectionsDeg) {
     // hands such strips to this same analytic polar anyway), and the
     // budget iteration needs the smooth model to close. BL-vane coverage
     // lives in TestPropellerVanes' mild-jet case, inside the envelope.
+    // This test pins the LATTICE closure and its swirl-budget root find
+    // explicitly -- the cascade closure (the production default) has its
+    // own test, TestVaneCascade.
+    Solver::RotorVaneOptions options;
+    options.Closure = Solver::VaneClosure::Lattice;
     return Solver::SolveRotorVaneCoupled(panels, strips, fc, ref, trail,
                                          Solver::AnalyticSectionModel{}, duct, vaneBuilder, vaneFc,
                                          vaneRef, Solver::DefaultTrailSpanFactor * 2.0 * shroudInner,
-                                         Solver::AnalyticSectionModel{}, 0.0, Rho);
+                                         Solver::AnalyticSectionModel{}, 0.0, Rho, options);
 }
 
 void TestConvergesAndBudgets() {

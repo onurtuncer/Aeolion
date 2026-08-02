@@ -716,6 +716,48 @@ split itself is kept -- it is physics, not convenience: the blades'
 boundary condition lives in the rotating frame, the vanes' in the
 static frame, and no single quasi-steady frame holds both.
 
+The complete solution procedure, charted:
+
+.. graphviz::
+   :align: center
+   :caption: The coupled solution procedure. The right-hand loop is the
+             swirl budget solved as a bracketed root problem on
+             :math:`s \in [s_{min}, 1]` with the rotor state frozen; the
+             left-hand loop is the block Gauss-Seidel alternation
+             between the rotating and static frames.
+
+   digraph RotorVaneSolve {
+     rankdir=TB;
+     node [shape=box, fontname="Helvetica", fontsize=11,
+           margin="0.18,0.09"];
+     edge [fontname="Helvetica", fontsize=10];
+
+     start [style=rounded, label="geometry contract → blade, duct, and vane lattices;\nseed wake pitch λ ≈ 0.07;  Γ_vane = 0,  s = 1"];
+     remesh [label="1. remesh blades: trailing-leg pitch from banded v_i(r),\ncontracted helical near wake (Level B)"];
+     rotor [label="2. rotor + duct solve, rotating frame (p = Ω):\nvanes enter as the azimuthal mean of their induced field;\ninner Anderson-accelerated viscous fixed point"];
+     slip [label="3. reconstruct slipstream from the fresh loading\n(annular momentum theory);  swirl scaled by the budget factor s"];
+     vane [label="4. evaluate Mx_vane(s): remesh vanes in the rescaled slipstream\n(legs along the local mean flow), warm-started viscous\nvane solve in the static frame (p = 0)"];
+     budget [shape=diamond, label="budget met?\nMx_vane(s) = Q"];
+     feedback [label="5. under-relaxed vane-circulation feedback\ninto the rotor boundary condition"];
+     conv [shape=diamond, label="outer residual\n< tolerance?"];
+     out [style=rounded, label="propulsive wrench: net T (vane drag debited), Q,\ncontrol My, Mz, recovered counter-torque Mx"];
+
+     start -> remesh;
+     remesh -> rotor;
+     rotor -> slip;
+     slip -> vane;
+     vane -> budget;
+     budget -> feedback [label="  yes"];
+     budget -> vane [label="  no: bisect s (rotor frozen)", constraint=false];
+     feedback -> conv;
+     conv -> out [label="  yes"];
+     conv -> remesh [label="  no: next outer pass", constraint=false];
+   }
+
+A slack budget (:math:`M_x^{vane}(1) \le Q`) accepts :math:`s = 1`;
+over-recovery at the floor keeps :math:`s_{min}` with the excess held
+in the outer residual; later outer passes hold the settled factor.
+
 Per outer iteration :math:`k`:
 
 1. **Rotor + duct solve** (rotating frame), with the vanes' influence
@@ -821,7 +863,88 @@ and any swirl depletion RESOLVED radially (the budget is a single
 scalar, not a band-by-band bookkeeping -- the natural refinement if a
 finer closure is ever needed). ``TestRotorVaneCoupling`` pins the outer
 convergence, the two-way blockage shift, the budget bound, and the
-survival of the control response.
+survival of the control response -- all on the LATTICE vane closure,
+which the sections above describe and which
+``RotorVaneOptions::Closure`` selects explicitly. The production
+default is the cascade closure below.
+
+The cascade momentum closure (the default vane model)
+-----------------------------------------------------
+
+Everything above still asks isolated-strip lifting-surface theory to
+carry vanes parked in tens of degrees of hover swirl, and the honest
+verdict from exercising it across an rpm-deflection matrix is that
+post-stall the model's answer is **not unique**: each strip's
+circulation is individually capped, but twenty capped strips can
+mutually inflate one another's local velocities, so the force runs away
+with no :math:`\Gamma` ever exceeding its cap -- a single vane at
+:math:`8^\circ` was solved carrying more side force than the entire net
+thrust on one branch, while the same command landed on a sane branch at
+a neighboring rpm. No stabilizer fixes a model whose answer is not
+unique; the model itself is wrong for that regime.
+
+``Solver::SolveVaneCascade`` (``VaneCascade.h``) replaces the vane
+lattice with the closure a stator row actually obeys: **annulus-by-
+annulus angular-momentum bookkeeping**. Each vane strip owns one
+azimuthal sector of its radial annulus; the mass flow through the
+sector is what the jet delivers,
+
+.. math::
+
+   \dot{m} = \rho\, u \,\frac{2\pi r}{N_{sector}}\, \Delta r,
+
+and the tangential force the strip may carry is exactly the angular
+momentum it removes from that flow, :math:`F_t = \dot{m}\,\Delta w`.
+Blade-element aerodynamics supplies the same force from the section
+polar (the ordinary ``SectionModel`` seam, deflection baked into the
+strip's chord frame) evaluated at the **passage-mean** flow
+:math:`(u,\ w - \Delta w/2)`, so the closure is one scalar equation per
+strip,
+
+.. math::
+
+   \dot{m}\,\Delta w \;=\; F_t(\Delta w),
+
+monotone in :math:`\Delta w` and solved by bisection on a bracket
+bounded by the local dynamic head. The consequences fall out rather
+than being imposed:
+
+* **every force is bounded by its sector's momentum flux** -- the
+  runaway channel does not exist;
+* **a dead-air strip carries nothing** -- force follows mass flow, so
+  the jet-edge strip that plagued the lattice closes itself;
+* **the undeflected cruciform cannot recover more torque than the jet
+  delivers** -- and the swirl-budget factor, its root find, and its
+  failure modes all become unnecessary on this path
+  (``SwirlFactor`` stays 1);
+* the solve is **direct and single-valued**: no iteration between
+  strips, no branches, no warm starts.
+
+One derived normalization guards the seam to the slipstream: the
+azimuthal-mean reconstruction is not flux-consistent (its far-wake
+axial doubling arrives without the matching streamtube swirl mapping,
+and was measured delivering roughly three times the shaft torque to the
+vane plane), so the coupled driver hands ``SolveVaneCascade`` the
+jet's true angular-momentum flux -- the shaft torque -- and the sampled
+swirl is scaled once, up front, whenever the sampled flux exceeds it.
+A computation, not an iterated feedback. The equivalent bound
+circulations (via the same Kutta-Joukowski projection inversion the
+lattice coupling uses) still feed the rotor's azimuthal-mean feedback
+field, so the two-way structure is unchanged.
+
+What the closure gives up, stated plainly: no mutual induction between
+strips (each sector is independent), no unsteadiness, and the
+passage-mean picture assumes the vane row fills its annulus the way a
+stator row does. Those are the right trades at hover. In a brisk
+attached-incidence jet, where mutual strip induction is real signal
+rather than a runaway channel, the lattice closure remains available
+and validated (``RotorVaneOptions::Closure = VaneClosure::Lattice`` --
+the solution-procedure chart above describes exactly that path).
+``TestVaneCascade`` pins the bookkeeping: recovered torque at but never
+beyond the jet's flux, dead-air strips carrying nothing, bounded
+sign-correct control response in the swirl-rich jet that bifurcated the
+lattice, and the coupled solve converging with no budget iteration at
+all.
 
 Level 3: the transpiration-coupled boundary-layer section solver
 ----------------------------------------------------------------

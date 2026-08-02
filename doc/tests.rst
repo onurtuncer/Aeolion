@@ -251,6 +251,21 @@ legs while the rotor still thrusts -- the induced power a straight-leg
 wake cannot carry, and the reason the straight-leg hover solve read
 optimistic.
 
+TestVaneCascade
+---------------
+
+The cascade momentum closure for vane loads (theory.rst, "The cascade
+momentum closure"), the coupled driver's default: recovered torque
+positive but never beyond the jet's angular-momentum flux -- the bound
+that exists BY CONSTRUCTION, where the lattice's capped strips could
+still mutually inflate a runaway force; a contracted jet's dead-air
+strips carrying exactly nothing (force follows mass flow, closing the
+jet-edge pathology); bounded, sign-correct control response in the
+swirl-rich jet that bifurcated the lattice closure; and the two-way
+coupled solve converging under the closure with no swirl-budget
+iteration at all, a single 8-degree vane never out-forcing the
+propulsor.
+
 Fixture data
 ------------
 
