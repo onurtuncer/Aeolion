@@ -108,6 +108,18 @@ struct RotorVaneResult {
     std::function<double(double)> solvedInflow = {}; // vi(r) of the previous pass; empty = seed
     double previousThrust = 0.0, previousMx = 0.0;
 
+    // The vane warm start (continuation seed across evaluations and outer
+    // passes), and the budget's starting point: ASCENDING continuation.
+    // The budget seeds at the FLOOR swirl -- the mildest, attached-most
+    // vane state -- and lets the root find raise s, so branch selection
+    // happens from the attached side (the alpha-continuation philosophy).
+    // Seeding at full swirl instead lets a long first inner solve wander
+    // into a huge-circulation limit cycle whose state the warm start then
+    // faithfully follows forever: recovered stays several-fold over the
+    // budget at ANY s and the coupled pair locks onto a runaway branch.
+    std::vector<double> vaneWarmStart;
+    if (options.SwirlBudget && vaneBuilder) res.SwirlFactor = MinSwirlFactor;
+
     for (res.OuterIterations = 1; res.OuterIterations <= options.MaxOuterIterations;
          ++res.OuterIterations) {
         // 0. The self-consistent wake: remesh the blades with the previous
@@ -145,9 +157,10 @@ struct RotorVaneResult {
             res.VaneStrips = std::move(vaneStrips);
             if (res.VanePanels.empty()) return 0.0;
             ViscousCouplingOptions warmOptions = options.VaneOptions;
-            warmOptions.InitialGamma = res.Vanes.Base.gamma; // empty on the first pass
+            warmOptions.InitialGamma = vaneWarmStart; // empty = lattice seed
             res.Vanes = SolveViscousCoupled(res.VanePanels, res.VaneStrips, vaneFc, vaneRef,
                                             vaneTrail, vaneModel, warmOptions, {}, scaled);
+            vaneWarmStart = res.Vanes.Base.gamma;
             return res.Vanes.Base.Mx;
         };
 
@@ -206,6 +219,13 @@ struct RotorVaneResult {
                 }
                 res.SwirlFactor = s;
             }
+
+            // Safety valve on the continuation: a pass still recovering
+            // more than twice the budget is on a runaway branch (a valid
+            // solve never needs to exceed the flux by that much) -- drop
+            // the warm start so the next evaluation reseeds from the
+            // lattice instead of faithfully following the bad branch.
+            if (jetTorque > Math::Tiny && recovered > 2.0 * jetTorque) vaneWarmStart.clear();
 
             // 5. Relax the feedback circulation.
             const std::vector<double>& fresh = res.Vanes.Base.gamma;
