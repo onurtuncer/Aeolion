@@ -932,6 +932,33 @@ circulations (via the same Kutta-Joukowski projection inversion the
 lattice coupling uses) still feed the rotor's azimuthal-mean feedback
 field, so the two-way structure is unchanged.
 
+**The feedback-field audit.** When the cascade first went two-way, the
+rotor+duct loading collapsed 45% with vanes present -- far beyond the
+few-percent perturbation a stator physically imposes -- and the
+lattice closure had shifted comparably far the other way. A
+component-by-component audit of the feedback chain localized it. The
+azimuthal mean of the vanes' BOUND filaments contributes exactly zero
+axial velocity at the disk (a radial filament's field there is purely
+tangential, and the tangential mean is negligible against
+:math:`\Omega r`); the trailing-leg cage contributes only
+:math:`\pm 0.2\ \mathrm{m/s}` against :math:`v_i \approx 6\ \mathrm{m/s}`
+-- about :math:`\pm 3\%` -- whether the legs are meshed along the raw
+swirl, the flux-normalized swirl, or the de-swirled exit flow, and
+finite cores change none of it. The rotor felt the vanes directly at
+only :math:`+0.6\%`. The entire collapse routed through the DUCT: a
+wall-attached vane's bound-filament tip endpoint lands exactly ON the
+duct's inner surface, arbitrarily close to duct source control points,
+and the corrupted boundary condition makes the duct solve manufacture
+an order-of-magnitude spurious download (:math:`-2.6\ \mathrm{N}`
+against :math:`+0.05\ \mathrm{N}` once fixed) that drags the rotor with
+it through the coupled source block. The fix is geometric and stated in
+the mesher: a vane whose span reaches the duct wall is **recessed off
+it by 5% of span** (``BuildDuctVanes``), the stand-in for the imaged
+wall continuation at the tip-clearance scale; a vane ending mid-jet
+keeps its stated tip and its real tip vortex. With the recession the
+stator's influence on the rotor+duct lands where physics puts it, at
+the percent scale.
+
 What the closure gives up, stated plainly: no mutual induction between
 strips (each sector is independent), no unsteadiness, and the
 passage-mean picture assumes the vane row fills its annulus the way a

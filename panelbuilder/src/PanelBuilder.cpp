@@ -43,6 +43,11 @@ inline constexpr double MinWakeAxialFraction = 0.25;
 // rotation, axial convection at the local (developing) induced velocity,
 // radius contracting toward the far-wake area halving. The straight far
 // tail continues from the helix end.
+// Duct-jet vanes whose stated span reaches the duct wall (eta above this)
+// are recessed off it by the gap fraction below -- see BuildDuctVanes.
+inline constexpr double WallAttachedVaneEta = 0.99;
+inline constexpr double VaneTipWallGapFraction = 0.05;
+
 inline constexpr int WakeSegmentsPerRevolution = 12;
 inline constexpr double WakeContractionRatio = 0.70710678118654752; // far-wake r/r0 = 1/sqrt(2)
 inline constexpr double WakeDevelopmentRadii = 2.0; // axial development length = this * radius
@@ -1124,9 +1129,20 @@ std::vector<Lattice::Panel> BuildDuctVanes(const std::vector<Geometry::ControlSu
         if (span.Norm() < Math::Half) continue; // degenerate stated axis
 
         const double r0 = surface.EtaStart * exitRadius;
-        const double r1 = surface.EtaEnd * exitRadius;
+        double r1 = surface.EtaEnd * exitRadius;
         const double chord = surface.ChordFraction * ductChord;
         if (r1 <= r0 || chord <= 0.0) continue;
+        // A wall-attached vane (eta reaching the duct) is recessed off the
+        // wall by a small span fraction: its bound-filament tip endpoint
+        // would otherwise land ON the duct's source control points, and
+        // the corrupted boundary condition makes the duct solve
+        // manufacture an order-of-magnitude spurious download (measured:
+        // -2.6 N against +0.05 N with the recession, dragging the rotor
+        // from 5.3 to 2.7 N with it). The recession stands in for the
+        // imaged wall continuation at the tip-clearance scale; a vane
+        // ending mid-jet keeps its stated tip and its real tip vortex.
+        if (surface.EtaEnd > WallAttachedVaneEta)
+            r1 = r0 + (r1 - r0) * (1.0 - VaneTipWallGapFraction);
 
         const double deflection =
             (s < deflectionsDeg.size()) ? Math::DegToRad(deflectionsDeg[s]) : 0.0;
@@ -1190,9 +1206,13 @@ std::vector<Solver::StripSection> BuildDuctVaneStrips(
         if (span.Norm() < Math::Half) continue;
 
         const double r0 = surface.EtaStart * exitRadius;
-        const double r1 = surface.EtaEnd * exitRadius;
+        double r1 = surface.EtaEnd * exitRadius;
         const double chord = surface.ChordFraction * ductChord;
         if (r1 <= r0 || chord <= 0.0) continue;
+        // The same wall recession as BuildDuctVanes -- the strips must
+        // stay aligned with the panels they describe.
+        if (surface.EtaEnd > WallAttachedVaneEta)
+            r1 = r0 + (r1 - r0) * (1.0 - VaneTipWallGapFraction);
 
         const double deflection =
             (s < deflectionsDeg.size()) ? Math::DegToRad(deflectionsDeg[s]) : 0.0;
