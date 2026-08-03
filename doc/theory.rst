@@ -720,11 +720,17 @@ The complete solution procedure, charted:
 
 .. graphviz::
    :align: center
-   :caption: The coupled solution procedure. The right-hand loop is the
-             swirl budget solved as a bracketed root problem on
+   :caption: The coupled solution procedure under the LATTICE vane
+             closure; step numbers follow the enumeration below, with
+             step 1 split into the blade remesh (1a) and the rotor +
+             duct solve (1b). The right-hand loop is the swirl budget
+             solved as a bracketed root problem on
              :math:`s \in [s_{min}, 1]` with the rotor state frozen; the
              left-hand loop is the block Gauss-Seidel alternation
-             between the rotating and static frames.
+             between the rotating and static frames. Under the default
+             cascade momentum closure (see below) step 3 is a direct
+             annulus-by-annulus solve, the budget is satisfied by
+             construction, and the right-hand loop is skipped.
 
    digraph RotorVaneSolve {
      rankdir=TB;
@@ -733,13 +739,13 @@ The complete solution procedure, charted:
      edge [fontname="Helvetica", fontsize=10];
 
      start [style=rounded, label="geometry contract → blade, duct, and vane lattices;\nseed wake pitch λ ≈ 0.07;  Γ_vane = 0,  s = 1"];
-     remesh [label="1. remesh blades: trailing-leg pitch from banded v_i(r),\ncontracted helical near wake (Level B)"];
-     rotor [label="2. rotor + duct solve, rotating frame (p = Ω):\nvanes enter as the azimuthal mean of their induced field;\ninner Anderson-accelerated viscous fixed point"];
-     slip [label="3. reconstruct slipstream from the fresh loading\n(annular momentum theory);  swirl scaled by the budget factor s"];
-     vane [label="4. evaluate Mx_vane(s): remesh vanes in the rescaled slipstream\n(legs along the local mean flow), warm-started viscous\nvane solve in the static frame (p = 0)"];
+     remesh [label="1a. remesh blades: trailing-leg pitch from banded v_i(r),\ncontracted helical near wake (Level B)"];
+     rotor [label="1b. rotor + duct solve, rotating frame (p = Ω):\nvanes enter as the azimuthal mean of their induced field;\ninner Anderson-accelerated viscous fixed point"];
+     slip [label="2. reconstruct slipstream from the fresh loading\n(annular momentum theory);  swirl scaled by the budget factor s"];
+     vane [label="3. evaluate Mx_vane(s): remesh vanes in the rescaled slipstream\n(legs along the local mean flow), warm-started viscous\nvane solve in the static frame (p = 0)"];
      budget [shape=diamond, label="budget met?\nMx_vane(s) = Q"];
-     feedback [label="5. under-relaxed vane-circulation feedback\ninto the rotor boundary condition"];
-     conv [shape=diamond, label="outer residual\n< tolerance?"];
+     feedback [label="4. advance the vane circulation into the rotor\nboundary condition (under-relaxed)"];
+     conv [shape=diamond, label="5. outer residual\n< tolerance?"];
      out [style=rounded, label="propulsive wrench: net T (vane drag debited), Q,\ncontrol My, Mz, recovered counter-torque Mx"];
 
      start -> remesh;
