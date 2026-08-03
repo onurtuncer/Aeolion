@@ -2,10 +2,18 @@
 
 **Venue:** AIAA SciTech Forum (conference proceedings)
 **Type:** conference paper
-**Status:** drafting — `paper.tex` + `references.bib` started, figures
-copied from `doc/_static` into `figures/`; TODOs marked inline (author
-block, paper number, intro literature review, regenerated result
-numbers, acknowledgments)
+**Status:** drafting — `paper.tex` + `references.bib` started; TODOs
+marked inline (author block, paper number, intro literature review,
+regenerated result numbers, acknowledgments)
+
+**Figures:** `figures/lattice-views.pdf` is rendered from the solver's
+own output, not screenshotted: `aeolion_lattice_export`
+(app/LatticeFigureExport.cpp) solves the paper's reference case (the
+TestVaneCascade coupled configuration; its thrust/pass count must match
+Table 1's 6000 rpm row) and writes `figures/lattice-solution.json`,
+then `figures/render-lattice-figures.py` (matplotlib) draws the vector
+PDF. Rerun both after any solver change that moves the reference
+numbers.
 
 ## Scope
 
