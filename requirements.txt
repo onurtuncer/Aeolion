@@ -1,0 +1,12 @@
+# Python tooling the CI workflows run against the repo. Pinned so a
+# lint run is reproducible; Dependabot bumps them (see .github/dependabot.yml).
+#
+#   python -m venv .venv && .venv/bin/pip install -r requirements.txt
+#
+# Documentation dependencies are separate -- see doc/requirements.txt.
+
+# CMake-Format / CMake-Lint workflows (cmake-format, cmake-lint).
+cmakelang==0.6.13
+
+# Metrix++ workflow: cyclomatic complexity / LOC metrics.
+metrixpp==1.8.1

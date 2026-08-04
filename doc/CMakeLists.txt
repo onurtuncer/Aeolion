@@ -44,7 +44,8 @@ add_custom_command(
   VERBATIM)
 
 # Nice named target so we can run the job easily
-add_custom_target(${PROJECT_DOC_NAME}_Doxygen ALL DEPENDS ${DOXYGEN_INDEX_FILE})
+add_custom_target(${PROJECT_DOC_NAME}_Doxygen ALL DEPENDS ${DOXYGEN_INDEX_FILE}
+                  COMMENT "Building ${PROJECT_DOC_NAME} Doxygen XML")
 
 # Namespace Sphinx variables
 set(SPHINX_SOURCE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -66,7 +67,8 @@ add_custom_command(
   COMMENT "Generating ${PROJECT_DOC_NAME} documentation with Sphinx")
 
 # Nice named target so we can run the job easily
-add_custom_target(${PROJECT_DOC_NAME}_Sphinx ALL DEPENDS ${SPHINX_INDEX_FILE})
+add_custom_target(${PROJECT_DOC_NAME}_Sphinx ALL DEPENDS ${SPHINX_INDEX_FILE}
+                  COMMENT "Building ${PROJECT_DOC_NAME} Sphinx HTML")
 
 include(GNUInstallDirs)
 install(DIRECTORY ${SPHINX_BUILD} DESTINATION ${CMAKE_INSTALL_DOCDIR})

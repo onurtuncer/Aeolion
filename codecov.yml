@@ -1,0 +1,33 @@
+codecov:
+  require_ci_to_pass: yes
+
+coverage:
+  precision: 2
+  round: down
+  range: "70...100"
+
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        target: auto
+        threshold: 10%
+
+# Every module owns its own tests/ folder (solver/tests, panelbuilder/tests,
+# logger/tests, and tests/ for the core header-only library), so the test
+# exclusion has to be a glob rather than a single directory. The viewer is
+# GL application code with no headless test path, and app/ is thin CLI
+# drivers over the library.
+ignore:
+  - "**/tests/**"
+  - "tests/**"
+  - "cmake/**"
+  - "app/**"
+  - "viewer/**"
+  - "**/_deps/**"
+  - "**/CMakeFiles/**"
+  - "**/vcpkg_installed/**"
+  - "/usr/**"

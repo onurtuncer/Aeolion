@@ -1,0 +1,32 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "ci"
+    groups:
+      official-actions:
+        patterns:
+          - "actions/*"
+      third-party-actions:
+        patterns:
+          - "*"
+
+  # CI tooling: cmakelang (CMake-Format / CMake-Lint) and metrixpp.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+
+  # Sphinx / Doxygen documentation toolchain (deploy-docs.yml).
+  - package-ecosystem: "pip"
+    directory: "/doc"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "docs"

@@ -1,0 +1,71 @@
+name: Clang-Tidy
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    paths:
+      - 'include/**'
+      - 'solver/**'
+      - 'panelbuilder/**'
+      - 'logger/**'
+      - 'app/**'
+      - 'tests/**'
+      - 'cmake/**'
+      - 'CMakeLists.txt'
+      - '.clang-tidy'
+      - '.github/workflows/clang_tidy.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clang-tidy:
+    name: clang-tidy
+    # ubuntu-26.04 is the earliest hosted image whose default libstdc++ is
+    # GCC 15's, which is the first to ship <mdspan> -- Solver.h includes it
+    # for DenseMatrixView. 24.04 tops out at GCC 14 and cannot parse the
+    # solver at all.
+    runs-on: ubuntu-26.04
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # System packages rather than the checked-in vcpkg presets: this job
+      # only needs a compile_commands.json, and vcpkg would build OpenBLAS
+      # and reference LAPACK (Fortran) from source to get there.
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build g++-15 liblapack-dev libblas-dev \
+            nlohmann-json3-dev libspdlog-dev
+
+      # Direct cmake call (no preset) so the vcpkg toolchain file is not
+      # pulled in. The viewer is off because its glad/imgui CONFIG packages
+      # exist only in vcpkg, not in the Ubuntu archive.
+      - name: Configure
+        run: |
+          cmake -B build/clang-tidy -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_COMPILER=g++-15 \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DAEOLION_BUILD_TESTS=ON \
+            -DAEOLION_BUILD_VIEWER=OFF
+
+      # viewer/ is excluded for the same reason it is not configured above:
+      # with no compile command recorded for its sources, clang-tidy has
+      # nothing to analyse them with.
+      - name: Run clang-tidy
+        run: |
+          RUN_CLANG_TIDY="$(command -v run-clang-tidy-20 \
+            || command -v run-clang-tidy \
+            || echo /usr/lib/llvm-20/bin/run-clang-tidy)"
+          clang-tidy-20 --version
+          "$RUN_CLANG_TIDY" \
+            -clang-tidy-binary clang-tidy-20 \
+            -p build/clang-tidy \
+            -j "$(nproc)" \
+            $(find app logger panelbuilder solver tests -name '*.cpp' | sort)

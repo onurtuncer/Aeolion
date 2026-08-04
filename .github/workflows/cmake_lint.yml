@@ -1,0 +1,45 @@
+name: CMake-Lint
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    paths:
+      - '**/CMakeLists.txt'
+      - '**/*.cmake'
+      - '.github/workflows/cmake_lint.yml'
+      - '.cmake-format'
+      - 'requirements.txt'
+  schedule:
+    - cron: '0 5 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cmake_lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
+      - name: Install cmakelang
+        run: pip install -r requirements.txt
+
+      # Same prune list as .run-cmake-format, so the check and the fixer
+      # always see the same set of files.
+      #
+      # The trailing `--` is load-bearing: --config-files takes nargs='+',
+      # so without it argparse swallows the whole xargs file list as extra
+      # config files and cmake-lint reports "files scanned: 0" and exits 0.
+      - name: Run CMake Lint
+        run: |
+          find . \( -path ./build -o -path ./out -o -path ./ports -o -path ./vendor -o -path ./.venv \) -prune \
+            -o -type f \( -name CMakeLists.txt -o -name "*.cmake" \) -print \
+            | xargs cmake-lint --config-files .cmake-format --

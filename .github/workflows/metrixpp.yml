@@ -1,0 +1,89 @@
+name: Metrix++
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    paths:
+      - 'include/**'
+      - 'solver/**'
+      - 'panelbuilder/**'
+      - 'logger/**'
+      - 'app/**'
+      - 'viewer/**'
+      - 'tests/**'
+      - 'requirements.txt'
+      - '.github/workflows/metrixpp.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  metrixpp:
+    name: metrix++ cyclomatic complexity (informational)
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
+      - name: Install Metrix++
+        run: pip install -r requirements.txt
+
+      # Every module that holds C++, header-only ones included: most of
+      # Aeolion's code lives in include/, solver/ and panelbuilder/ headers
+      # rather than in .cpp files.
+      - name: Collect cyclomatic complexity metrics
+        run: |
+          metrix++ collect --std.code.complexity.cyclomatic --std.code.lines.code \
+            -- app include logger panelbuilder solver tests viewer
+
+      - name: View report (functions sorted by complexity)
+        run: |
+          metrix++ view --db-file=metrixpp.db | tee metrixpp-report.txt
+
+      # Informational/secondary only: clang-tidy's readability-function-size
+      # (CyclomaticComplexityThreshold=20, see .clang-tidy) is the hard CI gate
+      # for AV Rule 3. metrix++ uses a different counting methodology and the
+      # codebase has not been triaged against it specifically, so this stays
+      # a non-blocking report at the same threshold for cross-checking.
+      - name: Check against complexity limit
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          metrix++ limit --db-file=metrixpp.db \
+            --max-limit=std.code.complexity:cyclomatic:20 \
+            | tee metrixpp-limit.txt
+
+      - name: Write step summary
+        if: always()
+        run: |
+          {
+            echo "## Metrix++ — \`${GITHUB_SHA:0:7}\`"
+            echo
+            echo "Functions over the cyclomatic-complexity limit of 20"
+            echo "(informational; the enforced gate is clang-tidy's"
+            echo "\`readability-function-size\`):"
+            echo
+            echo '```'
+            grep -E '^.+:[0-9]+: .*cyclomatic' metrixpp-limit.txt 2>/dev/null | head -40 \
+              || echo "none over the limit"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Metrix++ report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: metrixpp-report
+          path: |
+            metrixpp.db
+            metrixpp-report.txt
+            metrixpp-limit.txt
+          if-no-files-found: ignore

@@ -13,18 +13,14 @@
 # Separated from the header-only `aeolion` target because it is the one
 # component with a compiled part; consumers link it in addition to aeolion.
 
-add_library(aeolion_panelbuilder STATIC
-    src/PanelBuilder.cpp
-)
+add_library(aeolion_panelbuilder STATIC src/PanelBuilder.cpp)
 
-target_include_directories(aeolion_panelbuilder PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
+target_include_directories(aeolion_panelbuilder PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # PUBLIC: anything using the builder also uses Lattice::Panel and the
 # contract types it takes and returns.
 target_link_libraries(aeolion_panelbuilder PUBLIC aeolion)
 
 if(AEOLION_BUILD_TESTS)
-    add_subdirectory(tests)
+  add_subdirectory(tests)
 endif()
