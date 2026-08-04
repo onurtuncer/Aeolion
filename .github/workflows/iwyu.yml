@@ -23,7 +23,7 @@ concurrency:
 jobs:
   iwyu:
     name: include-what-you-use (informational)
-    # GCC 15 for <mdspan> -- see the comment in clang_tidy.yml.
+    # ubuntu-26.04 + g++-16 for <mdspan> -- see the comment in clang_tidy.yml.
     runs-on: ubuntu-26.04
 
     steps:
@@ -33,7 +33,7 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends \
-            ninja-build g++-15 iwyu liblapack-dev libblas-dev \
+            ninja-build g++-16 iwyu liblapack-dev libblas-dev \
             nlohmann-json3-dev libspdlog-dev
 
       # System packages instead of --preset, for the same reason as the
@@ -43,7 +43,7 @@ jobs:
         run: |
           cmake -B build/iwyu -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_CXX_COMPILER=g++-15 \
+            -DCMAKE_CXX_COMPILER=g++-16 \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             -DAEOLION_BUILD_TESTS=ON \
             -DAEOLION_BUILD_VIEWER=OFF

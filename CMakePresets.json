@@ -54,8 +54,8 @@
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_C_COMPILER": "gcc-15",
-        "CMAKE_CXX_COMPILER": "g++-15",
+        "CMAKE_C_COMPILER": "gcc-16",
+        "CMAKE_CXX_COMPILER": "g++-16",
         "AEOLION_BUILD_TESTS": "ON",
         "AEOLION_BUILD_VIEWER": "OFF"
       },

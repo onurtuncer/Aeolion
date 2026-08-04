@@ -24,10 +24,13 @@ concurrency:
 jobs:
   clang-tidy:
     name: clang-tidy
-    # ubuntu-26.04 is the earliest hosted image whose default libstdc++ is
-    # GCC 15's, which is the first to ship <mdspan> -- Solver.h includes it
-    # for DenseMatrixView. 24.04 tops out at GCC 14 and cannot parse the
-    # solver at all.
+    # g++-16 is not a version bump for its own sake: Solver.h includes
+    # <mdspan> for DenseMatrixView, and libstdc++ ships it first in GCC 16
+    # (13/14/15 all fail with "mdspan: No such file or directory"). It is
+    # only packaged for ubuntu-26.04, which is why that image is pinned.
+    # clang-tidy then picks up the GCC 16 libstdc++ headers, as does the
+    # apt spdlog it has to stay ABI-compatible with -- the reason for
+    # libstdc++ over clang's own libc++, which also has <mdspan>.
     runs-on: ubuntu-26.04
 
     steps:
@@ -40,7 +43,7 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends \
-            ninja-build g++-15 liblapack-dev libblas-dev \
+            ninja-build g++-16 liblapack-dev libblas-dev \
             nlohmann-json3-dev libspdlog-dev
 
       # Direct cmake call (no preset) so the vcpkg toolchain file is not
@@ -50,7 +53,7 @@ jobs:
         run: |
           cmake -B build/clang-tidy -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_CXX_COMPILER=g++-15 \
+            -DCMAKE_CXX_COMPILER=g++-16 \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             -DAEOLION_BUILD_TESTS=ON \
             -DAEOLION_BUILD_VIEWER=OFF
