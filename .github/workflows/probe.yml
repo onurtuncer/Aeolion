@@ -1,0 +1,56 @@
+name: Probe
+
+on:
+  push:
+    branches:
+      - ci/adapt-workflows-to-aeolion
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: What toolchains can provide <mdspan>?
+        run: |
+          set +e
+          echo "=== available g++ / libstdc++ packages ==="
+          apt-cache search --names-only '^g\+\+-[0-9]+$' | sort
+          apt-cache search --names-only '^libstdc\+\+-[0-9]+-dev$' | sort
+          echo "=== available libc++ packages ==="
+          apt-cache search --names-only '^libc\+\+-[0-9]+-dev$' | sort
+          echo "=== installed compilers ==="
+          ls /usr/bin/g++-* /usr/bin/clang++-* 2>/dev/null
+          echo "=== run-clang-tidy ==="
+          ls /usr/bin/run-clang-tidy* /usr/lib/llvm-*/bin/run-clang-tidy 2>/dev/null
+          echo "=== iwyu ==="
+          apt-cache policy iwyu | head -3
+
+          printf '#include <mdspan>\n#include <vector>\nint main(){std::vector<double> v(6); std::mdspan<double,std::dextents<size_t,2>> m(v.data(),2,3); return m[1,2]==0;}\n' > /tmp/t.cpp
+
+          for cxx in g++-13 g++-14 g++-15; do
+            [ -x "/usr/bin/$cxx" ] || continue
+            $cxx -std=c++23 -fsyntax-only /tmp/t.cpp 2>/dev/null \
+              && echo "MDSPAN OK: $cxx (libstdc++)" || echo "MDSPAN NO: $cxx (libstdc++)"
+          done
+
+          for cxx in clang++-20 clang++-21 clang++-22; do
+            [ -x "/usr/bin/$cxx" ] || continue
+            $cxx -std=c++23 -fsyntax-only /tmp/t.cpp 2>/dev/null \
+              && echo "MDSPAN OK: $cxx (libstdc++)" || echo "MDSPAN NO: $cxx (libstdc++)"
+          done
+
+          echo "=== try installing newer toolchains ==="
+          sudo apt-get update -q >/dev/null 2>&1
+          sudo apt-get install -y -q g++-16 >/dev/null 2>&1 \
+            && echo "g++-16 INSTALLED" || echo "g++-16 unavailable"
+          if [ -x /usr/bin/g++-16 ]; then
+            g++-16 -std=c++23 -fsyntax-only /tmp/t.cpp 2>/dev/null \
+              && echo "MDSPAN OK: g++-16 (libstdc++)" || echo "MDSPAN NO: g++-16"
+          fi
+
+          for v in 20 21 22; do
+            sudo apt-get install -y -q "libc++-$v-dev" "libc++abi-$v-dev" >/dev/null 2>&1 || continue
+            "clang++-$v" -std=c++23 -stdlib=libc++ -fsyntax-only /tmp/t.cpp 2>/dev/null \
+              && echo "MDSPAN OK: clang++-$v -stdlib=libc++" || echo "MDSPAN NO: clang++-$v -stdlib=libc++"
+          done
+          exit 0
