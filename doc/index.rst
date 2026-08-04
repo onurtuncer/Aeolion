@@ -21,8 +21,10 @@ Aeolion
    <a href="mailto:otuncer1@gmail.com">otuncer1@gmail.com</a></p>
 
 A small aerodynamics toolkit built around a 3D vortex lattice method:
-lifting-surface VLM, component-buildup viscous drag estimation, and a
-hover-safe propeller BEMT solver, with geometry loaded from a JSON contract.
+lifting-surface VLM and component-buildup viscous drag estimation, with
+geometry loaded from a JSON contract. (The hover-safe propeller BEMT
+solver is now its own project:
+`onurtuncer/BEMT <https://github.com/onurtuncer/BEMT>`_.)
 
 .. toctree::
    :maxdepth: 2

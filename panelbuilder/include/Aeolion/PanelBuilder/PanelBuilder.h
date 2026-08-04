@@ -111,6 +111,7 @@
 #include "Aeolion/Geometry/HandoffContract.h"
 #include "Aeolion/Lattice/Panel.h"
 #include "Aeolion/Lattice/SourcePanel.h"
+#include "Aeolion/Solver/ViscousCoupling.h"
 
 #include <cstddef>
 #include <functional>
@@ -339,9 +340,10 @@ struct LatticeOptions {
 // for any meaningful thrust setting, and it keeps the influence matrix
 // flight-condition-independent, which is what makes a derivative sweep cheap.
 //
-// The slipstream is taken as a plain callable so this does not drag a BEMT
-// dependency into the panel builder; BEMT::SlipstreamField satisfies it
-// directly. With no propeller state, simply never call this: the base stays
+// The slipstream is taken as a plain callable so this does not drag any
+// propeller-model dependency into the panel builder; e.g. the external
+// BEMT project's SlipstreamField satisfies it after a Vec3 field-wise
+// conversion. With no propeller state, simply never call this: the base stays
 // the solid cap BuildBody() produced, which is a closed-body answer -- wrong
 // in a known direction rather than an unknown one.
 //
@@ -354,6 +356,167 @@ struct LatticeOptions {
 [[nodiscard]] int ApplyBaseEfflux(std::vector<Lattice::SourcePanel>& body,
                                   const std::function<Math::Vec3(const Math::Vec3&)>& slipstream,
                                   const Math::Vec3& referenceFreestream);
+
+// --- propeller blade lattice ------------------------------------------------
+// The panel-method propeller: every blade meshed as horseshoe-vortex panels
+// (one Weissinger row per radial strip, exactly the Panel vocabulary the
+// wing uses) and solved by the SAME Solver::Solve as the airframe -- the
+// rotation enters through FreestreamConditions::p, the solver's roll rate
+// about +x, whose kinematic-velocity term hands every blade panel its true
+// Omega x r tangential onset flow. Quasi-steady and potential-flow: the
+// torque a solve reports is induced torque, with no profile-drag
+// contribution.
+//
+// Conventions: the prop spins at +Omega about +x (right-hand rule), the
+// freestream arrives along +x (solver body axes, x aft), so thrust comes
+// out along -x: Thrust = -SolveResult::Di, shaft torque = -SolveResult::Mx
+// (with RefPoint at the hub), power = torque * Omega. Blades sit on the
+// CST camber surface when prop.Sections carries one (chords wrapped on
+// their radius cylinders -- see the .cpp), flat chord lines otherwise.
+//
+// The wake direction is why this function needs the operating point, not
+// just geometry: each trailing leg leaves along the LOCAL kinematic
+// velocity at its root (axial inflow + Omega x r tangential sweep, with
+// the momentum-theory hover inflow as the axial floor), the linearized
+// helix. Trailing purely axially instead is not a small error at hover --
+// the local wind there is almost entirely tangential, the legs would
+// leave near-perpendicular to the flow, and the lattice's
+// quarter/three-quarter-chord geometry stops meaning anything (in
+// practice the circulation solve saw-tooths radially and diverges with
+// refinement). Rebuild the lattice whenever rpm or inflow change; it is
+// cheap.
+//
+// Turns of curved (helical, contracting, cored) near wake ahead of each
+// trailing leg's straight far tail -- the Level-B wake (theory.rst).
+inline constexpr int DefaultPropellerWakeRevolutions = 2;
+
+// ONE chordwise row per strip, deliberately (Weissinger): the chords are
+// wrapped on their radius cylinders, and a straight trailing leg leaves a
+// curved chord immediately -- the surface falls away from its tangent
+// line by s^2/2r, so a forward row's legs would graze the aft rows'
+// control points at fractions of a millimetre and the chordwise
+// circulation saw-tooths (found empirically). Camber still enters exactly
+// where thin-airfoil theory wants it, through the mean-line slope at the
+// 3/4-chord boundary condition; resolving the chordwise LOADING
+// distribution needs a vortex-ring wake or finite-core filaments, which
+// belongs with the future viscous/boundary-layer work.
+/**
+ * Mesh a metric propeller into horseshoe-vortex panels: one Weissinger
+ * row per radial strip (station pair), per blade, on the CST camber
+ * surface when prop.Sections carries one, with trailing legs along the
+ * local relative wind of the stated operating point (axialSpeed [m/s]
+ * inflow along +x, omega [rad/s] about +x). Solve with
+ * FreestreamConditions{ Vinf = axialSpeed, p = omega, RefPoint = hub
+ * center (the origin) }.
+ *
+ * `axialInflow`, when provided, is the SOLVED induced axial velocity
+ * vi(r) (Solver::AxialInflowFromBands over a converged result): each
+ * trailing leg's helix pitch then uses its own radius's convection,
+ * axialSpeed + vi(r), instead of the fixed momentum-theory floor -- the
+ * self-consistent wake (theory.rst). Empty means the fixed-lambda seed.
+ *
+ * `wakeRevolutions` turns of CURVED near wake precede each leg's straight
+ * far tail (the Level-B wake: a discretized contracting helix with a
+ * finite vortex core -- theory.rst); zero recovers the straight-leg
+ * model.
+ */
+[[nodiscard]] std::vector<Lattice::Panel> BuildPropellerLattice(
+    const Geometry::Propeller& prop, double axialSpeed, double omega,
+    const std::function<double(double radius)>& axialInflow = {},
+    int wakeRevolutions = DefaultPropellerWakeRevolutions);
+
+/**
+ * The per-strip section frames and section data for the Level-2 viscous
+ * coupling (Solver::SolveViscousCoupled), aligned one-to-one with
+ * BuildPropellerLattice's panels: chord/lift directions at mid-chord of
+ * each radial strip, the local chord and width, and the thin-airfoil
+ * zero-lift angle of the strip's CST camber line -- the section model
+ * must carry the camber the coupling supersedes in the lattice's own
+ * boundary condition. Pure geometry: independent of the operating point.
+ */
+[[nodiscard]] std::vector<Solver::StripSection> BuildPropellerStrips(const Geometry::Propeller& prop);
+
+/**
+ * The Level-3 section model for a propeller: a transpiration-coupled
+ * boundary-layer section solver (Solver::BoundaryLayerSectionModel, see
+ * doc/theory.rst) with its camber line bound to the propeller's CST blade
+ * sections -- so the same shapes drive the lattice geometry and the
+ * viscous section solve. The returned callable owns a copy of the
+ * section data.
+ */
+[[nodiscard]] Solver::SectionModel MakePropellerSectionModel(const Geometry::Propeller& prop);
+
+// Default shroud discretization: finer than the airframe duct's default --
+// an isolated propeller study affords it, and the lip-suction pressure
+// gradient the duct's thrust contribution lives in wants axial resolution.
+inline constexpr int DefaultShroudCircumferentialPanels = 24;
+inline constexpr int DefaultShroudAxialPanels = 6;
+
+/**
+ * A duct shroud for the isolated-propeller solve: the same closed annular
+ * ring BuildDuct() meshes from a contract (outer wall, bore wall, two
+ * caps; source panels, outward normals), but centered on the origin about
+ * +x with mid-chord at the rotor plane -- the axes BuildPropellerLattice
+ * poses the blades in. Feed it to the solve's `sources` and the blades
+ * see the duct's induced flow while the duct sees the propwash: the
+ * ducted-fan interaction, including the bore's lip-suction thrust.
+ */
+[[nodiscard]] std::vector<Lattice::SourcePanel> BuildPropellerDuct(
+    double innerRadius, double outerRadius, double chord,
+    int circumferentialPanels = DefaultShroudCircumferentialPanels,
+    int axialPanels = DefaultShroudAxialPanels);
+
+// --- duct-jet control vanes -------------------------------------------------
+// The contract's DuctJet control surfaces are all-moving plates in the jet
+// at the duct exit (see Geometry/ControlSurface.h): each spans RADIALLY
+// along its hinge axis from EtaStart to EtaEnd of the exit radius, with a
+// chord of ChordFraction times the duct chord running downstream from the
+// hinge line at the exit plane. Deflection rotates the whole plate about
+// its hinge line by the right-hand rule about the (frame-converted) axis.
+//
+// The vanes are meshed as ordinary lifting surfaces -- radial strips of
+// horseshoe panels, wake trailing downstream (+x). One Weissinger row per
+// strip by default, so the mesh aligns one-to-one with BuildDuctVaneStrips
+// and the vanes run through the SAME viscous sectional-feedback solve as
+// the blades -- which is what keeps their control authority honest: an
+// inviscid vane lattice knows no stall, and the contract's 20-degree
+// stops sit well past a low-Reynolds flat plate's. (Multi-row meshes are
+// geometrically fine here -- static frame, axial chord and wake -- but
+// only for inviscid-only use.)
+inline constexpr int DefaultVaneRadialPanels = 5;
+inline constexpr int DefaultVaneChordwisePanels = 1;
+
+/**
+ * Mesh every DuctJet-bound surface in `surfaces` (others are skipped) as
+ * lifting-surface panels at the duct exit: exitX is the exit plane's
+ * axial station, exitRadius the bore radius its eta band scales,
+ * ductChord the chord its ChordFraction scales. `deflectionsDeg` aligns
+ * with `surfaces` (extra/missing entries read as zero). Panels are named
+ * "vane<index>" per source surface, since contract vane names collide.
+ *
+ * `localFlow`, when provided, is the local MEAN flow (freestream plus
+ * slipstream) at a point; each trailing leg then leaves along it at the
+ * leg's own root -- in a propwash that means helically, with the swirl,
+ * exactly the convention the blade lattice uses for its own wake. Empty
+ * means straight downstream (+x). Two approximations remain either way,
+ * stated in theory.rst: the legs are straight lines, and the vane's OWN
+ * turning of the jet is not folded into its wake direction.
+ */
+[[nodiscard]] std::vector<Lattice::Panel> BuildDuctVanes(
+    const std::vector<Geometry::ControlSurface>& surfaces, double exitRadius, double exitX,
+    double ductChord, const std::vector<double>& deflectionsDeg,
+    const std::function<Math::Vec3(const Math::Vec3&)>& localFlow = {},
+    int radialPanels = DefaultVaneRadialPanels, int chordwisePanels = DefaultVaneChordwisePanels);
+
+/**
+ * The per-strip section frames for the vanes' viscous solve, aligned
+ * one-to-one with BuildDuctVanes' single-row panels: deflected chord and
+ * lift directions, chord, radial width, and a flat plate's zero
+ * zero-lift angle.
+ */
+[[nodiscard]] std::vector<Solver::StripSection> BuildDuctVaneStrips(
+    const std::vector<Geometry::ControlSurface>& surfaces, double exitRadius, double ductChord,
+    const std::vector<double>& deflectionsDeg, int radialPanels = DefaultVaneRadialPanels);
 
 // --- the builder ------------------------------------------------------------
 /**

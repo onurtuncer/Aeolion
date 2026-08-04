@@ -16,7 +16,7 @@ target_include_directories(aeolion_logger PUBLIC
 
 # spdlog is PUBLIC because Log.h exposes spdlog types and the macros expand
 # to spdlog calls inside the consumer's own translation unit. aeolion is
-# PUBLIC for the same reason as in bemt/: it carries the warnings/standard
+# PUBLIC for the same reason as in panelbuilder/: it carries the warnings/standard
 # flags on its INTERFACE.
 target_link_libraries(aeolion_logger PUBLIC aeolion spdlog::spdlog)
 

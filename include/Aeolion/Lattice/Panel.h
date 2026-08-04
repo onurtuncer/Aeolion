@@ -17,6 +17,7 @@
 // and StripIndex ties the stack back together for per-span reporting.
 #pragma once
 #include <string>
+#include <vector>
 #include "Aeolion/Math/Vec3.h"
 
 namespace Aeolion::Lattice {
@@ -29,6 +30,24 @@ struct Panel {
     Vec3 ControlPoint;         ///< Panel three-quarter-chord, mid-span.
     Vec3 Normal;               ///< Unit outward normal at control point (twist + dihedral + camber slope).
     Vec3 TrailDirA, TrailDirB; ///< Unit direction of trailing legs from A and from B (downstream).
+
+    /**
+     * Optional CURVED near wake: intermediate points the trailing leg
+     * follows after A (respectively B) before its straight far tail along
+     * TrailDirA/B. Empty (the wing's case) keeps the leg a single straight
+     * line -- a rotor's wake instead helixes and contracts, and a straight
+     * leg cannot carry the induced-power physics of that geometry (see
+     * theory.rst, "Level-B wake").
+     */
+    std::vector<Vec3> TrailPathA, TrailPathB;
+
+    /**
+     * Finite vortex-core radius applied to the TRAILING legs' induction
+     * [m]; zero recovers the razor-thin filament. A curved near wake
+     * threads between neighboring panels, and grazing encounters with an
+     * unregularized filament are numerically vicious.
+     */
+    double WakeCoreRadius = 0.0;
 
     /**
      * Area of the actual (cambered, dihedral-tilted) panel surface. Equal to

@@ -1,13 +1,16 @@
 // Visualization/PropellerRenderer.h
 //
-// Turns a BEMT propeller (geometry + solved radial distribution) into GPU
-// meshes and draws them: the blades as twisted, tapered surfaces colored by
-// a chosen blade-element scalar field through the viridis colormap, plus the
-// hub, the actuator-disk tip circle, and the rotation axis.
+// Turns a Geometry::Propeller into GPU meshes and draws them: the blades as
+// twisted, tapered surfaces colored by a chosen per-station geometric field
+// through the viridis colormap, plus the hub, the actuator-disk tip circle,
+// and the rotation axis.
 //
 // The propeller "screen" counterpart to LatticeRenderer: same aero-to-GL
-// boundary, same two-shader (shaded triangles + colored lines) approach, but
-// posed on a BEMT::Result instead of a Solver::SolveResult.
+// boundary, same two-shader (shaded triangles + colored lines) approach --
+// but posed on geometry alone. The propeller's aerodynamic solve moved out
+// with BEMT (now a separate project this repo does not depend on); when a
+// calculation method lands here, its per-station results become additional
+// PropFieldMode entries and an extra Update() input, nothing more.
 
 #pragma once
 
@@ -15,8 +18,7 @@
 #include "Renderer/Shader.h"
 #include "Renderer/VertexArray.h"
 
-#include "Aeolion/BEMT/BEMT.h"
-#include "Aeolion/BEMT/PropGeometry.h"
+#include "Aeolion/Geometry/Propeller.h"
 
 #include <glm/glm.hpp>
 
@@ -25,16 +27,14 @@
 
 namespace Aeolion::Viewer {
 
-// Which per-station BEMT quantity colors the blade surface.
+// Which per-station geometric quantity colors the blade surface.
 enum class PropFieldMode {
-    Alpha = 0,    // blade-element angle of attack [deg]
-    LoadingdTdr,  // thrust grading dT/dr [N/m]
-    InflowPhi,    // inflow angle phi [deg]
-    SectionCl,    // section lift coefficient
+    Twist = 0, // local geometric pitch [deg]
+    Chord,     // local chord [m]
 };
 
 struct PropellerDisplayOptions {
-    PropFieldMode Field = PropFieldMode::Alpha;
+    PropFieldMode Field = PropFieldMode::Twist;
     bool ShowBlades = true;
     bool ShowHub = true;
     bool ShowDisk = true;      // tip circle, hub circle, and rotation axis
@@ -47,12 +47,8 @@ class PropellerRenderer {
 public:
     PropellerRenderer();
 
-    // Rebuild all vertex data from a propeller and its solved radial
-    // distribution. `result.Stations` is expected to align 1:1 with
-    // `prop.Stations` (as BEMT::Solve produces); any shortfall just leaves
-    // those blade strips at the field minimum.
-    void Update(const BEMT::PropGeometry& prop, const BEMT::Result& result,
-                const PropellerDisplayOptions& options);
+    // Rebuild all vertex data from a propeller's geometry.
+    void Update(const Geometry::Propeller& prop, const PropellerDisplayOptions& options);
 
     void Draw(const glm::mat4& viewProjection) const;
 

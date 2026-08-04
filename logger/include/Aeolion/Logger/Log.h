@@ -1,7 +1,7 @@
 // Logger/Log.h
 //
 // Thin wrapper around spdlog giving Aeolion two named loggers: a core
-// logger for library-internal messages (solver, panelbuilder, bemt) and a
+// logger for library-internal messages (solver, panelbuilder) and a
 // client logger for application-side messages (viewer, app). Call
 // Log::Init() once at program startup before using any logging macro;
 // messages then go to a coloured console sink and to Aeolion.log.

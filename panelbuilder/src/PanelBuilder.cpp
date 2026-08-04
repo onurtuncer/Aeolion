@@ -10,15 +10,48 @@
 #include "Aeolion/Geometry/CstSurface.h"
 #include "Aeolion/Math/Constants.h"
 #include "Aeolion/Math/Vec3.h"
+#include "Aeolion/Solver/SectionBoundaryLayer.h"
 
 #include <algorithm>
 #include <cmath>
 #include <functional>
 #include <numbers>
+#include <string>
 #include <utility>
 #include <vector>
 
 namespace Aeolion::PanelBuilder {
+
+// Momentum-theory hover inflow ratio, lambda = v_i / (Omega * R): the
+// prescribed-wake axial-convection floor BuildPropellerLattice() gives its
+// trailing legs at low advance speed WHEN NO SOLVED INFLOW IS STATED --
+// the seed of the self-consistent wake iteration (see the comment at its
+// use). lambda = sqrt(C_T / 2) ~ 0.07 for ordinary propeller disk
+// loadings.
+inline constexpr double HoverInflowRatio = 0.07;
+
+// With a solved vi(r) stated, unloaded stations (hub cutout edge, an
+// unloaded tip) would get near-zero axial convection and put their legs
+// back in the disk plane -- the pathology the floor exists to prevent.
+// Their wake in reality convects with the neighboring flow, so the axial
+// component is floored at this fraction of the blade's own maximum.
+inline constexpr double MinWakeAxialFraction = 0.25;
+
+// --- the Level-B curved near wake (theory.rst) ------------------------------
+// Each trailing leg's first revolutions follow the actual helix a shed
+// particle traces in the rotating frame: azimuth unwinding against the
+// rotation, axial convection at the local (developing) induced velocity,
+// radius contracting toward the far-wake area halving. The straight far
+// tail continues from the helix end.
+// Duct-jet vanes whose stated span reaches the duct wall (eta above this)
+// are recessed off it by the gap fraction below -- see BuildDuctVanes.
+inline constexpr double WallAttachedVaneEta = 0.99;
+inline constexpr double VaneTipWallGapFraction = 0.05;
+
+inline constexpr int WakeSegmentsPerRevolution = 12;
+inline constexpr double WakeContractionRatio = 0.70710678118654752; // far-wake r/r0 = 1/sqrt(2)
+inline constexpr double WakeDevelopmentRadii = 2.0; // axial development length = this * radius
+inline constexpr double WakeCoreWidthFraction = 0.3;    // leg core radius = this * strip width
 
 LatticeBuilder::LatticeBuilder(Geometry::HandoffContract contract, LatticeOptions options)
     : m_Contract(std::move(contract)), m_Options(options) {
@@ -674,25 +707,15 @@ std::vector<Lattice::SourcePanel> LatticeBuilder::BuildBody() const {
 // outward for the outer wall, radially INWARD (toward the axis) for the
 // bore wall, forward for the leading cap, aft for the trailing cap --
 // mirroring BuildBody()'s aft-facing base cap.
-std::vector<Lattice::SourcePanel> LatticeBuilder::BuildDuct() const {
+// The shared annular-ring mesher behind BuildDuct() (contract frame,
+// offset center) and BuildPropellerDuct() (origin-centered shroud): four
+// faces -- outer wall, bore wall, leading/trailing caps -- in solver axes.
+namespace {
+
+std::vector<Lattice::SourcePanel> AnnularRingPanels(double xLeadSolver, double xTrailSolver,
+                                                    double rInner, double rOuter, double yOffset,
+                                                    double zOffset, int sectors, int axialPanels) {
     std::vector<Lattice::SourcePanel> panels;
-    if (!m_Options.IncludeDuct) return panels;
-
-    const Geometry::DuctGeometry& duct = m_Contract.Duct;
-    if (!duct.IsStated) return panels;
-
-    const int sectors = m_Options.DuctCircumferentialPanels;
-    if (sectors < MinDuctSectors) return panels;
-    const int axialPanels = std::max(1, m_Options.DuctAxialPanels);
-
-    const double rInner = duct.InnerDiameter * Math::Half;
-    const double rOuter = duct.OuterDiameter * Math::Half;
-
-    const double xLeadSolver = -(duct.Center.x + duct.Chord * Math::Half);
-    const double xTrailSolver = -(duct.Center.x - duct.Chord * Math::Half);
-    const double yOffset = duct.Center.y;
-    const double zOffset = -duct.Center.z;
-
     const auto surfacePoint = [&](double x, double r, double angle) {
         return Solver::Vec3(x, yOffset + r * std::cos(angle), zOffset + r * std::sin(angle));
     };
@@ -769,6 +792,37 @@ std::vector<Lattice::SourcePanel> LatticeBuilder::BuildDuct() const {
     return panels;
 }
 
+} // namespace
+
+std::vector<Lattice::SourcePanel> LatticeBuilder::BuildDuct() const {
+    if (!m_Options.IncludeDuct) return {};
+
+    const Geometry::DuctGeometry& duct = m_Contract.Duct;
+    if (!duct.IsStated) return {};
+
+    const int sectors = m_Options.DuctCircumferentialPanels;
+    if (sectors < MinDuctSectors) return {};
+    const int axialPanels = std::max(1, m_Options.DuctAxialPanels);
+
+    // Contract frame is x-forward / z-down, the solver x-aft / z-up.
+    return AnnularRingPanels(-(duct.Center.x + duct.Chord * Math::Half),
+                             -(duct.Center.x - duct.Chord * Math::Half),
+                             duct.InnerDiameter * Math::Half, duct.OuterDiameter * Math::Half,
+                             duct.Center.y, -duct.Center.z, sectors, axialPanels);
+}
+
+std::vector<Lattice::SourcePanel> BuildPropellerDuct(double innerRadius, double outerRadius,
+                                                     double chord, int circumferentialPanels,
+                                                     int axialPanels) {
+    if (innerRadius <= 0.0 || outerRadius <= innerRadius || chord <= 0.0 ||
+        circumferentialPanels < MinDuctSectors || axialPanels < 1)
+        return {};
+    // Origin-centered shroud about +x: mid-chord at the rotor plane, the
+    // same axes BuildPropellerLattice poses the blades in.
+    return AnnularRingPanels(-Math::Half * chord, Math::Half * chord, innerRadius, outerRadius, 0.0,
+                             0.0, circumferentialPanels, axialPanels);
+}
+
 
 // --- base efflux ------------------------------------------------------------
 int ApplyBaseEfflux(std::vector<Lattice::SourcePanel>& body,
@@ -788,6 +842,406 @@ int ApplyBaseEfflux(std::vector<Lattice::SourcePanel>& body,
         ++affected;
     }
     return affected;
+}
+
+std::vector<Lattice::Panel> BuildPropellerLattice(const Geometry::Propeller& prop,
+                                                  double axialSpeed, double omega,
+                                                  const std::function<double(double)>& axialInflow,
+                                                  int wakeRevolutions) {
+    std::vector<Lattice::Panel> panels;
+    const std::size_t ns = prop.Stations.size();
+    if (ns < 2 || prop.BladeCount < 1) return panels;
+
+    panels.reserve(static_cast<std::size_t>(prop.BladeCount) * (ns - 1));
+
+    const Math::Vec3 axial(1.0, 0.0, 0.0); // rotation axis, +x
+
+    // Trailing-leg direction at a wake-root point: the local kinematic
+    // velocity (axial inflow plus the -Omega x r sweep the rotation term
+    // hands the blade), i.e. the linearized helix -- see the header note.
+    //
+    // The axial part: with a SOLVED vi(r) stated, each leg convects at
+    // axialSpeed + vi at its own radius -- the self-consistent,
+    // radially-varying wake pitch -- floored per MinWakeAxialFraction.
+    // Without one (the seed pass), the momentum-theory hover-inflow floor
+    // applies, lambda ~ 0.07 (v_i = lambda * Omega * R, the classic value
+    // for ordinary disk loadings, since C_T ~ 0.01 gives
+    // lambda = sqrt(C_T/2) ~ 0.07). Either way the axial part must not
+    // vanish: at exact hover a straight leg would otherwise lie IN the
+    // rotor plane forever, slicing past every strip outboard of its root
+    // (a straight tangent line leaves its circle and crosses all larger
+    // radii) -- a real wake convects out of the disk plane, and without
+    // the floor the solve is pathologically sensitive to the station
+    // layout.
+    double inflowPeak = 0.0;
+    if (axialInflow)
+        for (const Geometry::BladeStation& station : prop.Stations)
+            inflowPeak = std::max(inflowPeak, axialInflow(station.r));
+    const double hoverInflow = HoverInflowRatio * std::fabs(omega) * prop.Radius;
+    auto axialConvection = [&](double r) {
+        if (axialInflow)
+            return std::max(axialSpeed + axialInflow(r),
+                            MinWakeAxialFraction * (axialSpeed + inflowPeak));
+        return std::max(axialSpeed, hoverInflow);
+    };
+    auto trailDirection = [&](const Math::Vec3& point) {
+        const double r = std::hypot(point.y, point.z);
+        const Math::Vec3 sweep = Math::Cross(axial * omega, point);
+        const Math::Vec3 local = axial * axialConvection(r) - sweep;
+        const Math::Vec3 unit = local.Normalized();
+        return (unit.Norm() > 0.5) ? unit : axial; // no flow at all -> fall back to axial
+    };
+
+    // The Level-B helical near wake from a leg root: azimuth unwinds
+    // against the rotation at Omega, axial position advances at the
+    // developing local convection (doubling toward the far wake, the same
+    // law the slipstream uses), radius contracts toward the far-wake area
+    // halving. Zero revolutions (or a non-rotating case) leaves the leg a
+    // straight line.
+    const double developmentLength = WakeDevelopmentRadii * prop.Radius;
+    auto wakePath = [&](const Math::Vec3& root) {
+        std::vector<Math::Vec3> path;
+        if (wakeRevolutions < 1 || std::fabs(omega) < Math::Tiny) return path;
+        const double r0 = std::hypot(root.y, root.z);
+        if (r0 < Math::Tiny) return path;
+        const double vi0 = axialConvection(r0);
+        const double deltaTheta = Math::Two * std::numbers::pi / WakeSegmentsPerRevolution;
+        const double deltaT = deltaTheta / std::fabs(omega);
+        double phi = std::atan2(root.z, root.y);
+        double x = root.x;
+        path.reserve(static_cast<std::size_t>(wakeRevolutions) * WakeSegmentsPerRevolution);
+        for (int k = 0; k < wakeRevolutions * WakeSegmentsPerRevolution; ++k) {
+            phi -= (omega > 0.0 ? 1.0 : -1.0) * deltaTheta; // the wake sweeps opposite the rotation
+            const double development =
+                std::clamp((x - root.x) / developmentLength, 0.0, 1.0);
+            x += vi0 * (1.0 + development) * deltaT;
+            const double contraction =
+                WakeContractionRatio +
+                (1.0 - WakeContractionRatio) * std::exp(-std::max(x - root.x, 0.0) / prop.Radius);
+            const double r = r0 * contraction;
+            path.push_back(Math::Vec3(x, r * std::cos(phi), r * std::sin(phi)));
+        }
+        return path;
+    };
+
+    for (int blade = 0; blade < prop.BladeCount; ++blade) {
+        const double bladeAzimuth = Math::Two * std::numbers::pi * blade / prop.BladeCount;
+
+        // Local chord frame at chord fraction f of a station, WRAPPED around
+        // the cylinder of that station's radius. A blade element's chord
+        // does not live in a flat tangent plane -- it lies on the annulus
+        // the element sweeps, so moving along the chord changes azimuth by
+        // s*cos(beta)/r. Near a small hub this is not a nicety: chord there
+        // is comparable to radius, a straight tangent-plane chord subtends
+        // tens of degrees of azimuth and leaves the swept surface entirely,
+        // and the resulting phantom incidence overwhelms real camber/twist
+        // loading (found empirically: the hub strips reversed the sign of
+        // the whole blade's camber response).
+        //
+        // The blade moves toward +that, so the relative wind arrives from
+        // +that: the leading edge faces +that (wrapped to positive azimuth
+        // offset), and twist tilts the trailing edge aft (+x), which is
+        // what makes the resultant blade force point upstream (-x) --
+        // thrust -- at positive local incidence.
+        //
+        // CamberDir is the suction side the CST convention bows positive
+        // camber toward: for a propeller that is the THRUST side, so a
+        // positively-cambered section thrusts at zero twist the way a
+        // wing's lifts at zero incidence (TestPropellerLattice pins the
+        // sign).
+        struct ChordFrame {
+            Math::Vec3 Point;     // on the chord line, wrapped on the cylinder
+            Math::Vec3 ChordDir;  // local LE -> TE tangent, unit
+            Math::Vec3 CamberDir; // suction (thrust) side, unit
+        };
+        auto frameAt = [&](const Geometry::BladeStation& station, double f) {
+            const double beta = Math::DegToRad(station.TwistDeg);
+            const double s = (f - Math::Half) * station.Chord; // arc length from mid-chord, +aft
+            const double radius = std::max(station.r, 1e-12);
+            const double azimuth = bladeAzimuth - s * std::cos(beta) / radius;
+            const Math::Vec3 rhat(0.0, std::cos(azimuth), std::sin(azimuth));
+            const Math::Vec3 that(0.0, -std::sin(azimuth), std::cos(azimuth)); // axial x rhat
+            ChordFrame frame;
+            frame.ChordDir = -that * std::cos(beta) + axial * std::sin(beta);
+            frame.CamberDir = -Math::Cross(frame.ChordDir, rhat); // unit: ChordDir and rhat are orthonormal
+            frame.Point = rhat * station.r + axial * (s * std::sin(beta));
+            return frame;
+        };
+
+        // A point on the CAMBER SURFACE at chord fraction f: the wrapped
+        // chord-line point offset by the interpolated CST mean-line
+        // ordinate toward the suction side, exactly the way the wing's
+        // lattice sits on its camber surface. With no section data
+        // CamberAt() is zero and this is the chord line itself.
+        auto surfacePoint = [&](const Geometry::BladeStation& station, double f) {
+            const ChordFrame frame = frameAt(station, f);
+            const double eta = (prop.Radius > 0.0) ? station.r / prop.Radius : 0.0;
+            const double camber = Geometry::CamberAt(prop.Sections, eta, f);
+            return frame.Point + frame.CamberDir * (camber * station.Chord);
+        };
+
+        for (std::size_t i = 0; i + 1 < ns; ++i) {
+            const Geometry::BladeStation& inboard = prop.Stations[i];
+            const Geometry::BladeStation& outboard = prop.Stations[i + 1];
+            const double width = outboard.r - inboard.r;
+            if (width <= 0.0) continue; // degenerate/unordered station pair carries no strip
+            const double etaMid = (prop.Radius > 0.0)
+                                      ? Math::Half * (inboard.r + outboard.r) / prop.Radius
+                                      : 0.0;
+
+            {
+                const double f0 = 0.0;
+                const double f1 = 1.0;
+                const double fBound = Math::QuarterChord;
+                const double fControl = Math::ThreeQuarterChord;
+
+                Lattice::Panel panel;
+                panel.A = surfacePoint(inboard, fBound);
+                panel.B = surfacePoint(outboard, fBound);
+                panel.ControlPoint = (surfacePoint(inboard, fControl) + surfacePoint(outboard, fControl)) * Math::Half;
+                // Curved near wake, then the straight far tail along the
+                // local wind AT THE HELIX END (at the root when there is no
+                // helix).
+                panel.TrailPathA = wakePath(panel.A);
+                panel.TrailPathB = wakePath(panel.B);
+                panel.TrailDirA =
+                    trailDirection(panel.TrailPathA.empty() ? panel.A : panel.TrailPathA.back());
+                panel.TrailDirB =
+                    trailDirection(panel.TrailPathB.empty() ? panel.B : panel.TrailPathB.back());
+                if (!panel.TrailPathA.empty())
+                    panel.WakeCoreRadius = WakeCoreWidthFraction * width;
+
+                // Control-point normal from the surface tangents there: the
+                // radial tangent between the stations, and the chordwise
+                // tangent tilted by the ANALYTIC camber slope (the wing's
+                // convention -- the flow-tangency condition wants the mean
+                // line's own slope at the control point, not a facet
+                // average). Flat sections reduce this to the slice normal.
+                const ChordFrame inFrame = frameAt(inboard, fControl);
+                const ChordFrame outFrame = frameAt(outboard, fControl);
+                const double slope = Geometry::CamberSlopeAt(prop.Sections, etaMid, fControl);
+                const Math::Vec3 radialTangent = surfacePoint(outboard, fControl) - surfacePoint(inboard, fControl);
+                const Math::Vec3 chordTangent =
+                    ((inFrame.ChordDir + outFrame.ChordDir) + (inFrame.CamberDir + outFrame.CamberDir) * slope);
+                panel.Normal = Math::Cross(radialTangent, chordTangent).Normalized();
+
+                // Footprint from the CHORD-LINE quad (the camber-free
+                // slice): that is the planform-style area coefficients
+                // normalize by and the viewer reconstructs the drawn quad
+                // from. The true curved surface is longer by the camber arc
+                // ratio, exactly the wing's Area vs PlanformArea
+                // distinction.
+                const Math::Vec3 le0 = frameAt(inboard, f0).Point;
+                const Math::Vec3 te0 = frameAt(inboard, f1).Point;
+                const Math::Vec3 le1 = frameAt(outboard, f0).Point;
+                const Math::Vec3 te1 = frameAt(outboard, f1).Point;
+                // Planar quad: half the cross product of its diagonals.
+                panel.PlanformArea = Math::Cross(te1 - le0, le1 - te0).Norm() * Math::Half;
+                const double arcFraction = Geometry::CamberArcLengthFraction(prop.Sections, etaMid, f0, f1);
+                panel.Area = panel.PlanformArea * (arcFraction / (f1 - f0));
+                panel.SpanwiseWidth = width;
+                panel.Surface = "blade" + std::to_string(blade);
+                panel.StripIndex = static_cast<int>(blade * (ns - 1) + i);
+                panels.push_back(panel);
+            }
+        }
+    }
+    return panels;
+}
+
+std::vector<Solver::StripSection> BuildPropellerStrips(const Geometry::Propeller& prop) {
+    std::vector<Solver::StripSection> strips;
+    const std::size_t ns = prop.Stations.size();
+    if (ns < 2 || prop.BladeCount < 1) return strips;
+    strips.reserve(static_cast<std::size_t>(prop.BladeCount) * (ns - 1));
+
+    const Math::Vec3 axial(1.0, 0.0, 0.0);
+
+    for (int blade = 0; blade < prop.BladeCount; ++blade) {
+        const double bladeAzimuth = Math::Two * std::numbers::pi * blade / prop.BladeCount;
+
+        // Mid-chord section frame of a station, wrapped on its radius
+        // cylinder exactly the way BuildPropellerLattice wraps the panels
+        // (mid-chord: azimuth offset zero, so the frame is the station's).
+        const auto frameAt = [&](const Geometry::BladeStation& station) {
+            const double beta = Math::DegToRad(station.TwistDeg);
+            const Math::Vec3 rhat(0.0, std::cos(bladeAzimuth), std::sin(bladeAzimuth));
+            const Math::Vec3 that(0.0, -std::sin(bladeAzimuth), std::cos(bladeAzimuth));
+            const Math::Vec3 chordDir = -that * std::cos(beta) + axial * std::sin(beta);
+            return std::pair{chordDir, -Math::Cross(chordDir, rhat)};
+        };
+
+        for (std::size_t i = 0; i + 1 < ns; ++i) {
+            const Geometry::BladeStation& inboard = prop.Stations[i];
+            const Geometry::BladeStation& outboard = prop.Stations[i + 1];
+            const double width = outboard.r - inboard.r;
+            if (width <= 0.0) continue; // must skip exactly what the lattice skips, to stay aligned
+
+            const auto [chordIn, liftIn] = frameAt(inboard);
+            const auto [chordOut, liftOut] = frameAt(outboard);
+            const double etaMid = (prop.Radius > 0.0)
+                                      ? Math::Half * (inboard.r + outboard.r) / prop.Radius
+                                      : 0.0;
+
+            Solver::StripSection strip;
+            strip.ChordDir = (chordIn + chordOut).Normalized();
+            strip.LiftDir = (liftIn + liftOut).Normalized();
+            strip.Chord = Math::Half * (inboard.Chord + outboard.Chord);
+            strip.Width = width;
+            strip.Eta = etaMid;
+            strip.Alpha0Deg = Geometry::SectionZeroLiftAngleDeg(prop.Sections, etaMid);
+            strips.push_back(strip);
+        }
+    }
+    return strips;
+}
+
+std::vector<Lattice::Panel> BuildDuctVanes(const std::vector<Geometry::ControlSurface>& surfaces,
+                                           double exitRadius, double exitX, double ductChord,
+                                           const std::vector<double>& deflectionsDeg,
+                                           const std::function<Math::Vec3(const Math::Vec3&)>& localFlow,
+                                           int radialPanels, int chordwisePanels) {
+    std::vector<Lattice::Panel> panels;
+    if (exitRadius <= 0.0 || ductChord <= 0.0 || radialPanels < 1 || chordwisePanels < 1)
+        return panels;
+
+    // Trailing-leg direction at a wake-root point: the local mean flow
+    // when the caller states one (in a propwash that includes the swirl,
+    // so the wake leaves helically, not axially -- the blade lattice's own
+    // convention), straight downstream otherwise.
+    const auto trailDirection = [&](const Math::Vec3& point) {
+        if (!localFlow) return Math::Vec3(1.0, 0.0, 0.0);
+        const Math::Vec3 unit = localFlow(point).Normalized();
+        return (unit.Norm() > Math::Half) ? unit : Math::Vec3(1.0, 0.0, 0.0);
+    };
+
+    int vaneIndex = -1;
+    for (std::size_t s = 0; s < surfaces.size(); ++s) {
+        const Geometry::ControlSurface& surface = surfaces[s];
+        if (surface.Binding != Geometry::ControlSurfaceBinding::DuctJet) continue;
+        ++vaneIndex;
+
+        // Contract frame (x-forward/z-down) to solver frame (x-aft/z-up):
+        // the 180-degree rotation about y (see ControlSurface.h). The hinge
+        // axis doubles as the vane's radial span direction.
+        const Math::Vec3 span =
+            Math::Vec3(-surface.HingeAxis.x, surface.HingeAxis.y, -surface.HingeAxis.z).Normalized();
+        if (span.Norm() < Math::Half) continue; // degenerate stated axis
+
+        const double r0 = surface.EtaStart * exitRadius;
+        double r1 = surface.EtaEnd * exitRadius;
+        const double chord = surface.ChordFraction * ductChord;
+        if (r1 <= r0 || chord <= 0.0) continue;
+        // A wall-attached vane (eta reaching the duct) is recessed off the
+        // wall by a small span fraction: its bound-filament tip endpoint
+        // would otherwise land ON the duct's source control points, and
+        // the corrupted boundary condition makes the duct solve
+        // manufacture an order-of-magnitude spurious download (measured:
+        // -2.6 N against +0.05 N with the recession, dragging the rotor
+        // from 5.3 to 2.7 N with it). The recession stands in for the
+        // imaged wall continuation at the tip-clearance scale; a vane
+        // ending mid-jet keeps its stated tip and its real tip vortex.
+        if (surface.EtaEnd > WallAttachedVaneEta)
+            r1 = r0 + (r1 - r0) * (1.0 - VaneTipWallGapFraction);
+
+        const double deflection =
+            (s < deflectionsDeg.size()) ? Math::DegToRad(deflectionsDeg[s]) : 0.0;
+        const Math::Vec3 hingePoint(exitX, 0.0, 0.0); // the hinge line: span direction through here
+
+        // Undeflected plate point at radius r, chord fraction f (0 = the
+        // hinge at the exit plane, 1 = trailing edge); then the deflection
+        // rotation about the hinge line, right-hand rule about `span`.
+        const auto platePoint = [&](double r, double f) {
+            const Math::Vec3 flat = span * r + Math::Vec3(exitX + f * chord, 0.0, 0.0);
+            return hingePoint + Math::RotateAboutAxis(flat - hingePoint, span, deflection);
+        };
+
+        const std::string name = "vane" + std::to_string(vaneIndex);
+        for (int k = 0; k < radialPanels; ++k) {
+            const double rIn = r0 + (r1 - r0) * k / radialPanels;
+            const double rOut = r0 + (r1 - r0) * (k + 1) / radialPanels;
+            for (int m = 0; m < chordwisePanels; ++m) {
+                const double f0 = static_cast<double>(m) / chordwisePanels;
+                const double f1 = static_cast<double>(m + 1) / chordwisePanels;
+                const double fBound = (m + Math::QuarterChord) / chordwisePanels;
+                const double fControl = (m + Math::ThreeQuarterChord) / chordwisePanels;
+
+                Lattice::Panel panel;
+                panel.A = platePoint(rIn, fBound);
+                panel.B = platePoint(rOut, fBound);
+                panel.ControlPoint = (platePoint(rIn, fControl) + platePoint(rOut, fControl)) * Math::Half;
+                panel.TrailDirA = trailDirection(panel.A);
+                panel.TrailDirB = trailDirection(panel.B);
+
+                const Math::Vec3 corner00 = platePoint(rIn, f0);
+                const Math::Vec3 corner01 = platePoint(rIn, f1);
+                const Math::Vec3 corner10 = platePoint(rOut, f0);
+                const Math::Vec3 corner11 = platePoint(rOut, f1);
+                panel.Normal = Math::Cross(corner10 - corner00, corner01 - corner00).Normalized();
+                // Planar quad: half the cross product of its diagonals.
+                panel.Area = Math::Cross(corner11 - corner00, corner10 - corner01).Norm() * Math::Half;
+                panel.PlanformArea = panel.Area;
+                panel.SpanwiseWidth = rOut - rIn;
+                panel.Surface = name;
+                panel.StripIndex = vaneIndex * radialPanels + k;
+                panels.push_back(panel);
+            }
+        }
+    }
+    return panels;
+}
+
+std::vector<Solver::StripSection> BuildDuctVaneStrips(
+    const std::vector<Geometry::ControlSurface>& surfaces, double exitRadius, double ductChord,
+    const std::vector<double>& deflectionsDeg, int radialPanels) {
+    std::vector<Solver::StripSection> strips;
+    if (exitRadius <= 0.0 || ductChord <= 0.0 || radialPanels < 1) return strips;
+
+    for (std::size_t s = 0; s < surfaces.size(); ++s) {
+        const Geometry::ControlSurface& surface = surfaces[s];
+        if (surface.Binding != Geometry::ControlSurfaceBinding::DuctJet) continue;
+
+        const Math::Vec3 span =
+            Math::Vec3(-surface.HingeAxis.x, surface.HingeAxis.y, -surface.HingeAxis.z).Normalized();
+        if (span.Norm() < Math::Half) continue;
+
+        const double r0 = surface.EtaStart * exitRadius;
+        double r1 = surface.EtaEnd * exitRadius;
+        const double chord = surface.ChordFraction * ductChord;
+        if (r1 <= r0 || chord <= 0.0) continue;
+        // The same wall recession as BuildDuctVanes -- the strips must
+        // stay aligned with the panels they describe.
+        if (surface.EtaEnd > WallAttachedVaneEta)
+            r1 = r0 + (r1 - r0) * (1.0 - VaneTipWallGapFraction);
+
+        const double deflection =
+            (s < deflectionsDeg.size()) ? Math::DegToRad(deflectionsDeg[s]) : 0.0;
+        const Math::Vec3 chordDir =
+            Math::RotateAboutAxis(Math::Vec3(1.0, 0.0, 0.0), span, deflection);
+
+        for (int k = 0; k < radialPanels; ++k) {
+            Solver::StripSection strip;
+            strip.ChordDir = chordDir;
+            strip.LiftDir = Math::Cross(chordDir, span); // unit: the pair is orthonormal
+            strip.Chord = chord;
+            strip.Width = (r1 - r0) / radialPanels;
+            strip.Eta = 0.0;      // flat plates carry no section shape to key by
+            strip.Alpha0Deg = 0.0;
+            strips.push_back(strip);
+        }
+    }
+    return strips;
+}
+
+Solver::SectionModel MakePropellerSectionModel(const Geometry::Propeller& prop) {
+    Solver::BoundaryLayerSectionModel model;
+    if (!prop.Sections.empty()) {
+        // The callable outlives this function; it owns the section data.
+        model.CamberSlope = [sections = prop.Sections](double eta, double psi) {
+            return Geometry::CamberSlopeAt(sections, eta, psi);
+        };
+    }
+    return model;
 }
 
 } // namespace Aeolion::PanelBuilder

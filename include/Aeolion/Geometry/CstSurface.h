@@ -38,6 +38,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <numbers>
 #include <stdexcept>
 #include <vector>
 
@@ -191,6 +192,43 @@ struct SectionBracket {
     const double low = SectionCamberSlope(sections[bracket.Low], psi);
     const double high = SectionCamberSlope(sections[bracket.High], psi);
     return low + (high - low) * bracket.Weight;
+}
+
+// --- thin-airfoil zero-lift angle -------------------------------------------
+// The camber line's zero-lift angle from classical thin-airfoil theory,
+//
+//     alpha_0 = (1/pi) * integral_0^pi s(theta) * (1 - cos(theta)) d(theta),
+//
+// with s = d(camber)/d(psi) evaluated at psi = (1 - cos(theta))/2 -- the
+// integral itself comes out negative for positive camber (check: parabolic
+// camber 4*eps*psi*(1-psi) has s = 4*eps*cos(theta), giving the textbook
+// alpha_0 = -2*eps). This is
+// what lets a SECTION MODEL (an analytic polar today, a boundary-layer
+// solver tomorrow) represent the same camber the lattice geometry carries:
+// a viscous-coupling iteration replaces the lattice's own boundary
+// condition with sectional lift data, so the section data must know the
+// camber the geometry would otherwise have supplied.
+//
+// The integrand is finite and smooth despite the mean line's leading-edge
+// slope singularity: s ~ psi^(-1/2) ~ 2/theta near the nose while
+// (1 - cos(theta)) ~ theta^2/2, so the product vanishes like theta.
+inline constexpr int ZeroLiftQuadratureIntervals = 16; // even, for Simpson
+
+/** Thin-airfoil zero-lift angle [deg] of the camber line at span station eta. */
+[[nodiscard]] inline double SectionZeroLiftAngleDeg(const std::vector<AirfoilSection>& sections, double eta) {
+    if (sections.empty()) return 0.0; // no section data -> symmetric flat plate
+
+    const auto integrand = [&](double theta) {
+        const double psi = Math::Half * (1.0 - std::cos(theta));
+        return CamberSlopeAt(sections, eta, psi) * (1.0 - std::cos(theta));
+    };
+
+    const double step = std::numbers::pi / ZeroLiftQuadratureIntervals;
+    double sum = integrand(0.0) + integrand(std::numbers::pi);
+    for (int i = 1; i < ZeroLiftQuadratureIntervals; ++i)
+        sum += ((i % 2 == 1) ? 4.0 : 2.0) * integrand(i * step);
+    const double alpha0Rad = (sum * step / 3.0) / std::numbers::pi;
+    return Math::RadToDeg(alpha0Rad);
 }
 
 // --- arc length along the camber line --------------------------------------

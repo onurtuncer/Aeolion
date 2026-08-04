@@ -91,9 +91,14 @@ inline constexpr double DefaultRateStepFraction = 0.002; // central-difference r
 /**
  * Biot-Savart induced velocity at point P from a straight vortex filament
  * running P1 -> P2 with circulation strength gamma. A small viscous-core
- * cutoff regularizes the singularity on the filament itself.
+ * cutoff regularizes the singularity on the filament itself; a nonzero
+ * coreRadius [m] additionally applies a finite Vatistas-style vortex
+ * core, v ~ v_thin * h^2/(h^2 + rc^2) with h the perpendicular distance
+ * -- required once curved wake legs can thread between panels, where
+ * grazing an unregularized filament is numerically vicious.
  */
-[[nodiscard]] inline Vec3 SegmentVelocity(const Vec3& P, const Vec3& P1, const Vec3& P2, double gamma) {
+[[nodiscard]] inline Vec3 SegmentVelocity(const Vec3& P, const Vec3& P1, const Vec3& P2, double gamma,
+                                          double coreRadius = 0.0) {
     Vec3 r1 = P - P1;
     Vec3 r2 = P - P2;
     Vec3 r0 = P2 - P1;
@@ -109,6 +114,13 @@ inline constexpr double DefaultRateStepFraction = 0.002; // central-difference r
     }
 
     double K = gamma * InvFourPi / cmag2 * (Dot(r0, r1) / r1n - Dot(r0, r2) / r2n);
+    if (coreRadius > 0.0) {
+        const double r0n2 = Dot(r0, r0);
+        if (r0n2 > VortexCoreCutoff) {
+            const double h2 = cmag2 / r0n2; // squared perpendicular distance to the filament line
+            K *= h2 / (h2 + coreRadius * coreRadius);
+        }
+    }
     return c * K;
 }
 
@@ -199,17 +211,40 @@ inline constexpr double DefaultRateStepFraction = 0.002; // central-difference r
     return panels;
 }
 
+// A trailing leg: from its root (A or B), through the panel's optional
+// curved near-wake path, then the straight far tail along the stated
+// direction. Circulation continuity fixes the segment orientations: the
+// A-leg flows from downstream infinity INTO A, the B-leg OUT of B --
+// `inbound` selects which. The panel's WakeCoreRadius regularizes every
+// leg segment (curved wakes thread between panels; see SegmentVelocity).
+[[nodiscard]] inline Vec3 TrailingLegVelocity(const Vec3& P, const Vec3& root,
+                                              const std::vector<Vec3>& path, const Vec3& farDir,
+                                              double trail, double gamma, double coreRadius,
+                                              bool inbound) {
+    Vec3 v(0, 0, 0);
+    Vec3 previous = root;
+    for (const Vec3& point : path) {
+        v = v + (inbound ? SegmentVelocity(P, point, previous, gamma, coreRadius)
+                         : SegmentVelocity(P, previous, point, gamma, coreRadius));
+        previous = point;
+    }
+    const Vec3 far = previous + farDir * trail;
+    v = v + (inbound ? SegmentVelocity(P, far, previous, gamma, coreRadius)
+                     : SegmentVelocity(P, previous, far, gamma, coreRadius));
+    return v;
+}
+
 /**
  * Full horseshoe induced velocity (unit gamma) at point P for panel j,
- * using far-downstream points computed on the fly with `trail`.
+ * using far-downstream points computed on the fly with `trail`. Legs
+ * follow the panel's curved near-wake paths when it carries them.
  */
 [[nodiscard]] inline Vec3 HorseshoeVelocity(const Vec3& P, const Panel& pj, double gamma, double trail) {
-    Vec3 A_inf = pj.A + pj.TrailDirA * trail;
-    Vec3 B_inf = pj.B + pj.TrailDirB * trail;
-    Vec3 v(0, 0, 0);
-    v = v + SegmentVelocity(P, A_inf, pj.A, gamma); // leg: downstream-inf -> A
-    v = v + SegmentVelocity(P, pj.A, pj.B, gamma);  // bound: A -> B
-    v = v + SegmentVelocity(P, pj.B, B_inf, gamma); // leg: B -> downstream-inf
+    Vec3 v = TrailingLegVelocity(P, pj.A, pj.TrailPathA, pj.TrailDirA, trail, gamma,
+                                 pj.WakeCoreRadius, true); // leg: downstream-inf -> A
+    v = v + SegmentVelocity(P, pj.A, pj.B, gamma);         // bound: A -> B
+    v = v + TrailingLegVelocity(P, pj.B, pj.TrailPathB, pj.TrailDirB, trail, gamma,
+                                pj.WakeCoreRadius, false); // leg: B -> downstream-inf
     return v;
 }
 
@@ -219,11 +254,10 @@ inline constexpr double DefaultRateStepFraction = 0.002; // central-difference r
  * itself would be singular).
  */
 [[nodiscard]] inline Vec3 HorseshoeVelocityNoBound(const Vec3& P, const Panel& pj, double gamma, double trail) {
-    Vec3 A_inf = pj.A + pj.TrailDirA * trail;
-    Vec3 B_inf = pj.B + pj.TrailDirB * trail;
-    Vec3 v(0, 0, 0);
-    v = v + SegmentVelocity(P, A_inf, pj.A, gamma);
-    v = v + SegmentVelocity(P, pj.B, B_inf, gamma);
+    Vec3 v = TrailingLegVelocity(P, pj.A, pj.TrailPathA, pj.TrailDirA, trail, gamma,
+                                 pj.WakeCoreRadius, true);
+    v = v + TrailingLegVelocity(P, pj.B, pj.TrailPathB, pj.TrailDirB, trail, gamma,
+                                pj.WakeCoreRadius, false);
     return v;
 }
 
@@ -636,9 +670,10 @@ struct PreparedSystem {
  * externalField: optional background velocity PERTURBATION as a function
  * of position, added on top of the freestream+rotation kinematic velocity
  * at every panel. This is how you inject something like a propeller's
- * slipstream (see BEMT.h), ground effect, or a gust field into an
- * otherwise-ordinary lifting-surface solve -- the field only needs to
- * return the extra velocity it contributes, not the total.
+ * slipstream (see the external BEMT project's SlipstreamField), ground
+ * effect, or a gust field into an otherwise-ordinary lifting-surface
+ * solve -- the field only needs to return the extra velocity it
+ * contributes, not the total.
  *
  * This is a thin convenience wrapper around Prepare()+SolveWithSystem();
  * if you're going to solve the SAME geometry against multiple flight

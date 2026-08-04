@@ -9,7 +9,6 @@ on:
       - 'include/**'
       - 'solver/include/**'
       - 'panelbuilder/include/**'
-      - 'bemt/include/**'
       - '.github/workflows/deploy-docs.yml'
   workflow_dispatch:
 

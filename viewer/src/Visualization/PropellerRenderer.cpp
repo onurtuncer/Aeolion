@@ -75,12 +75,10 @@ void main() {
 })";
 
 // The per-station scalar the caller chose to color blades by.
-[[nodiscard]] double FieldValue(const BEMT::StationResult& s, PropFieldMode field) {
+[[nodiscard]] double FieldValue(const Geometry::BladeStation& s, PropFieldMode field) {
     switch (field) {
-    case PropFieldMode::Alpha:       return s.alphaDeg;
-    case PropFieldMode::LoadingdTdr: return s.dT_dr;
-    case PropFieldMode::InflowPhi:   return s.phiDeg;
-    case PropFieldMode::SectionCl:   return s.cl;
+    case PropFieldMode::Twist: return s.TwistDeg;
+    case PropFieldMode::Chord: return s.Chord;
     }
     return 0.0;
 }
@@ -100,15 +98,14 @@ void PropellerRenderer::AppendLine(std::vector<float>& lines, const glm::vec3& a
                                b.x, b.y, b.z, color.r, color.g, color.b});
 }
 
-void PropellerRenderer::Update(const BEMT::PropGeometry& prop, const BEMT::Result& result,
-                               const PropellerDisplayOptions& options) {
-    const std::vector<BEMT::BladeStation>& stations = prop.Stations;
+void PropellerRenderer::Update(const Geometry::Propeller& prop, const PropellerDisplayOptions& options) {
+    const std::vector<Geometry::BladeStation>& stations = prop.Stations;
     const std::size_t ns = stations.size();
 
     // --- per-station scalar field, mapped onto the colormap -----------------
     std::vector<double> field(ns, 0.0);
-    for (std::size_t i = 0; i < ns && i < result.Stations.size(); ++i)
-        field[i] = FieldValue(result.Stations[i], options.Field);
+    for (std::size_t i = 0; i < ns; ++i)
+        field[i] = FieldValue(stations[i], options.Field);
 
     m_FieldMin = std::numeric_limits<double>::max();
     m_FieldMax = std::numeric_limits<double>::lowest();
@@ -137,7 +134,7 @@ void PropellerRenderer::Update(const BEMT::PropGeometry& prop, const BEMT::Resul
     // chord lies in the plane of the axial (+x) and tangential directions,
     // tilted out of the rotor plane by the local geometric twist.
     if (options.ShowBlades && ns >= 2) {
-        const int blades = std::max(prop.NBlades, 1);
+        const int blades = std::max(prop.BladeCount, 1);
         for (int b = 0; b < blades; ++b) {
             const float psi = 2.0f * std::numbers::pi_v<float> * static_cast<float>(b) /
                               static_cast<float>(blades);

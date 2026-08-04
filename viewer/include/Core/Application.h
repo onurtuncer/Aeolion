@@ -13,9 +13,8 @@
 #include "Visualization/LatticeRenderer.h"
 #include "Visualization/PropellerRenderer.h"
 
-#include "Aeolion/BEMT/BEMT.h"
-#include "Aeolion/BEMT/PropGeometry.h"
 #include "Aeolion/Geometry/HandoffContract.h"
+#include "Aeolion/Solver/RotorVaneCoupling.h"
 #include "Aeolion/PanelBuilder/PanelBuilder.h"
 #include "Aeolion/Solver/Solver.h"
 
@@ -26,9 +25,11 @@
 namespace Aeolion::Viewer {
 
 // Which subject the viewer is showing. Airframe = the wing/fuselage lattice
-// (LatticeRenderer + VLM); Propeller = the isolated propeller (PropellerRenderer
-// + BEMT). The two carry independent geometry, computation, camera framing,
-// and UI panels; only the window, GL context, and orbit camera are shared.
+// (LatticeRenderer + VLM); Propeller = the isolated propeller geometry
+// (PropellerRenderer -- no aerodynamic solve behind it since BEMT moved to
+// its own project; a future calculation method plugs in behind this same
+// screen). The two carry independent geometry, camera framing, and UI
+// panels; only the window, GL context, and orbit camera are shared.
 enum class Screen {
     Airframe = 0,
     Propeller,
@@ -44,6 +45,10 @@ public:
     explicit Application(const std::string& geometryPath = "", const std::string& screenshotPath = "",
                          Screen initialScreen = Screen::Airframe);
     ~Application();
+
+    /** Rotate the orbit camera from its framed pose (degrees) -- lets a
+     *  scripted screenshot pick its viewpoint. */
+    void OrbitBy(double yawDeg, double pitchDeg);
 
     Application(const Application&) = delete;
     Application& operator=(const Application&) = delete;
@@ -63,7 +68,7 @@ private:
     // --- propeller screen ---------------------------------------------------
     void BuildDefaultPropeller();               // fallback prop when no contract states one
     void AdoptContractPropeller();              // use the loaded handoff's propulsion_bemt block
-    void ResolveProp();                         // run BEMT + remesh the propeller
+    void ResolveProp();                         // mesh the blades + rotating-frame VLM solve + remesh
     void FrameProp();                           // frame the camera on the (small) propeller
     void DrawPropellerUI();
 
@@ -119,18 +124,49 @@ private:
     bool m_DisplayDirty = false; // display options changed -> remesh only
 
     // --- propeller screen state ---------------------------------------------
-    // The propeller is independent of the airframe: its own geometry (from the
-    // handoff's propulsion_bemt block, or a built-in default), its own BEMT
-    // operating point, and its own render. m_PropDirty covers both the solve
-    // and the remesh -- one BEMT::Solve is cheap enough not to split them.
-    BEMT::PropGeometry m_Prop;
-    BEMT::Result m_PropResult;
-    PropellerDisplayOptions m_PropDisplay;
+    // The propeller is independent of the airframe: its own geometry (from
+    // the handoff's propulsion_bemt block via Geometry::ToPropeller, or a
+    // built-in default), its own operating point, and its own solve. The
+    // blades are meshed by PanelBuilder::BuildPropellerLattice and run
+    // through the SAME Solver::Solve as the airframe, spinning via the
+    // body-rate term (fc.p = Omega about +x) -- Aeolion's panel-native
+    // propeller method. m_PropDirty covers mesh + solve + remesh together;
+    // the lattice is small enough not to split them.
+    Geometry::Propeller m_Prop;
+    std::vector<Solver::Panel> m_PropPanels;
+    std::vector<Solver::StripSection> m_PropStrips;
+    std::vector<Lattice::SourcePanel> m_PropDuctPanels; // shroud source mesh (empty = no duct)
+    Solver::SolveResult m_PropSolve;
+    Solver::ViscousCoupledResult m_PropCoupled; // populated when m_PropUseViscous
+
+    // --- duct-jet vanes -----------------------------------------------------
+    // The contract's downstream control vanes, solved in the STATIC frame
+    // (they do not rotate with the blades) against the time-mean slipstream
+    // reconstructed from the converged rotor+duct loading by annular
+    // momentum theory (Solver::SlipstreamField), through the same viscous
+    // sectional feedback as the blades. Their forces complete the
+    // propulsive wrench.
+    std::vector<Solver::Panel> m_PropVanePanels;
+    std::vector<Solver::StripSection> m_PropVaneStrips;
+    Solver::ViscousCoupledResult m_PropVaneCoupled;
+    LatticeRenderer m_PropVaneLattice;
+    std::vector<double> m_VaneDeflectionDeg; // aligned with m_Contract.ControlSurfaces
+    int m_PropOuterIterations = 0;    // two-way rotor-vane outer passes
+    double m_PropSwirlFactor = 1.0;   // the momentum budget's converged swirl scale
+    double m_PropOuterResidual = 0.0;
+    bool m_PropOuterConverged = true;
+    LatticeRenderer m_PropLattice;              // the solved blade lattice, field-colored
+    LatticeDisplayOptions m_PropLatticeDisplay; // grid/axes off; see constructor
+    PropellerDisplayOptions m_PropDisplay;      // hub/disk/axis decoration (geometry ribbon off)
     bool m_PropFromContract = false; // true if m_Prop came from a loaded contract, not the default
-    double m_PropRpm = 6000.0;       // shaft speed
-    double m_PropSpeed = 0.0;        // forward airspeed [m/s]; 0 = hover
+    double m_PropRpm = 6000.0;       // shaft speed; Omega = rpm * 2*pi/60 about +x
+    double m_PropSpeed = 0.0;        // axial inflow [m/s]; 0 = hover (solved at a tiny floor speed)
     double m_PropDensity = 1.225;    // [kg/m^3], sea-level ISA
-    bool m_PropDirty = true;         // operating point/geometry/display changed -> re-solve + remesh
+    bool m_PropUseViscous = true;    // Level-2 sectional lift feedback vs bare inviscid lattice
+    int m_PropSectionModel = 1;      // 0 = analytic polar, 1 = transpiration-coupled boundary layer
+    bool m_PropDuctEnabled = true;   // shroud the prop (contract duct shape if stated, default otherwise)
+    bool m_PropVanesEnabled = true;  // solve the contract's duct-jet vanes in the mean slipstream
+    bool m_PropDirty = true;         // geometry/operating point/display changed -> remesh + re-solve
 
     double m_LastMouseX = 0.0, m_LastMouseY = 0.0;
 };

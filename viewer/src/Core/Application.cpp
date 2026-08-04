@@ -5,6 +5,7 @@
 
 #include "Aeolion/Logger/Log.h"
 #include "Aeolion/PanelBuilder/PanelBuilder.h"
+#include "Aeolion/Solver/SectionBoundaryLayer.h"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -39,6 +40,21 @@ constexpr int DefaultPropStations = 12;
 constexpr double DefaultPropGeometricPitch = 0.12; // [m], sets the twist(r) = atan(P / 2*pi*r) washout
 constexpr double DefaultPropRootChord = 0.032;     // [m]
 constexpr double DefaultPropTaper = 0.55;          // chord = root * (1 - taper * r/R)
+
+// Default shroud proportions when the contract states no duct: a snug
+// tip clearance, a modest ring thickness, and a chord that wraps the
+// rotor plane -- enough to show the ducted-fan interaction without
+// pretending to be a designed duct.
+constexpr double DefaultShroudTipClearance = 1.04; // inner radius = this * tip radius
+constexpr double DefaultShroudOuterFactor = 1.20;  // outer radius = this * tip radius
+constexpr double DefaultShroudChordFactor = 0.5;   // chord = this * tip radius
+
+// Hover means zero axial inflow, but the solver's wind-axis force
+// projections need a nonzero translational freestream to be defined
+// (drag/lift directions normalize Vinf) -- solve at this floor instead.
+// The dimensional forces are dominated by the Omega*r rotation term, so
+// the floor's contribution is negligible.
+constexpr double MinPropAirspeed = 0.01; // [m/s]
 
 // Deflection slider range used when a control surface states no
 // deflection_limits_deg (schema < 1.4.0, where MinDeg == MaxDeg == 0 means
@@ -99,6 +115,13 @@ Application::Application(const std::string& geometryPath, const std::string& scr
     m_Wing.CosineSpacing = true;
 
     BuildDefaultPropeller();
+    // The propeller screen's lattice is the subject itself -- the airframe
+    // screen's ground grid and body axes would just clutter a 0.1 m prop.
+    m_PropLatticeDisplay.ShowGrid = false;
+    m_PropLatticeDisplay.ShowAxes = false;
+    // The flat geometry ribbon coincides with the solved lattice surface, so
+    // it stays off by default (z-fighting); hub/disk/axis decoration stays.
+    m_PropDisplay.ShowBlades = false;
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -115,6 +138,10 @@ Application::Application(const std::string& geometryPath, const std::string& scr
 
     if (m_Screen == Screen::Propeller) FrameProp();
     else FrameView();
+}
+
+void Application::OrbitBy(double yawDeg, double pitchDeg) {
+    m_Camera.Rotate(static_cast<float>(yawDeg), static_cast<float>(pitchDeg));
 }
 
 Application::~Application() {
@@ -141,6 +168,7 @@ void Application::LoadHandoff(const std::string& geometryPath) {
     // ordered) ControlSurfaces list.
     m_RightDeflectionDeg.assign(m_Contract.ControlSurfaces.size(), 0.0);
     m_LeftDeflectionDeg.assign(m_Contract.ControlSurfaces.size(), 0.0);
+    m_VaneDeflectionDeg.assign(m_Contract.ControlSurfaces.size(), 0.0);
 
     // Bounding sphere of the whole airframe (wing + fuselage + duct), for
     // framing -- the wing's own span alone would leave the fuselage's
@@ -221,11 +249,10 @@ void Application::Resolve() {
 }
 
 void Application::BuildDefaultPropeller() {
-    m_Prop = BEMT::PropGeometry{};
-    m_Prop.NBlades = DefaultPropBlades;
+    m_Prop = Geometry::Propeller{};
+    m_Prop.BladeCount = DefaultPropBlades;
     m_Prop.Radius = DefaultPropRadius;
     m_Prop.HubRadius = DefaultPropHubRadius;
-    m_Prop.RotationSign = 1;
     m_Prop.Stations.clear();
     m_Prop.Stations.reserve(DefaultPropStations);
     for (int i = 0; i < DefaultPropStations; ++i) {
@@ -240,27 +267,187 @@ void Application::BuildDefaultPropeller() {
         m_Prop.Stations.push_back({r, chord, twistDeg});
     }
     m_PropFromContract = false;
-    m_PropRpm = 6000.0;
     m_PropDirty = true;
 }
 
 void Application::AdoptContractPropeller() {
     try {
-        m_Prop = Geometry::ToPropGeometry(m_Contract.Propulsion, m_Prop.RotationSign);
+        m_Prop = Geometry::ToPropeller(m_Contract.Propulsion);
         m_PropFromContract = true;
-        if (m_Contract.Propulsion.ReferenceRpm > 0.0) m_PropRpm = m_Contract.Propulsion.ReferenceRpm;
         m_PropDirty = true;
     } catch (const std::exception& e) {
         // Older contracts (schema < 1.4.0) state no blade count, so
-        // ToPropGeometry throws; keep the built-in default rather than fail.
+        // ToPropeller throws; keep the built-in default rather than fail.
         AE_WARN("propeller: contract propulsion_bemt unusable ({}); keeping the default propeller", e.what());
     }
 }
 
 void Application::ResolveProp() {
-    const BEMT::Polar polar; // analytic default (thin-airfoil lift slope, parabolic drag)
-    m_PropResult = BEMT::Solve(m_Prop, polar, m_PropRpm, m_PropSpeed, m_PropDensity);
-    m_Propeller.Update(m_Prop, m_PropResult, m_PropDisplay);
+    const double omega = m_PropRpm * 2.0 * std::numbers::pi / Math::SecondsPerMinute;
+    m_PropPanels = PanelBuilder::BuildPropellerLattice(m_Prop, m_PropSpeed, omega);
+
+    // Shroud dimensions: the contract's duct ring when it states one, a
+    // default-proportioned shroud otherwise. The vanes reuse them -- their
+    // eta band scales the bore radius and their chord the duct chord.
+    double shroudInner = DefaultShroudTipClearance * m_Prop.Radius;
+    double shroudOuter = DefaultShroudOuterFactor * m_Prop.Radius;
+    double shroudChord = DefaultShroudChordFactor * m_Prop.Radius;
+    if (m_UseHandoff && m_Contract.Duct.IsStated) {
+        shroudInner = m_Contract.Duct.InnerDiameter * 0.5;
+        shroudOuter = m_Contract.Duct.OuterDiameter * 0.5;
+        shroudChord = m_Contract.Duct.Chord;
+    }
+
+    // The duct shroud, centered on the rotor plane (BuildPropellerDuct's
+    // own convention).
+    m_PropDuctPanels.clear();
+    if (m_PropDuctEnabled)
+        m_PropDuctPanels = PanelBuilder::BuildPropellerDuct(shroudInner, shroudOuter, shroudChord);
+
+    // The rotation IS the flight condition: Omega enters as the solver's
+    // roll rate about +x, whose kinematic-velocity term gives every blade
+    // panel its true Omega x r tangential onset flow about the hub
+    // (RefPoint at the origin, where the lattice is built). Thrust and
+    // shaft torque then fall out of the body-axis force/moment sums:
+    // thrust = -Di (upstream, -x), torque = -Mx (opposing +Omega).
+    Solver::FreestreamConditions fc;
+    fc.Vinf = std::max(m_PropSpeed, MinPropAirspeed);
+    fc.alphaDeg = 0.0;
+    fc.betaDeg = 0.0;
+    fc.rho = m_PropDensity;
+    fc.p = omega;
+    fc.RefPoint = Solver::Vec3(0.0, 0.0, 0.0);
+
+    // Reference quantities only normalize coefficients, which are not
+    // meaningful at the hover floor speed anyway -- the readouts below are
+    // dimensional. Still, state something sensible.
+    Solver::ReferenceGeometry ref;
+    double area = 0.0;
+    for (const auto& panel : m_PropPanels) area += panel.PlanformArea;
+    ref.Area = std::max(area, 1e-9);
+    ref.Span = 2.0 * m_Prop.Radius;
+    ref.Chord = ref.Area / std::max(ref.Span, 1e-9);
+
+    const double trail = Solver::DefaultTrailSpanFactor * 2.0 * m_Prop.Radius;
+    const bool useTwoWay = m_PropVanesEnabled && m_PropUseViscous && m_UseHandoff;
+    if (m_PropUseViscous) {
+        // Sectional lift feedback: the lattice supplies alpha_eff, the
+        // viscous section model supplies cl/cd, and the circulation
+        // iterates until they agree. When the two-way rotor-vane driver
+        // runs below, IT owns the rotor solve (the rotor must feel the
+        // vanes), so the standalone solve is skipped.
+        m_PropStrips = PanelBuilder::BuildPropellerStrips(m_Prop);
+        if (!useTwoWay) {
+            // Self-consistent wake without vanes: the same outer driver,
+            // vane side empty, remeshing the blades each pass with the
+            // solved vi(r) as the trailing-leg pitch.
+            const Solver::SectionModel model =
+                (m_PropSectionModel == 1) ? PanelBuilder::MakePropellerSectionModel(m_Prop)
+                                          : Solver::SectionModel(Solver::AnalyticSectionModel{});
+            const Solver::RotorBuilder rotorBuilder =
+                [&](const std::function<double(double)>& inflow) {
+                    return PanelBuilder::BuildPropellerLattice(m_Prop, m_PropSpeed, omega, inflow);
+                };
+            Solver::RotorVaneOptions wakeOptions;
+            wakeOptions.RotorOptions.Tolerance = (m_PropSectionModel == 1) ? 2e-2 : 1e-3;
+            wakeOptions.RotorOptions.MaxIterations = 400;
+            const Solver::RotorVaneResult joint = Solver::SolveRotorVaneCoupled(
+                m_PropPanels, m_PropStrips, fc, ref, trail, model, m_PropDuctPanels, nullptr, fc,
+                ref, trail, model, m_PropSpeed, m_PropDensity, wakeOptions, rotorBuilder);
+            m_PropCoupled = joint.Rotor;
+            m_PropSolve = m_PropCoupled.Base;
+            m_PropPanels = joint.BladePanels;
+            m_PropOuterIterations = joint.OuterIterations;
+            m_PropOuterResidual = joint.Residual;
+            m_PropOuterConverged = joint.Converged;
+        }
+    } else {
+        if (m_PropDuctPanels.empty()) {
+            m_PropSolve = Solver::Solve(m_PropPanels, fc, ref, trail);
+        } else {
+            const Solver::PanelSystem system{m_PropPanels, m_PropDuctPanels};
+            m_PropSolve = Solver::SolveWithSystem(Solver::Prepare(system, trail), fc, ref);
+        }
+        m_PropCoupled = {};
+    }
+
+    // The duct-jet vanes: static-frame solve in the time-mean slipstream
+    // reconstructed from the converged rotor+duct loading (see
+    // Solver::SlipstreamField and theory.rst), through the same viscous
+    // sectional feedback as the blades -- an inviscid vane lattice knows
+    // no stall, and would overpredict control authority near the
+    // contract's deflection stops. One-way coupling: the vanes read the
+    // propwash; their influence back on the rotor is not represented.
+    m_PropVanePanels.clear();
+    m_PropVaneStrips.clear();
+    m_PropVaneCoupled = {};
+    m_PropOuterIterations = 0;
+    m_PropSwirlFactor = 1.0;
+    m_PropOuterConverged = true;
+    if (useTwoWay) {
+        // TWO-WAY coupling (theory.rst, "Two-way rotor-vane coupling"): the
+        // driver alternates the rotor+duct solve (feeling the vanes'
+        // azimuthal-mean field) and the vane solve (in the momentum-
+        // budgeted slipstream), remeshing the vanes each pass since their
+        // wakes follow the evolving local flow. It supersedes the plain
+        // rotor solve above whenever vanes are present.
+        const auto vaneBuilder = [&](const std::function<Solver::Vec3(const Solver::Vec3&)>& flow)
+            -> std::pair<std::vector<Solver::Panel>, std::vector<Solver::StripSection>> {
+            return {PanelBuilder::BuildDuctVanes(m_Contract.ControlSurfaces, shroudInner,
+                                                 0.5 * shroudChord, shroudChord,
+                                                 m_VaneDeflectionDeg, flow),
+                    PanelBuilder::BuildDuctVaneStrips(m_Contract.ControlSurfaces, shroudInner,
+                                                      shroudChord, m_VaneDeflectionDeg)};
+        };
+
+        Solver::FreestreamConditions vaneFc = fc;
+        vaneFc.p = 0.0; // the vanes do not rotate: static frame, slipstream via the field
+        Solver::ReferenceGeometry vaneRef;
+        vaneRef.Area = 1.0; // dimensional readouts only; coefficients unused for the vanes
+        vaneRef.Span = 2.0 * shroudInner;
+        vaneRef.Chord = shroudChord;
+        const double vaneTrail = Solver::DefaultTrailSpanFactor * 2.0 * shroudInner;
+
+        const Solver::SectionModel rotorModel =
+            (m_PropSectionModel == 1) ? Solver::SectionModel(PanelBuilder::MakePropellerSectionModel(m_Prop))
+                                      : Solver::SectionModel(Solver::AnalyticSectionModel{});
+        // The vanes take the analytic polar regardless: under the Level-B
+        // helical wake the hover jet's swirl angles sit beyond the BL
+        // section model's convergent envelope (it defers such strips to
+        // this same polar anyway), and the budget iteration needs the
+        // smooth model to close -- theory.rst, "Validity envelope".
+        const Solver::SectionModel vaneModel = Solver::AnalyticSectionModel{};
+        Solver::RotorVaneOptions coupled;
+        coupled.RotorOptions.Tolerance = (m_PropSectionModel == 1) ? 2e-2 : 1e-3;
+        coupled.RotorOptions.MaxIterations = 400;
+        coupled.VaneOptions = coupled.RotorOptions;
+
+        const Solver::RotorBuilder rotorBuilder = [&](const std::function<double(double)>& inflow) {
+            return PanelBuilder::BuildPropellerLattice(m_Prop, m_PropSpeed, omega, inflow);
+        };
+        Solver::RotorVaneResult joint = Solver::SolveRotorVaneCoupled(
+            m_PropPanels, m_PropStrips, fc, ref, trail, rotorModel, m_PropDuctPanels, vaneBuilder,
+            vaneFc, vaneRef, vaneTrail, vaneModel, m_PropSpeed, m_PropDensity, coupled,
+            rotorBuilder);
+
+        m_PropCoupled = joint.Rotor; // the rotor state that FELT the vanes
+        m_PropSolve = m_PropCoupled.Base;
+        m_PropPanels = joint.BladePanels; // the self-consistent-wake blade mesh
+        m_PropVaneCoupled = joint.Vanes;
+        m_PropVanePanels = std::move(joint.VanePanels);
+        m_PropVaneStrips = std::move(joint.VaneStrips);
+        m_PropOuterIterations = joint.OuterIterations;
+        m_PropSwirlFactor = joint.SwirlFactor;
+        m_PropOuterResidual = joint.Residual;
+        m_PropOuterConverged = joint.Converged;
+        if (!m_PropVanePanels.empty())
+            m_PropVaneLattice.Update(m_PropVanePanels, m_PropVaneCoupled.Base, m_PropLatticeDisplay,
+                                     2.0 * shroudInner);
+    }
+
+    m_PropLattice.Update(m_PropPanels, m_PropSolve, m_PropLatticeDisplay, 2.0 * m_Prop.Radius,
+                         m_PropDuctPanels);
+    m_Propeller.Update(m_Prop, m_PropDisplay);
 }
 
 void Application::FrameProp() {
@@ -475,16 +662,16 @@ void Application::DrawUI() {
 void Application::DrawPropellerUI() {
     // --- controls -----------------------------------------------------------
     ImGui::SetNextWindowPos(ImVec2(10, 28), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(360, 560), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(360, 460), ImGuiCond_FirstUseEver);
     ImGui::Begin("Propeller");
 
     if (ImGui::CollapsingHeader("Geometry", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Text("source: %s", m_PropFromContract ? "handoff contract" : "built-in default");
         ImGui::Text("radius: %.4f m   hub: %.4f m", m_Prop.Radius, m_Prop.HubRadius);
         ImGui::Text("stations: %zu", m_Prop.Stations.size());
-        int blades = m_Prop.NBlades;
+        int blades = m_Prop.BladeCount;
         if (ImGui::SliderInt("Blade count", &blades, 2, 6)) {
-            m_Prop.NBlades = blades;
+            m_Prop.BladeCount = blades;
             m_PropDirty = true;
         }
     }
@@ -493,19 +680,67 @@ void Application::DrawPropellerUI() {
         m_PropDirty |= SliderD("RPM", &m_PropRpm, 500.0, 15000.0, "%.0f");
         m_PropDirty |= SliderD("Airspeed [m/s]", &m_PropSpeed, 0.0, 40.0, "%.1f");
         m_PropDirty |= SliderD("rho [kg/m^3]", &m_PropDensity, 0.4, 1.4);
+        m_PropDirty |= ImGui::Checkbox("Viscous coupling", &m_PropUseViscous);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Sectional lift feedback: a 2-D viscous section model\n"
+                              "iterated against the lattice's induced flow.");
+        if (m_PropUseViscous) {
+            const char* modelNames[] = {"Analytic polar", "Boundary layer (transpiration)"};
+            m_PropDirty |= ImGui::Combo("Section model", &m_PropSectionModel, modelNames,
+                                        IM_ARRAYSIZE(modelNames));
+        }
+        m_PropDirty |= ImGui::Checkbox("Duct", &m_PropDuctEnabled);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Shroud the propeller with the contract's duct ring (or a\n"
+                              "default-proportioned one) and solve them coupled: the blades\n"
+                              "see the duct's induced flow, the duct sees the propwash.");
+        if (m_UseHandoff && m_PropUseViscous) {
+            m_PropDirty |= ImGui::Checkbox("Vanes", &m_PropVanesEnabled);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("The contract's duct-jet vanes, solved in the static frame\n"
+                                  "against the rotor's azimuthal-mean slipstream.");
+        }
+    }
+
+    if (m_PropVanesEnabled && m_PropUseViscous && m_UseHandoff &&
+        ImGui::CollapsingHeader("Vane deflections", ImGuiTreeNodeFlags_DefaultOpen)) {
+        int vaneIndex = -1;
+        for (std::size_t i = 0; i < m_Contract.ControlSurfaces.size(); ++i) {
+            const Geometry::ControlSurface& surface = m_Contract.ControlSurfaces[i];
+            if (surface.Binding != Geometry::ControlSurfaceBinding::DuctJet) continue;
+            ++vaneIndex;
+            // Soft limits where stated: the usable range, not the stops
+            // (see ControlSurface.h).
+            const double lo = surface.Limits.HasSoftLimit ? -surface.Limits.SoftLimitDeg
+                                                          : surface.Limits.MinDeg;
+            const double hi = surface.Limits.HasSoftLimit ? surface.Limits.SoftLimitDeg
+                                                          : surface.Limits.MaxDeg;
+            ImGui::PushID(static_cast<int>(i));
+            const std::string label = "vane" + std::to_string(vaneIndex) + " [deg]";
+            m_PropDirty |= SliderD(label.c_str(), &m_VaneDeflectionDeg[i],
+                                   (lo < hi) ? lo : -15.0, (lo < hi) ? hi : 15.0, "%.1f");
+            ImGui::PopID();
+        }
+    }
+
+    if (ImGui::CollapsingHeader("Lattice", ImGuiTreeNodeFlags_DefaultOpen)) {
+        // One Weissinger row per radial strip -- see BuildPropellerLattice's
+        // header for why chordwise stacking is off the table for now.
+        ImGui::Text("panels: %zu (1 chordwise row per strip)", m_PropPanels.size());
     }
 
     if (ImGui::CollapsingHeader("Display", ImGuiTreeNodeFlags_DefaultOpen)) {
-        const char* fieldNames[] = {"Angle of attack", "Thrust grading dT/dr", "Inflow angle", "Section cl"};
-        int field = static_cast<int>(m_PropDisplay.Field);
+        const char* fieldNames[] = {"Circulation gamma", "Sectional cl", "Lift per span"};
+        int field = static_cast<int>(m_PropLatticeDisplay.Field);
         if (ImGui::Combo("Field", &field, fieldNames, IM_ARRAYSIZE(fieldNames))) {
-            m_PropDisplay.Field = static_cast<PropFieldMode>(field);
+            m_PropLatticeDisplay.Field = static_cast<FieldMode>(field);
             m_PropDirty = true;
         }
-        m_PropDirty |= ImGui::Checkbox("Blades", &m_PropDisplay.ShowBlades);
+        m_PropDirty |= ImGui::Checkbox("Wireframe", &m_PropLatticeDisplay.ShowWireframe);
+        m_PropDirty |= ImGui::Checkbox("Normals", &m_PropLatticeDisplay.ShowNormals);
         m_PropDirty |= ImGui::Checkbox("Hub", &m_PropDisplay.ShowHub);
         m_PropDirty |= ImGui::Checkbox("Disk & axis", &m_PropDisplay.ShowDisk);
-        m_PropDirty |= ImGui::Checkbox("Wireframe", &m_PropDisplay.ShowWireframe);
+        m_PropDirty |= ImGui::Checkbox("Geometry ribbon", &m_PropDisplay.ShowBlades);
         if (ImGui::Button("Frame view")) FrameProp();
     }
     ImGui::End();
@@ -516,39 +751,124 @@ void Application::DrawPropellerUI() {
     ImGui::SetNextWindowSize(ImVec2(360, 560), ImGuiCond_FirstUseEver);
     ImGui::Begin("Propeller results");
 
-    const double eta = BEMT::PropulsiveEfficiency(m_PropResult, m_PropSpeed);
-    const double fom = BEMT::FigureOfMerit(m_PropResult, m_PropDensity);
-    const double diskLoading = BEMT::DiskLoading(m_PropResult);
-    if (ImGui::BeginTable("prop_coeffs", 2, ImGuiTableFlags_SizingStretchProp)) {
-        ReadoutRow("Thrust [N]", m_PropResult.Thrust, "%.3f");
-        ReadoutRow("Torque [N.m]", m_PropResult.Torque, "%.4f");
-        ReadoutRow("Power [W]", m_PropResult.Power, "%.1f");
-        ReadoutRow("Disk loading [Pa]", diskLoading, "%.1f");
-        ReadoutRow("RPM", m_PropResult.rpm, "%.0f");
-        // Figure of merit is a hover metric, propulsive efficiency a
-        // forward-flight one; only the applicable one means anything.
-        if (m_PropSpeed > 0.0) ReadoutRow("Propulsive eff.", eta, "%.3f");
-        else                   ReadoutRow("Figure of merit", fom, "%.3f");
+    const double diskArea = std::numbers::pi * m_Prop.Radius * m_Prop.Radius;
+    // Blade planform area by the trapezoid rule over the chord distribution;
+    // solidity is the classic sigma = N * bladeArea / diskArea.
+    double bladeArea = 0.0;
+    for (std::size_t i = 0; i + 1 < m_Prop.Stations.size(); ++i) {
+        const double dr = m_Prop.Stations[i + 1].r - m_Prop.Stations[i].r;
+        bladeArea += 0.5 * (m_Prop.Stations[i].Chord + m_Prop.Stations[i + 1].Chord) * dr;
+    }
+
+    // The rotating-lattice solve's body-axis sums, restated as propeller
+    // quantities (see BuildPropellerLattice's conventions): thrust points
+    // upstream (-x), shaft torque opposes +Omega. With viscous coupling the
+    // torque is real (induced + profile); the bare inviscid lattice's is
+    // induced only.
+    const double omega = m_PropRpm * 2.0 * std::numbers::pi / Math::SecondsPerMinute;
+    const double thrust = -m_PropSolve.Di;
+    const double torque = -m_PropSolve.Mx;
+    const double power = torque * omega;
+    if (ImGui::BeginTable("prop_solve", 2, ImGuiTableFlags_SizingStretchProp)) {
+        ReadoutRow("Thrust [N]", thrust, "%.3f");
+        if (m_PropUseViscous) {
+            ReadoutRow("Torque [N.m]", torque, "%.4f");
+            ReadoutRow("  induced", -m_PropCoupled.InducedMoment.x, "%.4f");
+            ReadoutRow("  profile", -m_PropCoupled.ProfileMoment.x, "%.4f");
+            ReadoutRow("Power [W]", power, "%.1f");
+        } else {
+            ReadoutRow("Torque [N.m] (induced)", torque, "%.4f");
+            ReadoutRow("Power [W] (induced)", power, "%.1f");
+        }
+        if (!m_PropDuctPanels.empty()) {
+            // The duct's share of the axial force, from the per-surface
+            // pressure bookkeeping (drag = force along +x; thrust is -x).
+            double ductDrag = 0.0;
+            for (const auto& [surface, drag] : m_PropSolve.DragBySurface)
+                if (surface.rfind("duct", 0) == 0) ductDrag += drag;
+            ReadoutRow("Duct thrust [N]", -ductDrag, "%.3f");
+        }
+        if (diskArea > 0.0) ReadoutRow("Disk loading [Pa]", thrust / diskArea, "%.1f");
+        if (power > 1e-9 && m_PropSpeed > 0.0)
+            ReadoutRow("Propulsive eff.", thrust * m_PropSpeed / power, "%.3f");
         ImGui::EndTable();
     }
-    if (!m_PropResult.Converged)
-        ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "solve did not fully converge");
+
+    // The full propulsive wrench, body axes about the hub: rotor + duct
+    // (rotating-frame solve) plus the vanes (static-frame solve in the
+    // mean slipstream). The vanes' drag debits the net thrust; their
+    // side forces and My/Mz are the control authority; their Mx recovers
+    // part of the swirl as counter-torque.
+    if (!m_PropVanePanels.empty()) {
+        const Solver::SolveResult& vane = m_PropVaneCoupled.Base;
+        ImGui::SeparatorText("Propulsive wrench (with vanes)");
+        if (ImGui::BeginTable("prop_wrench", 2, ImGuiTableFlags_SizingStretchProp)) {
+            ReadoutRow("Vane drag [N]", vane.Di, "%.3f");
+            ReadoutRow("Net thrust [N]", -(m_PropSolve.Di + vane.Di), "%.3f");
+            ReadoutRow("Fy [N]", m_PropSolve.Y + vane.Y, "%.3f");
+            ReadoutRow("Fz [N]", m_PropSolve.L + vane.L, "%.3f");
+            ReadoutRow("Mx [N.m]", m_PropSolve.Mx + vane.Mx, "%.4f");
+            ReadoutRow("My [N.m]", m_PropSolve.My + vane.My, "%.4f");
+            ReadoutRow("Mz [N.m]", m_PropSolve.Mz + vane.Mz, "%.4f");
+            ImGui::EndTable();
+        }
+        if (!m_PropVaneCoupled.Converged)
+            ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "vane coupling did not converge");
+        ImGui::Text("two-way: %d outer pass(es), swirl factor %.2f, residual %.2e",
+                    m_PropOuterIterations, m_PropSwirlFactor, m_PropOuterResidual);
+        if (!m_PropOuterConverged)
+            ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "outer coupling did not converge");
+    }
+    if (m_PropUseViscous) {
+        ImGui::Text("coupling: %d iteration(s), residual %.2e", m_PropCoupled.Iterations,
+                    m_PropCoupled.MaxResidual);
+        if (!m_PropCoupled.Converged)
+            ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "coupling did not converge");
+        if (m_PropOuterIterations > 0)
+            ImGui::Text("self-consistent wake: %d outer pass(es)", m_PropOuterIterations);
+    }
+
+    ImGui::SeparatorText("Geometry");
+    if (ImGui::BeginTable("prop_geom", 2, ImGuiTableFlags_SizingStretchProp)) {
+        ReadoutRow("Blades", static_cast<double>(m_Prop.BladeCount), "%.0f");
+        ReadoutRow("Tip radius [m]", m_Prop.Radius, "%.4f");
+        ReadoutRow("Hub radius [m]", m_Prop.HubRadius, "%.4f");
+        ReadoutRow("Disk area [m^2]", diskArea, "%.4f");
+        if (diskArea > 0.0)
+            ReadoutRow("Solidity", m_Prop.BladeCount * bladeArea / diskArea, "%.4f");
+        ImGui::EndTable();
+    }
 
     ImGui::SeparatorText("Field range");
-    ColorBar(m_Propeller.FieldMin(), m_Propeller.FieldMax());
+    ColorBar(m_PropLattice.FieldMin(), m_PropLattice.FieldMax());
 
     ImGui::SeparatorText("Radial distribution (hub -> tip)");
-    if (!m_PropResult.Stations.empty()) {
-        const std::size_t n = m_PropResult.Stations.size();
-        std::vector<float> dtdr(n), alpha(n);
+    if (!m_Prop.Stations.empty()) {
+        const std::size_t n = m_Prop.Stations.size();
+        std::vector<float> chord(n), twist(n);
         for (std::size_t i = 0; i < n; ++i) {
-            dtdr[i] = static_cast<float>(m_PropResult.Stations[i].dT_dr);
-            alpha[i] = static_cast<float>(m_PropResult.Stations[i].alphaDeg);
+            chord[i] = static_cast<float>(m_Prop.Stations[i].Chord);
+            twist[i] = static_cast<float>(m_Prop.Stations[i].TwistDeg);
         }
-        ImGui::PlotLines("##dTdr", dtdr.data(), static_cast<int>(n), 0, "dT/dr [N/m]",
+        ImGui::PlotLines("##chord", chord.data(), static_cast<int>(n), 0, "chord [m]",
                          FLT_MAX, FLT_MAX, ImVec2(-1, 80));
-        ImGui::PlotLines("##alpha", alpha.data(), static_cast<int>(n), 0, "alpha [deg]",
+        ImGui::PlotLines("##twist", twist.data(), static_cast<int>(n), 0, "twist [deg]",
                          FLT_MAX, FLT_MAX, ImVec2(-1, 80));
+    }
+    // One blade's converged section states -- the coupling's own output.
+    if (m_PropUseViscous && m_Prop.Stations.size() > 1) {
+        const std::size_t per = m_Prop.Stations.size() - 1;
+        if (m_PropCoupled.Strips.size() >= per) {
+            std::vector<float> alphaEff(per), cl(per);
+            for (std::size_t i = 0; i < per; ++i) {
+                alphaEff[i] = static_cast<float>(m_PropCoupled.Strips[i].alphaEffDeg);
+                cl[i] = static_cast<float>(m_PropCoupled.Strips[i].cl);
+            }
+            ImGui::PlotLines("##alphaeff", alphaEff.data(), static_cast<int>(per), 0,
+                             "alpha_eff [deg]", FLT_MAX, FLT_MAX, ImVec2(-1, 80));
+            ImGui::PlotLines("##clvisc", cl.data(), static_cast<int>(per), 0, "section cl",
+                             FLT_MAX, FLT_MAX, ImVec2(-1, 80));
+        }
     }
     ImGui::End();
 }
@@ -585,10 +905,13 @@ void Application::Run(int maxFrames) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glEnable(GL_DEPTH_TEST);
 
-        if (m_Screen == Screen::Propeller)
-            m_Propeller.Draw(m_Camera.ViewProjection());
-        else
+        if (m_Screen == Screen::Propeller) {
+            m_PropLattice.Draw(m_Camera.ViewProjection());
+            if (!m_PropVanePanels.empty()) m_PropVaneLattice.Draw(m_Camera.ViewProjection());
+            m_Propeller.Draw(m_Camera.ViewProjection()); // hub, disk circle, axis (and optional ribbon)
+        } else {
             m_Lattice.Draw(m_Camera.ViewProjection());
+        }
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();

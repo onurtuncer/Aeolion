@@ -7,17 +7,17 @@ Abstract
 Aeolion is a small aerodynamics toolkit built around a 3D vortex lattice
 method (VLM). It solves for the lift distribution and induced drag of
 lifting surfaces using horseshoe vortices, adds a component-buildup
-viscous drag estimate on top, and includes a hover-safe blade-element
-momentum theory (BEMT) solver for propellers. Aircraft and propeller
-geometry is loaded from a versioned, SI-unit JSON contract rather than
+viscous drag estimate on top. (The hover-safe blade-element momentum
+theory propeller solver that used to live here moved to its own project,
+`onurtuncer/BEMT <https://github.com/onurtuncer/BEMT>`_, which this
+toolkit does not depend on.) Aircraft and propeller geometry is loaded from a versioned, SI-unit JSON contract rather than
 from STL/mesh files, so the solver stays coupled to solver-native design
 variables instead of a tessellated approximation.
 
 Every module is checked against a closed-form or independently-known
 result before being trusted: the VLM core tracks thin-wing lifting-line
-theory across a range of aspect ratios, and the BEMT solver is checked
-against hard physical bounds (Figure of Merit and propulsive efficiency
-must both be :math:`\le 1`).
+theory across a range of aspect ratios, and the source-panel kernel is
+checked against exact potential-flow results.
 
 Modules
 -------
@@ -35,9 +35,6 @@ Modules
      - Builds the solver's lattice from a parsed handoff: CST camber
        surface, spanwise/chordwise discretization, deflected control
        surfaces.
-   * - ``Aeolion::BEMT``
-     - Propeller blade-element momentum theory. Hover-safe: solves for
-       induced velocities directly rather than induction factors.
    * - ``Aeolion::Geometry``
      - Strict parser for the ``aeolion_geometry.json`` handoff contract,
        plus the CST section/planform/control-surface/mesh-topology data
@@ -59,8 +56,6 @@ Known limitations (read before trusting results on a new geometry)
 - ``CDi`` **is induced drag only.** VLM is inviscid; total drag needs the
   ``Aeolion::DragEstimate`` buildup added on top.
 - **Linear, attached-flow method.** No stall, no separation physics.
-- **BEMT is mid-fidelity** blade element momentum theory, not a
-  substitute for measured prop data or a full rotating-lattice rotor VLM.
 
 Nomenclature
 ------------

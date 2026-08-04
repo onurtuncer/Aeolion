@@ -27,3 +27,12 @@ vcpkg_installed/
 
 # ...and the JSON handoff documents the contract tests parse
 !tests/Data/*.json
+
+# LaTeX build byproducts under papers/
+papers/**/*.aux
+papers/**/*.log
+papers/**/*.out
+papers/**/*.blg
+papers/**/*.fls
+papers/**/*.fdb_latexmk
+papers/**/*.synctex.gz

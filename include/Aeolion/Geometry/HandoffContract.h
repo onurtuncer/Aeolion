@@ -23,13 +23,13 @@
 #pragma once
 
 #include "Aeolion/Math/Vec3.h"
-#include "Aeolion/BEMT/PropGeometry.h"
 #include "Aeolion/Geometry/AirfoilSection.h"
 #include "Aeolion/Geometry/BodyGeometry.h"
 #include "Aeolion/Geometry/ControlSurface.h"
 #include "Aeolion/Geometry/DuctGeometry.h"
 #include "Aeolion/Geometry/MeshTopology.h"
 #include "Aeolion/Geometry/PlanformStation.h"
+#include "Aeolion/Geometry/Propeller.h"
 #include "Aeolion/Geometry/PropulsionSpec.h"
 #include "Aeolion/Geometry/WingPlacement.h"
 #include "Aeolion/Solver/WingParams.h"
@@ -680,34 +680,33 @@ inline constexpr double TrapezoidFitTolerance = 1e-9;
     return wing;
 }
 
-// --- bridge to the BEMT propeller --------------------------------------
-// PropulsionSpec states radii as fractions of the disk radius, because that
-// is the form the blade is designed in; BEMT::PropGeometry wants metres,
-// because that is the form the momentum balance is written in. This is that
-// conversion, and it is the only place it should happen.
+// --- contract-to-metric propeller conversion ---------------------------
+// PropulsionSpec states radii as fractions of the disk radius, because
+// that is the form the blade is designed in; Geometry::Propeller wants
+// metres, because that is the form every consumer works in. This is that
+// conversion, and it is the only place it should happen. (The BEMT solver
+// that used to sit behind this bridge is now a separate project this repo
+// does not depend on; the metric Propeller struct is what any in-repo
+// consumer -- the viewer today, a calculation method tomorrow -- poses
+// itself on.)
 //
 // The hub radius is the innermost blade station: the contract defines the
 // blade only outboard of it (see PropulsionSpec.h), so that station IS the
 // cutout rather than a point on a blade that continues inward.
 //
-// rotationSign is a parameter rather than contract data. Which way a
-// propeller turns is an installation choice, not a property of the blade,
-// and getting it wrong flips the slipstream's swirl -- which is exactly
-// what a downstream control vane responds to.
-//
 // Blade count came into the schema at 1.4.0. Older contracts leave it zero,
 // so the caller must supply one; that is refused loudly here rather than
-// silently defaulting, because a wrong blade count scales thrust roughly
-// linearly and would look like a plausible answer.
+// silently defaulting, because a wrong blade count changes everything a
+// consumer derives from the propeller and would still look plausible.
 inline constexpr int MinBladeCount = 2;
 
 /**
- * Convert a contract's fraction-of-disk-radius blade stations to the metres
- * BEMT::PropGeometry expects. bladeCountOverride is required for contracts
- * older than schema 1.4.0, which carry no blade count of their own.
+ * Convert a contract's fraction-of-disk-radius blade stations to the metric
+ * Geometry::Propeller every consumer works with. bladeCountOverride is
+ * required for contracts older than schema 1.4.0, which carry no blade
+ * count of their own.
  */
-[[nodiscard]] inline BEMT::PropGeometry ToPropGeometry(const PropulsionSpec& spec, int rotationSign = 1,
-                                                       int bladeCountOverride = 0) {
+[[nodiscard]] inline Propeller ToPropeller(const PropulsionSpec& spec, int bladeCountOverride = 0) {
     if (spec.BladeStations.size() < MinBladeStations)
         throw ContractError("propulsion_bemt: no blade stations to build a propeller from");
     Detail::RequirePositive(spec.DiskRadius, "propulsion_bemt.disk_radius");
@@ -718,17 +717,21 @@ inline constexpr int MinBladeCount = 2;
             "propulsion_bemt: blade count {} is unusable; this contract states none (schema < 1.4.0), "
             "so the caller must supply one",
             blades));
-    if (rotationSign != 1 && rotationSign != -1)
-        throw ContractError(std::format("rotationSign must be +1 or -1, got {}", rotationSign));
 
-    BEMT::PropGeometry prop;
-    prop.NBlades = blades;
+    Propeller prop;
+    prop.BladeCount = blades;
     prop.Radius = spec.DiskRadius;
     prop.HubRadius = spec.BladeStations.front().RadiusFraction * spec.DiskRadius;
-    prop.RotationSign = rotationSign;
     prop.Stations.reserve(spec.BladeStations.size());
     for (const BladeStationSpec& station : spec.BladeStations)
         prop.Stations.push_back({station.RadiusFraction * spec.DiskRadius, station.Chord, station.TwistDeg});
+
+    // Blade CST sections ride along in the wing's AirfoilSection shape,
+    // with Eta reinterpreted as r/R, so CstSurface's evaluators consume
+    // them unchanged (see Propeller.h). Absent before schema 1.8.0.
+    prop.Sections.reserve(spec.BladeAirfoilSections.size());
+    for (const BladeAirfoilSection& section : spec.BladeAirfoilSections)
+        prop.Sections.push_back({section.RadiusFraction, section.CoefficientsUpper, section.CoefficientsLower});
     return prop;
 }
 

@@ -1,0 +1,813 @@
+% AIAA SciTech Forum conference paper -- DRAFT
+%
+% Build:  pdflatex paper && bibtex paper && pdflatex paper && pdflatex paper
+% Class/style files live in style/ -- either compile with
+%   TEXINPUTS=./style: BSTINPUTS=./style: pdflatex paper
+% or copy aiaa-tc.cls and aiaa.bst next to this file.
+%
+% NOTE: style/aiaa-tc.cls and style/aiaa.bst were hand-extracted from the
+% CTAN docstrip sources -- regenerate with `latex aiaa.ins` before a real
+% submission (see README.md).
+
+\documentclass[]{aiaa-tc}% conference mode (10pt); insert '[draft]' to show overfull boxes
+
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{url}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric}
+
+\title{Vectored Thrust of a Ducted Fan with Jet Vanes by a\\
+       Two-Way Coupled Rotating-Frame Vortex Lattice Method}
+
+% TODO: confirm name diacritics (\c{C}a\u{g}lar \"U\c{c}ler?), second
+% author's department, email, job titles, and AIAA member grades.
+\author{
+ Onur Tuncer%
+  \thanks{Professor, Department of Aeronautical Engineering;
+    onur.tuncer@itu.edu.tr. TODO: AIAA member grade.}\\
+ {\normalsize\itshape
+  Istanbul Technical University, Istanbul, T\"urkiye}\\
+ \and
+ Caglar Ucler%
+  \thanks{Associate Professor; caglar.ucler@ozyegin.edu.tr.
+    TODO: department and AIAA member grade.}\\
+ {\normalsize\itshape
+  \"Ozye\u{g}in University, Istanbul, T\"urkiye}
+ \and
+ Ahmet Gunes% confirmed spelling with diacritics: Ahmet G\"une\c{s}
+  \thanks{Associate Professor, Faculty of TODO; TODO: email and AIAA
+    member grade.}\\
+ {\normalsize\itshape
+  Istanbul Technical University, Istanbul, T\"urkiye}
+}
+
+% Data used by 'handcarry' option if invoked
+\AIAApapernumber{TODO-YEAR-NUMBER}
+\AIAAconference{AIAA SciTech Forum, TODO date and location}
+\AIAAcopyright{\AIAAcopyrightD{TODO-YEAR}}
+
+\newcommand{\eqnref}[1]{(\ref{#1})}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Control of a ducted-fan VTOL aircraft at hover rests on vanes immersed
+in the propulsor's own jet: at zero airspeed the propwash is the only
+dynamic pressure available to them. This paper presents a
+potential-flow method that resolves the complete propulsive wrench of
+such a system --- rotor, duct, and exit vanes --- in seconds per
+operating point. The rotor is solved as a vortex lattice in the
+blade-fixed rotating frame, with blades meshed on their CST camber
+surfaces wrapped on radius cylinders and a near wake of finite-core
+helical filaments --- contracting and accelerating per momentum-theory
+kinematics, which keeps the hover limit well posed --- whose
+radially-varying pitch is iterated to self-consistency with the solved
+loading, pulling the hover figure of merit into the physically
+admissible range where a straight-leg wake reads above the
+momentum-theory ideal. The
+duct is paneled into the same solve as constant-strength source rings,
+a two-way interaction converged with the blade circulation. The exit
+vanes cannot share the rotating frame; they are solved in the inertial
+frame, reading the rotor through a time-mean slipstream reconstructed
+from the converged radial loading by annular momentum theory, with a
+viscous sectional coupling that handles their separation-dominated
+hover aerodynamics. Vane loads close with the relation a stator row
+obeys: annulus-by-annulus angular-momentum bookkeeping, each strip's
+tangential force exactly the angular momentum it removes from its
+sector's mass flow, matched to blade-element aerodynamics at the
+passage-mean flow --- so every force is bounded by its sector's
+momentum flux, and the recovered torque by what the shaft delivers, by
+construction. A block Gauss--Seidel alternation closes the loop
+between the two frames. On a reference cruciform at hover the coupled
+solve converges in nine outer passes, the vanes recovering
+$\sim$70\% of the jet's angular-momentum flux as counter-torque while
+returning a net thrust credit through the pressure rise of swirl
+recovery, the system figure of merit holding at 0.48--0.50 across a
+fourfold rpm sweep. The method is implemented in the open-source C++23
+toolkit Aeolion.
+\end{abstract}
+
+\section*{Nomenclature}
+
+\begin{tabbing}
+  XXXXXXX \= \kill% this line sets tab stop
+  $c$        \> section chord \\
+  $c_l$      \> section lift coefficient \\
+  $F_t$      \> vane-strip tangential force \\
+  FoM        \> hover figure of merit \\
+  $\dot{m}$  \> sector mass flow \\
+  $M_x$      \> rolling moment about the rotation axis \\
+  $N_s$      \> vane sectors per annulus \\
+  $p$        \> body-axis roll rate \\
+  $Q$        \> shaft torque \\
+  $q$        \> dynamic pressure \\
+  $r$        \> radial station \\
+  $R$        \> rotor tip radius \\
+  $r_c$      \> wake filament core radius \\
+  $s$        \> swirl budget factor \\
+  $T$        \> thrust \\
+  $u$        \> axial jet velocity at the vane plane \\
+  $v_i$      \> annulus axial induced velocity \\
+  $V_{ax}$   \> axial onset velocity at the disk \\
+  $V_{kin}$  \> kinematic (rotational + freestream) local velocity \\
+  $V_{rel}$  \> local relative velocity \\
+  $w_i$      \> annulus swirl velocity \\
+  $\alpha_{eff}$ \> effective section angle of attack \\
+  $\Gamma$   \> bound circulation \\
+  $\Delta w$ \> swirl removed by a vane strip's sector \\
+  $\delta$   \> vane deflection angle \\
+  $\lambda$  \> inflow ratio \\
+  $\sigma$   \> source panel strength \\
+  $\Omega$   \> rotor angular speed \\[5pt]
+  \textit{Subscripts}\\
+  $i$ \> radial strip index \\
+ \end{tabbing}
+
+\section{Introduction}
+
+% TODO: literature review seeded (ducts, jet vanes, SRVs, prescribed
+% wakes, VII lineage); still to add: ducted-fan tail-sitter vehicle
+% references (iSTAR-class) and actuator-disk-in-VLM interaction work.
+% Verify all bib fields against sources before submission.
+
+Tail-sitter VTOL aircraft of the ducted-fan class obtain control at
+hover from vanes placed in the duct's exit jet. Their sizing question
+is awkward for the established toolchain: at zero airspeed a
+conventional vortex lattice or panel method has no freestream dynamic
+pressure to put on a control surface, so vane authority, the thrust
+cost of vectoring, and the recovered swirl torque are outside such
+tools' model entirely, while RANS CFD of the full rotor--duct--vane
+system is too slow for the configuration loop. Classical VLM codes
+such as AVL~\cite{avl} and OpenVSP's VSPAERO~\cite{openvsp2022} treat
+the airframe with, at most, a prescribed
+actuator-disk propulsor; isolated-rotor methods such as
+XROTOR~\cite{xrotor} carry no airframe and no vanes. The components
+themselves are classical: shrouded propulsors and their static thrust
+augmentation are treated at length by K\"uchemann and
+Weber~\cite{kuchemannWeber1953} and revisited experimentally for
+hovering micro air vehicles by Pereira~\cite{pereira2008}; vanes in a
+propulsive jet are among the oldest thrust-vectoring
+devices~\cite{sutton2016}; and swirl-recovery vanes have been
+wind-tunnel demonstrated on high-speed
+propellers~\cite{gazzaniga1992}. What the established toolchain lacks
+is not the components but their coupled analysis at hover.
+
+This paper describes a method that closes that gap at
+potential-flow-plus-sectional-viscous fidelity, resolving the coupled
+rotor--duct--vane system in seconds. Three ingredients are presented
+in turn: the rotating-frame vortex lattice for the rotor
+(Sec.~\ref{s:rotor}), the two-way ducted solve and the inertial-frame
+vane solve with its reconstructed slipstream (Secs.~\ref{s:duct},
+\ref{s:vanes}), and the two-way rotor--vane alternation with its swirl
+momentum budget and cascade momentum closure (Sec.~\ref{s:coupling}). Results on a reference
+cruciform configuration at hover follow in Sec.~\ref{s:results}. The
+method is implemented in Aeolion, an open-source C++23 aerodynamics
+toolkit; the mathematical elements --- horseshoe vortices and
+constant-strength source panels --- are the textbook
+ones~\cite{katzPlotkin2001}, and the contribution is the coupling.
+
+\section{Rotor: Vortex Lattice in the Rotating Frame}
+\label{s:rotor}
+
+The rotor is the same vortex lattice as a wing, posed in the
+blade-fixed rotating frame. Rotation is not special-cased in the
+solver: it enters as the body roll rate $p = \Omega$, whose kinematic
+velocity $\mathbf{V}_{kin} = \mathbf{V}_\infty -
+\boldsymbol{\omega} \times \mathbf{r}$ hands every blade panel its
+true $\Omega r$ tangential onset flow. The near-field
+Kutta--Joukowski force evaluation uses that same local velocity, so
+the body-axis load sums are dimensional propeller loads directly:
+thrust $T = -F_x$, shaft torque $Q = -M_x$, power $P = Q\,\Omega$.
+
+Each blade is meshed with one Weissinger row~\cite{weissinger1947}
+per radial strip on the
+blade's CST camber surface~\cite{kulfan2008}, with two geometric
+choices that proved load-bearing rather than cosmetic:
+
+\begin{enumerate}
+\item \emph{Chords wrap on their radius cylinders} --- the surface a
+blade element actually sweeps --- rather than lying in a flat tangent
+plane. Near a small hub, where chord is comparable to radius, a
+tangent-plane chord subtends tens of degrees of azimuth, and the
+phantom incidence it picks up can overwhelm the real camber and twist
+loading.
+\item \emph{Trailing legs leave along the local relative wind} at
+their roots --- the tangential sweep plus the axial convection --- a
+linearized helix whose pitch is made \emph{self-consistent with the
+solved loading}: the outer driver rebuilds the lattice each pass with
+the previous pass's banded induced velocity $v_i(r)$, obtained from
+the same annular momentum balance the slipstream reconstruction uses,
+so each leg convects at the axial inflow of its own radius, iterated
+to a fixed point. The classical momentum-theory hover inflow
+$\lambda \approx 0.07$ survives only as the seed pass's pitch and as a
+per-leg lower bound (a fraction of the blade's peak inflow) protecting
+unloaded stations from in-plane legs. Both directional ingredients are
+load-bearing: at hover the local wind is almost purely tangential, so
+trailing the wake axially leaves the legs near-perpendicular to the
+flow and the circulation solve diverges under refinement, while
+without the inflow floor a straight tangential leg lies in the rotor
+plane forever, crossing every radius outboard of its root.
+\end{enumerate}
+
+A self-consistent \emph{straight} leg is still not enough at hover: a
+straight filament cannot build the contracted helical vortex system
+that sits behind a real static rotor~\cite{landgrebe1972}, and it is
+that system's
+induction at the disk that carries most of the induced power --- the
+straight-leg solve reads systematically optimistic there, with hover
+figures of merit \emph{above} the momentum-theory
+ideal~\cite{leishman2006}. Each leg's
+first revolutions (two, at 12 segments per revolution) are therefore
+replaced by the helix a shed vortex particle traces in the rotating
+frame, discretized as a polyline: azimuth unwinds opposite the blade's
+sweep; the axial position convects at the leg's own $v_i(r)$, ramping
+linearly to the far-wake doubling $2 v_i$ over a development length of
+$2R$; and the radius relaxes exponentially (length scale $R$) toward
+the far-wake area halving $r_0/\sqrt{2}$ that conserves mass through
+the accelerating jet. Beyond the helix the leg continues as the usual
+straight far tail along the direction at the helix end, already
+contracted and doubled, so the far field remains closed. Polyline
+segments induce through the same Biot--Savart kernel but with a
+finite Vatistas-style algebraic core~\cite{vatistas1991},
+\begin{equation}
+ \label{e:core}
+ \mathbf{V} = \frac{\Gamma}{4\pi}\,\frac{h^2}{h^2 + r_c^2}\,(\cdots),
+ \qquad r_c = 0.3\,\Delta r ,
+\end{equation}
+with $h$ the perpendicular distance to the segment and $\Delta r$ the
+shedding strip's radial width. The core is not cosmetic: successive
+helix passes bring neighboring blades' filaments within a
+discretization step of control points, and the raw $1/h$ kernel would
+make the solve hostage to exactly where a polyline vertex lands. A
+collinear polyline reproduces the straight-leg kernel identically,
+and an empty path \emph{is} a straight leg, so fixed-wing cases are
+untouched.
+
+The lattice so equipped remains quasi-steady, its near-wake helix
+prescribed from momentum-theory kinematics in the lineage of the
+classical prescribed-wake hover
+analyses~\cite{kocurekTangler1977} rather than force-free,
+with no roll-up of the sheet into discrete tip vortices; it carries
+induced torque only and has no
+stall. The last two limitations are removed by a sectional
+viscous--inviscid coupling: per radial strip, the lattice provides
+$\alpha_{eff}$ from the local kinematic-plus-induced velocity, a 2-D
+section model provides $c_l(\alpha_{eff}, Re, Ma)$, the target
+circulation follows from the Kutta--Joukowski relation
+$|\Gamma| = \tfrac{1}{2} V_{rel}\, c\, c_l$, and the fixed point
+\begin{equation}
+ \label{e:residual}
+ R_i(\Gamma) = c_{l,i}^{VLM}(\Gamma)
+   - c_{l,i}^{sect}\!\bigl(\alpha_{eff,i}(\Gamma), Re_i, Ma_i\bigr) = 0
+\end{equation}
+is converged with type-II Anderson
+acceleration~\cite{anderson1965,walkerNi2011}
+(67 plain-relaxation iterations reduced to 9 on the reference rotor),
+guarded by a kinematic-speed circulation cap that breaks the
+$\Gamma \to V_{rel} \to \Gamma$ runaway. The section model is an
+interface seam: an analytic viscous polar, or a transpiration-coupled
+integral boundary-layer solver (Thwaites~\cite{thwaites1949},
+Head~\cite{head1958}, Squire--Young~\cite{squireYoung1938}) whose
+displacement effect enters the 2-D section problem as transpiration
+boundary conditions --- the viscous--inviscid interaction lineage
+whose standard exemplar is XFOIL~\cite{drela1989}. The coupling caps
+the stalled hover root loading
+the inviscid lattice overpredicts and puts profile torque into the
+shaft-power sum.
+
+\section{The Ducted Rotor}
+\label{s:duct}
+
+The duct is meshed as a closed annular ring of constant-strength
+source panels (outer wall, bore wall, two caps) centered on the rotor
+plane, and passed into the coupled solve as its source system. The
+interaction is two-way: every coupling iteration re-solves the source
+strengths against the current blade circulation (the duct's
+no-through-flow condition sees the propwash; the source-only influence
+block is factored once), and the strip velocities include the duct's
+induced flow (the blades see the bore's constriction). One frame
+subtlety makes this legitimate: in the blade-fixed frame the duct
+rotates backwards, but a body of revolution about the rotation axis
+moves only tangentially to itself, so its boundary condition is
+unchanged (exactly, up to sector faceting).
+
+The duct's own load is the surface-pressure integral
+$\mathbf{F} = \sum (\tfrac{1}{2}\rho |V|^2 - q_\infty) A\,
+\hat{\mathbf{n}}$, well behaved at hover where the gauge $q_\infty$ is
+negligible --- and this is where a shroud earns its
+keep~\cite{kuchemannWeber1953}: the
+bore-lip suction ahead of the disk points upstream.
+
+\section{Exit Vanes and the Reconstructed Slipstream}
+\label{s:vanes}
+
+The exit vanes are all-moving flat plates at the duct exit, spanning
+radially on their hinge axes and deflecting as rigid rotations about
+them. They cannot share the rotor's frame: a non-axisymmetric surface
+swept backwards through a rotating frame has a time-dependent boundary
+condition. The solve is therefore partitioned by frame --- the vanes
+are meshed as ordinary lifting surfaces and solved in the inertial
+frame ($p = 0$), reading the rotor system through a prescribed
+external slipstream.
+
+One meshing rule matters more than it looks: a vane whose span
+reaches the duct wall is recessed off it by 5\% of span. A lifting
+line must not terminate on a neighboring source surface --- the bound
+filament's tip endpoint would sit directly on the duct's bore,
+arbitrarily close to its source control points, where the filament's
+singular near field corrupts the shared no-through-flow boundary
+condition and, through the coupled source block, everything the duct
+touches. The physics says the same thing: a wall-attached vane sheds
+no free tip vortex at all --- the wall carries the bound circulation
+onward as its image continuation --- and the recession is the
+tip-clearance-scale stand-in for that image. A vane ending mid-jet
+keeps its stated tip and its real tip vortex.
+
+That slipstream is \emph{reconstructed}, not field-averaged. The
+quasi-steady rotor's prescribed straight trailing legs never wrap into
+the downstream helical wake cylinder, so their Biot--Savart mean
+carries swirl but almost no axial jet a few chords aft of the disk;
+vanes placed there would see no dynamic pressure. Instead, annular
+momentum theory~\cite{glauert1935} is applied to the loads the
+lattice actually converged: per annulus,
+\begin{equation}
+ \label{e:slipstream}
+ dT = 4\pi r \rho\, (V_{ax} + v_i)\, v_i \, dr
+ \;\Rightarrow\; v_i ,
+ \qquad
+ dQ = 4\pi r^3 \rho\, (V_{ax} + v_i)\, w_i \, dr
+ \;\Rightarrow\; w_i ,
+\end{equation}
+with $dT$, $dQ$ summed over blades from the per-strip forces, the
+axial component developing toward the classical far-wake doubling over
+about a diameter, the swirl carried unchanged, and the duct's exact
+source induction added on top.
+
+The vanes receive the same viscous sectional coupling as the blades,
+with each trailing leg leaving along the \emph{local mean flow} at its
+root --- in the jet, helically, with the swirl. At hover the swirl
+alone puts the vanes at tens of degrees of local incidence before any
+command, so their hover aerodynamics are separation-dominated by
+nature. The section model is assigned where each is honest: the
+budget-coupled solve uses the smooth analytic polar (nearly the whole
+span sits outside the boundary-layer solver's validity envelope in the
+hover jet, and the budget iteration needs the polar's smoothness to
+close), while the transpiration-coupled boundary-layer model is used
+where the flow is attached --- vanes in brisk attached-incidence jets,
+and the blades' outboard strips at every condition. Three numerical
+safeguards proved necessary: the coupling residual is weighted by
+local dynamic pressure (a vane tip parked at $85^\circ$ incidence in
+the jet's shear edge at 7\% of the jet's $q$ must not hold the solve
+hostage); a flat-plate deep-stall decay in the polar is what makes
+such strips satisfiable at all; and reversed-flow strips
+($|\alpha_{eff}| > 75^\circ$) are excluded from the convergence
+measure outright --- strip theory has no lift-matching contract there,
+and such a strip both wedges the residual open and, when it runs away,
+inflates the reference dynamic pressure until the raw state reads
+converged. With the exclusion the hover vane solve converges where it
+previously hit the iteration cap.
+
+The propulsive wrench is the sum of the two solves' near-field loads
+about the hub: rotor circulatory and profile forces, duct surface
+pressure, vane circulatory and profile forces. The vanes' drag debits
+the net thrust (though a de-swirling stator can return a net thrust
+credit through its pressure rise, Sec.~\ref{s:results}); their side
+forces and $M_y/M_z$ are the control
+authority --- real at zero airspeed, the propwash being their only
+dynamic pressure --- and even undeflected they recover part of the
+swirl as counter-torque.
+
+\section{Two-Way Coupling and the Swirl Momentum Budget}
+\label{s:coupling}
+
+Partitioned as above, the scheme is one-way: the vanes read the jet,
+the rotor never feels the vanes, and nothing depletes the prescribed
+swirl --- a high-solidity vane set can recover more torque than the
+jet carries. The two-way scheme closes the loop as a block
+Gauss--Seidel alternation between the frames; the complete solution
+procedure is charted in Fig.~\ref{f:flowchart}. Two vane closures ride
+on the same alternation: the lifting-surface (lattice) closure
+described first, whose swirl exchange must be constrained by an
+explicit budget, and the cascade momentum closure described below ---
+the default --- which satisfies the budget by construction. Per outer
+pass, under the lattice closure:
+
+\begin{enumerate}
+\item \emph{Rotor remesh and solve with the duct} (rotating frame).
+The blade lattice is rebuilt with the previous pass's banded inflow
+$v_i(r)$ setting the trailing-leg pitch (Sec.~\ref{s:rotor}), so wake
+pitch, vane feedback, and the swirl budget converge together in the
+same outer loop; the vanes enter through the external-velocity hook as
+the azimuthal mean of their induced field,
+\begin{equation}
+ \label{e:meanfield}
+ \bar{\mathbf{v}}_{vane}(P) = \frac{1}{K} \sum_{j=0}^{K-1}
+   R_x(-\theta_j)\, \mathbf{v}_{vane}\bigl( R_x(\theta_j) P \bigr),
+ \qquad \theta_j = 2\pi j / K .
+\end{equation}
+A blade sweeps past the static vane system once per revolution, and
+its quasi-steady condition sees the time mean of that encounter.
+Averaging is legitimate in \emph{this} direction because the vane
+system's near field is fully represented by its explicit legs --- it
+is exactly the operation that fails in the other direction.
+\item \emph{Slipstream reconstruction} from the fresh rotor loading,
+Eq.~\eqnref{e:slipstream}, with the swirl scaled by the budget factor
+$s \in [s_{min}, 1]$.
+\item \emph{The swirl budget, solved as a root problem.} The
+angular-momentum flux the jet delivers is the shaft torque,
+$\dot{L}_{jet} = Q = -M_x^{rotor}$; the vanes cannot remove more than
+arrives, yet an unconstrained prescribed-field vane solve can (nothing
+depletes the stated swirl). With the rotor state \emph{frozen},
+$M_x^{vane}(s)$ is a monotone, bracketed function of the swirl factor
+--- each evaluation remeshes the vanes in the rescaled slipstream
+(their trailing legs follow the local mean flow) and re-solves them
+--- so the budget condition
+\begin{equation}
+ \label{e:budget}
+ M_x^{vane}(s) = Q
+\end{equation}
+is solved directly by bracketed bisection on $s \in [s_{min}, 1]$,
+warm-started from the previous pass's factor, so a settled case costs
+a single evaluation. A slack budget ($M_x^{vane}(1) \le Q$) accepts
+$s = 1$; a configuration over-recovering even at the floor keeps the
+floor, with the excess held in the convergence residual rather than
+declared away. Freezing the rotor inside the root find is
+load-bearing: driving $s$ with a feedback law while the rotor
+re-solved was observed to fail both ways --- a one-way multiplicative
+contraction ratchets past the fixed point onto the floor after a
+severe first-pass over-recovery and can never climb back, while a
+symmetric bidirectional law lets the co-evolving rotor--vane pair walk
+onto a runaway branch that ``converges'' with the rotor at several
+times its true loading.
+\item \emph{Rotor feedback.} Only after the budget is satisfied does
+the pass advance the vanes' circulation into the rotor's boundary
+condition.
+\item \emph{Relaxation and convergence.} The vane circulation fed back
+to the rotor is under-relaxed, deliberately gently: the swirl-rich
+hover jet parks vane strips in regimes where their inner solve
+plateaus, and an aggressive feedback amplifies that scatter. The outer
+residual is the relative change of the total wrench together with the
+vane-circulation change and any remaining budget excess.
+\end{enumerate}
+
+\begin{figure}[p]
+ \centering
+ \begin{tikzpicture}[
+   font=\footnotesize,
+   node distance=3.5mm,
+   term/.style={draw, rounded corners=2.5mm, align=center,
+                inner sep=2mm, text width=0.52\textwidth},
+   proc/.style={draw, align=center, inner sep=2mm,
+                text width=0.52\textwidth},
+   dec/.style={draw, diamond, aspect=2.8, align=center, inner sep=0.4mm},
+   arr/.style={-{Stealth[length=2.2mm]}}
+ ]
+  \node[term] (start) {geometry contract $\to$ blade, duct, and vane
+    lattices;\\ seed wake pitch $\lambda \approx 0.07$;\;
+    $\Gamma_{vane} = 0$,\; $s = 1$};
+  \node[proc, below=of start] (remesh) {1a.\ remesh blades:
+    trailing-leg pitch from banded $v_i(r)$,\\
+    contracted helical near wake (Sec.~\ref{s:rotor})};
+  \node[proc, below=of remesh] (rotor) {1b.\ rotor $+$ duct solve,
+    rotating frame ($p = \Omega$):\\
+    vanes enter as their azimuthal-mean field,
+    Eq.~\eqnref{e:meanfield};\\
+    inner viscous fixed point, Eq.~\eqnref{e:residual},
+    Anderson-accelerated};
+  \node[proc, below=of rotor] (slip) {2.\ reconstruct slipstream from
+    the fresh loading,\\ Eq.~\eqnref{e:slipstream}; swirl scaled by
+    the budget factor $s$};
+  \node[proc, below=of slip] (vane) {3.\ vane loads in the rescaled
+    slipstream (inertial frame, $p = 0$):\\
+    \emph{cascade closure (default)} --- direct annulus-by-annulus\\
+    momentum bookkeeping, Eq.~\eqnref{e:cascade};\\
+    \emph{lattice closure} --- warm-started viscous vane solve};
+  \node[dec, below=of vane] (bud) {budget met?\\
+    $M_x^{vane}(s) = Q$};
+  \node[proc, below=of bud] (fb) {4.\ advance the vane circulation
+    into the rotor\\ boundary condition (under-relaxed)};
+  \node[dec, below=of fb] (conv) {5.\ outer residual\\
+    $<$ tolerance?};
+  \node[term, below=of conv] (out) {propulsive wrench: net $T$ (vane
+    drag debited), $Q$,\\ control $M_y$, $M_z$, recovered
+    counter-torque $M_x$};
+
+  \draw[arr] (start) -- (remesh);
+  \draw[arr] (remesh) -- (rotor);
+  \draw[arr] (rotor) -- (slip);
+  \draw[arr] (slip) -- (vane);
+  \draw[arr] (vane) -- (bud);
+  \draw[arr] (bud) -- node[right]{yes} (fb);
+  \draw[arr] (fb) -- (conv);
+  \draw[arr] (conv) -- node[right]{yes} (out);
+  \draw[arr] (bud.east) -|
+    node[pos=0.75, right=0.5mm, align=left]{no:\\ bisect $s$\\ (lattice\\ closure,\\ rotor\\ frozen)}
+    ([xshift=9mm]vane.east) -- (vane.east);
+  \draw[arr] (conv.west) -|
+    node[pos=0.75, left=0.5mm, align=right]{no:\\ next\\ outer\\ pass}
+    ([xshift=-9mm]remesh.west) -- (remesh.west);
+ \end{tikzpicture}
+ \caption{The coupled solution procedure; step numbers follow the
+   enumeration in the text, with step 1 split into the blade remesh
+   (1a) and the rotor $+$ duct solve (1b). Under the default cascade
+   closure (Sec.~\ref{s:coupling}.\ref{s:cascade}) the budget is
+   satisfied by construction --- the sampled swirl is normalized once to the jet's
+   flux, $s$ stays 1, and the root-solve loop is skipped. Under the
+   lattice closure the inner loop on the right is the swirl budget
+   solved as a bracketed root problem on $s \in [s_{min}, 1]$ with the
+   rotor state frozen: a slack budget ($M_x^{vane}(1) \le Q$) accepts
+   $s = 1$, over-recovery at the floor keeps $s_{min}$ with the excess
+   held in the outer residual, and later outer passes hold the settled
+   factor. The outer loop on the left is the block Gauss--Seidel
+   alternation between the rotating and inertial frames.}
+ \label{f:flowchart}
+\end{figure}
+
+Two further stabilizers earn their keep in the swirl-rich jet. The
+root find runs only through the first half of the outer pass budget:
+once the factor's increments fall inside the vane solve's own noise,
+re-bisecting each pass just remeshes jitter into the wrench, so later
+passes hold $s$ and let the rest of the state settle. And the vane
+solve is warm-started from its previous circulation --- continuation
+across evaluations and passes. This matters because the post-stall
+section response is multivalued: a deflected hover vane re-solved from
+scratch can land on either branch under tiny input changes, which
+shows up as a never-decaying pass-to-pass oscillation in the outer
+residual, while warm-started it follows one branch smoothly.
+Relatedly, an inner solve that exhausts its iteration budget in a
+limit cycle (deep post-stall strips do this) returns the cycle
+\emph{mean} --- the arithmetic mean over the second half of its
+iterates, evaluated consistently in one final sweep --- rather than a
+random phase of the cycle, and reports itself unconverged so the
+residual keeps the cycle's mismatch.
+
+Still outside the model, by construction: unsteady blade-passing loads
+(every exchange is a time mean) and the vanes' straight-line wakes.
+The lattice closure's budget is additionally a single scalar ---
+radially resolved swirl depletion is exactly the band-by-band
+bookkeeping the cascade closure below supplies.
+
+\subsection{The Cascade Momentum Closure}
+\label{s:cascade}
+
+The machinery above still asks isolated-strip lifting-surface theory
+to carry vanes parked in tens of degrees of hover swirl, and the
+honest verdict from exercising it across an rpm--deflection matrix is
+that post-stall the model's answer is \emph{not unique}: each strip's
+circulation is individually capped, but twenty capped strips can
+mutually inflate one another's local velocities, so the force runs
+away with no $\Gamma$ ever exceeding its cap --- a single vane at
+$8^\circ$ was solved carrying more side force than the entire net
+thrust on one branch, while the same command landed on a sane branch
+at a neighboring rpm. No stabilizer fixes a model whose answer is not
+unique; the model itself is wrong for that regime.
+
+The default vane model therefore replaces the vane lattice with the
+closure a stator row actually obeys: annulus-by-annulus
+angular-momentum bookkeeping, the Euler turbomachine relation posed
+sector by sector~\cite{dixon2014}. Each vane strip owns one azimuthal
+sector of its radial annulus, carrying the mass flow the jet delivers,
+\begin{equation}
+ \label{e:mdot}
+ \dot{m} = \rho\, u\, \frac{2\pi r}{N_s}\, \Delta r ,
+\end{equation}
+and the tangential force the strip may carry is exactly the angular
+momentum it removes from that flow. Blade-element aerodynamics
+supplies the same force from the section polar, evaluated at the
+\emph{passage-mean} flow $(u,\ w - \Delta w/2)$, so the closure is one
+scalar equation per strip,
+\begin{equation}
+ \label{e:cascade}
+ \dot{m}\,\Delta w = F_t(\Delta w) ,
+\end{equation}
+monotone in $\Delta w$ and solved by bisection on a bracket bounded by
+the local dynamic head. The consequences fall out rather than being
+imposed: every force is bounded by its sector's momentum flux, so the
+runaway channel does not exist; a dead-air strip carries nothing, so
+the jet-edge pathology closes itself; the undeflected cruciform cannot
+recover more torque than the jet delivers, so the swirl-budget factor,
+its root find, and its failure modes all become unnecessary on this
+path; and the solve is direct and single-valued --- no iteration
+between strips, no branches, no warm starts. One derived normalization
+guards the seam to the slipstream: the azimuthal-mean reconstruction
+is not flux-consistent (it was measured delivering roughly three times
+the shaft torque to the vane plane), so the sampled swirl is scaled
+once, up front, to the jet's true angular-momentum flux --- a
+computation, not an iterated feedback. The equivalent bound
+circulations still feed the rotor's azimuthal-mean feedback field,
+Eq.~\eqnref{e:meanfield}, so the two-way structure is unchanged.
+
+What the closure gives up, stated plainly: no mutual induction between
+strips, no unsteadiness, and a passage-mean picture that assumes the
+vane row fills its annulus the way a stator row does. Those are the
+right trades at hover; in a brisk attached-incidence jet, where mutual
+strip induction is real signal rather than a runaway channel, the
+lattice closure remains available and validated.
+
+\section{Results}
+\label{s:results}
+
+% TODO: state the reference geometry (blade, duct, vane contract
+% parameters) explicitly, ideally in a table. Tables 1-2 come from
+% the first clean matrix (vanematrix_cascade.csv, post-recession);
+% every earlier table -- lattice and pre-recession cascade alike --
+% was contaminated by the wall-tip/duct defect and has been removed.
+% Open-vs-ducted numbers and the FoM pair are REGENERATED from the
+% current build (TestPropellerDuct / TestSelfConsistentWake output,
+% Level-B wake): 6.76->7.05 N (+4.3%), FoM 1.22->0.45. The old rpm-
+% sweep figure (figures/ducted_vs_open.png) remains retired -- it was
+% straight-leg data; regenerate the sweep from the current build if
+% the figure is wanted back. The BL matrix cells exit at the
+% outer-pass cap (conv=0): diagnosed as the BL rotor's inner-solve
+% wobble around a stationary plateau, not the vane closure -- quote
+% at level agreement only.
+
+Results are shown for a reference two-blade rotor with a snug shroud
+(4\% tip clearance) and a four-vane cruciform at the duct exit
+(Fig.~\ref{f:vanes}), at static (hover) conditions. All numbers are from the current build ---
+Level-B wake, cascade closure, vane tips recessed off the duct wall
+(Sec.~\ref{s:vanes}).
+
+\paragraph{Self-consistent wake pitch and the curved near wake.} On
+the vane-less reference blade at hover the wake-pitch iteration
+converges in four outer passes, and the converged pitch is verified as
+a fixed point of the loading: rebuilding the lattice from the final
+$v_i(r)$ reproduces the trailing legs to $1.3\times10^{-4}$. The
+converged pitch varies more than threefold across the span
+(0.081--0.290 in axial pitch ratio), and a heavier-loaded blade
+converges to a 28\% steeper mean helix (5.19~N against 3.77~N of
+thrust) --- the load dependence and radial variation a fixed inflow
+constant cannot express. But the pitch was never where the hover
+optimism lived; the wake's \emph{curvature} is. With straight
+self-consistent legs the reference blade returns a hover figure of
+merit of 1.22 --- above the momentum-theory ideal of unity, an
+unphysical answer --- and switching on the contracted helical
+filaments drops thrust and raises shaft torque together
+(7.65~N~$\to$~5.19~N at fixed rpm), bringing the figure of merit to
+0.45, inside the physically admissible range. This is precisely the
+induced power a straight-leg wake cannot carry, and a collinear
+polyline is verified to reproduce the straight-leg solve identically.
+
+\paragraph{Ducted rotor.} At 6000~rpm under the curved wake the snug
+shroud lifts hover thrust from 6.76~N open to 7.05~N ducted
+($+4.3\%$), the duct itself carrying $+0.26$~N of bore-lip suction,
+with the coupled solve converged in 9 iterations and the blade
+circulation measurably shifted by the shroud's constriction. The
+augmentation is the interaction, not the presence of a ring: a
+loosely fitted ring earns almost nothing. Worth stating plainly: under
+the straight-leg wake this same comparison read $7.60 \to 8.82$~N
+($+16\%$) --- an augmentation inflated by a baseline whose figure of
+merit exceeded unity. The curved wake deflates both numbers into the
+physical range, and the modest $+4\%$ is the honest potential-flow
+answer for this snug, short shroud at static conditions.
+
+\paragraph{Vane system.} Under the default
+cascade closure the coupled solve converges in 9 outer passes with no
+budget iteration at all, the vanes recovering 72\% of the jet's
+angular-momentum flux on the reference case --- about 70\% across the
+rpm matrix (Table~\ref{t:hover}: $M_x^{vane}/Q = 0.0698/0.0998$ at
+6000~rpm), at and never beyond the physical bound. The
+matrix coheres end to end: the rotor is perturbed by the vanes at the
+$\sim$1\% level (5.31~N against 5.32~N alone at 6000~rpm), the duct
+carries a small positive thrust, and the undeflected vanes contribute
+\emph{net thrust} through the pressure rise of swirl recovery (vane
+$F_x = -0.158$~N at 6000~rpm, thrust being $-F_x$) --- a stator
+credit, not only a drag debit --- with the system figure of merit at
+0.48--0.50 across all four rpms, rising weakly with Reynolds number,
+under the ducted bound, with no tuned constants and no runaway
+anywhere. The single-vane control response (Table~\ref{t:control}) is
+bounded, sign-correct, and asymmetric about the swirl-biased neutral
+--- $-55$~mN of side force at $\delta = -8^\circ$ against $+24$~mN at
+$+8^\circ$ --- in the same swirl-rich jet that bifurcated the lattice,
+with deflection costing under half a percent of thrust at
+$\pm 15^\circ$. The \emph{vectored thrust} $T_{vec}$ --- the magnitude
+of the full force wrench, reported alongside the axial net thrust so a
+command trading axial thrust for side force is credited rather than
+penalized --- nearly coincides with $T_{net}$ for this cruciform,
+single-vane commands trading mostly into counter-torque at these
+deflections. The transpiration-coupled boundary-layer section model at
+6000~rpm lands coherently beside the analytic polar ($T = 5.73$~N, FoM
+0.50), settling on a stationary plateau that exits at the outer-pass
+cap --- the boundary-layer rotor's inner-solve wobble, not the vane
+closure --- and is reported unconverged rather than declared settled.
+The physical statement about jet-vane
+control at hover stands on either closure: authority near neutral
+comes from the vanes the swirl has \emph{not} stalled, and grows as
+forward speed straightens the jet.
+
+\begin{table}[htb]
+ \caption{Hover performance across rpm: undeflected cruciform, cascade
+   closure, analytic section polar. Net thrust and its rotor, duct,
+   and vane shares in N (thrust $= -F_x$), shaft torque $Q$ in
+   N$\cdot$m, power $P$ in W; \emph{passes} is the outer Gauss--Seidel
+   count.}
+ \label{t:hover}
+ \centering
+ \begin{tabular}{rcccccccc}
+  \hline
+  rpm & $T_{net}$ & $T_{rotor}$ & $T_{duct}$ & vane $F_x$ & $Q$ & $P$
+    & FoM & passes \\
+  \hline
+   3000 &  1.367 &  1.326 & 0.007 & $-0.040$ & 0.0254 &   7.97
+    & 0.482 & 9 \\
+   6000 &  5.473 &  5.314 & 0.029 & $-0.158$ & 0.0998 &  62.7
+    & 0.491 & 9 \\
+   9000 & 12.318 & 11.966 & 0.067 & $-0.352$ & 0.2226 & 209.8
+    & 0.495 & 9 \\
+  12000 & 21.903 & 21.281 & 0.121 & $-0.623$ & 0.3935 & 494.5
+    & 0.498 & 9 \\
+  \hline
+ \end{tabular}
+\end{table}
+
+\begin{table}[htb]
+ \caption{Single-vane control response at 6000~rpm, cascade closure:
+   one vane deflected by $\delta$, the other three at neutral. Forces
+   in N, moments in N$\cdot$m.}
+ \label{t:control}
+ \centering
+ \begin{tabular}{rcccccc}
+  \hline
+  $\delta$, deg & $T_{net}$ & $T_{vec}$ & $F_z$ & $M_y$
+    & $M_x^{vane}$ & passes \\
+  \hline
+  $-15$ & 5.448 & 5.449 & $-0.124$ & $+0.0069$ & 0.0571 & 11 \\
+   $-8$ & 5.465 & 5.465 & $-0.055$ & $+0.0030$ & 0.0641 & 10 \\
+    $0$ & 5.473 & 5.473 &      $0$ &       $0$ & 0.0698 &  9 \\
+   $+8$ & 5.473 & 5.473 & $+0.024$ & $-0.0012$ & 0.0725 &  9 \\
+  $+15$ & 5.451 & 5.451 & $+0.023$ & $-0.0011$ & 0.0725 &  9 \\
+  \hline
+ \end{tabular}
+\end{table}
+
+\begin{figure}[htb]
+ \centering
+ \includegraphics[width=\textwidth]{figures/lattice-views}
+ \caption{The reference configuration, drawn from the solved lattice
+   (6000~rpm, cascade closure, neutral vanes): (a) aft quarter view,
+   duct shroud source panels in gray, blades and vanes colored by
+   solved bound circulation --- the two populations carry opposite
+   signs, the cruciform recovering the rotor's swirl; (b) meridional
+   section, the vane chords running downstream from their exit-plane
+   hinge lines, the rotor disk edge-on, and the in-plane vane pair at
+   true profile.}
+ \label{f:vanes}
+\end{figure}
+
+\paragraph{Verification.} Every claim above is pinned by the automated
+test suite: exact cruciform symmetry undeflected, counter-torque
+opposing the rotor's, the budget bound $M_x^{vane} \le Q$ at
+convergence on both closures, opposite commands pulling the wrench
+opposite ways, drag cost for commanding against the swirl, dead-air
+strips carrying nothing under the cascade closure, and the survival of
+the control response under the two-way coupling.
+% TODO (journal version): external validation anchors -- published
+% ducted-fan / swirl-recovery-vane data or a RANS comparison.
+
+\section{Conclusion}
+
+A ducted fan with exit vanes can be resolved as one coupled
+potential-flow system --- rotating-frame vortex lattice for the
+blades, source rings for the duct, vane loads read from a
+momentum-theory slipstream reconstructed from the solved loading ---
+with the swirl exchange between the frames closed by an
+angular-momentum budget. Two closures implement it: a lifting-surface
+vane lattice whose recovered torque must be constrained by solving the
+budget as a bracketed root problem with the rotor frozen (a feedback
+law was observed to fail in both directions), and the default cascade
+momentum closure, which bounds every strip's force by its sector's
+momentum flux by construction and needs no budget iteration at all
+--- the choice the vane lattice's post-stall bistability at hover
+forces. The budget is not a refinement but a correction of leading
+order: the unconstrained scheme overpredicted the recovered vane
+torque several-fold on the reference configuration, while the coupled
+scheme converges to the physically bounded state in a handful of outer
+passes and seconds of wall time. The method gives a ducted-fan VTOL
+designer the quantities the configuration loop actually needs at hover
+--- net thrust with the vanes' drag debit, control moments about the
+swirl-biased neutral, and the recovered counter-torque --- from a
+parametric geometry description, at interactive speed.
+
+% TODO: futures -- force-free wake relaxation and sheet roll-up into
+% discrete tip vortices (the Level-C rungs beyond the prescribed
+% helix), band-resolved swirl budget, vortex-ring wake for chordwise
+% loading, forward-flight sweep, external validation.
+
+\section*{Acknowledgments}
+
+This work was supported by the Istanbul Technical University
+Scientific Research Projects Coordination Unit (\.IT\"U BAP) under
+project MGA-2026-48282, ``JETTAIL: Design, Control, and Autonomous
+Mission Capability Development of a Jet-Flow-Vectored EDF-Based
+Tail-Sitter VTOL UAV.''
+% TODO: any further funding/collaborators. AI-assistance disclosure
+% per AIAA policy. Verify the English rendering of the project title
+% against the official translation, if one exists.
+
+\bibliographystyle{aiaa}
+\bibliography{references}
+
+\end{document}

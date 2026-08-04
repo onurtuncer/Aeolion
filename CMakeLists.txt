@@ -17,9 +17,9 @@ option(AEOLION_BUILD_VIEWER "Build the OpenGL viewer application" ON)
 option(AEOLION_WARNINGS "Build with warnings enabled" ON)
 
 # enable_testing() and aeolion_add_test() need to be in place before any
-# add_subdirectory() below, since solver/, panelbuilder/, and bemt/ each
-# register their OWN tests/ subdirectory rather than a single central one --
-# every module is expected to own its build target and its tests together.
+# add_subdirectory() below, since solver/ and panelbuilder/ each register
+# their OWN tests/ subdirectory rather than a single central one -- every
+# module is expected to own its build target and its tests together.
 if(AEOLION_BUILD_TESTS)
     enable_testing()
     include(AeolionTest)
@@ -27,13 +27,10 @@ endif()
 
 # ------------------------------------------------------------ core library --
 # Header-only: include/Aeolion/<Namespace>/*.h holds Math, Lattice, Geometry,
-# and DragEstimate. Solver and BEMT each live in their own top-level
-# <name>/include/ folder instead -- Solver because it is the module every
-# other one builds on top of, BEMT because bemt/ also owns a compiled
-# STATIC library (see bemt/CMakeLists.txt) and PropGeometry.h is the only
-# piece of it that stays header-only/core (see PropGeometry.h). This
-# INTERFACE target hands consumers every header-only include path, the
-# C++23 requirement, warnings, and the LAPACK backend.
+# and DragEstimate. Solver lives in its own top-level solver/include/
+# folder instead, because it is the module every other one builds on top
+# of. This INTERFACE target hands consumers every header-only include
+# path, the C++23 requirement, warnings, and the LAPACK backend.
 add_library(aeolion INTERFACE)
 target_include_directories(aeolion INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -49,6 +46,12 @@ aeolion_link_lapack(aeolion)
 find_package(nlohmann_json CONFIG REQUIRED)
 target_link_libraries(aeolion INTERFACE nlohmann_json::nlohmann_json)
 
+# The propeller BEMT solver was excised into its own project
+# (https://github.com/onurtuncer/BEMT) -- it is a momentum method, not a
+# panel method, and Aeolion carries no dependency on it. The handoff
+# contract's propulsion_bemt block (Geometry::PropulsionSpec) stays as
+# schema vocabulary for whatever propulsion method consumes it next.
+
 # --------------------------------------------------- header-only modules --
 # Owns nothing but its own tests/ subdirectory -- see solver/CMakeLists.txt.
 add_subdirectory(solver)
@@ -56,7 +59,6 @@ add_subdirectory(solver)
 # ------------------------------------------------------ compiled libraries --
 add_subdirectory(logger)
 add_subdirectory(panelbuilder)
-add_subdirectory(bemt)
 
 # ---------------------------------------------------- executables & tests --
 add_subdirectory(app)
