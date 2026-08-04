@@ -45,6 +45,43 @@
         "lhs": "${hostSystemName}",
         "rhs": "Linux"
       }
+    },
+    {
+      "name": "gcc-sanitizer-base",
+      "description": "Shared settings for the ASan/UBSan presets the Sanitizers workflow runs. Deliberately does NOT inherit 'vcpkg': a sanitizer run wants LAPACK, nlohmann_json and spdlog from the system so the job does not rebuild OpenBLAS and reference LAPACK (Fortran) from source on every push. The viewer is off for the same reason -- glad and imgui have no system CONFIG package.",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "gcc-15",
+        "CMAKE_CXX_COMPILER": "g++-15",
+        "AEOLION_BUILD_TESTS": "ON",
+        "AEOLION_BUILD_VIEWER": "OFF"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "gcc-asan",
+      "displayName": "Linux x64 (GCC + AddressSanitizer)",
+      "inherits": "gcc-sanitizer-base",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-fsanitize=address -fno-omit-frame-pointer -g",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address"
+      }
+    },
+    {
+      "name": "gcc-ubsan",
+      "displayName": "Linux x64 (GCC + UndefinedBehaviorSanitizer)",
+      "inherits": "gcc-sanitizer-base",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-fsanitize=undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer -g",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=undefined"
+      }
     }
   ],
   "buildPresets": [
@@ -55,6 +92,30 @@
     {
       "name": "linux",
       "configurePreset": "linux"
+    },
+    {
+      "name": "gcc-asan",
+      "configurePreset": "gcc-asan"
+    },
+    {
+      "name": "gcc-ubsan",
+      "configurePreset": "gcc-ubsan"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "gcc-asan",
+      "configurePreset": "gcc-asan",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "gcc-ubsan",
+      "configurePreset": "gcc-ubsan",
+      "output": {
+        "outputOnFailure": true
+      }
     }
   ]
 }

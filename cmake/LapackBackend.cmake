@@ -7,9 +7,8 @@
 # ABI directly -- no LAPACKE C header needed, so a LAPACK *library* is the
 # only hard dependency. CMake's FindLAPACK locates OpenBLAS, reference
 # LAPACK, MKL, Accelerate, etc. and pulls in the matching BLAS.
-
 function(aeolion_link_lapack target)
-    find_package(LAPACK REQUIRED)
-    target_link_libraries(${target} INTERFACE LAPACK::LAPACK)
-    message(STATUS "aeolion: using LAPACK (${LAPACK_LIBRARIES})")
+  find_package(LAPACK REQUIRED)
+  target_link_libraries(${target} INTERFACE LAPACK::LAPACK)
+  message(STATUS "aeolion: using LAPACK (${LAPACK_LIBRARIES})")
 endfunction()

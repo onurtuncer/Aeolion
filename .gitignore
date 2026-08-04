@@ -1,5 +1,14 @@
 build/
 build_lapack/
+
+# Local virtualenv for the CI tooling in requirements.txt
+.venv/
+
+# Metrix++ workflow output
+metrixpp.db
+metrixpp-report.txt
+metrixpp-limit.txt
+iwyu-report.txt
 *.o
 *.csv
 *.json

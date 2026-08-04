@@ -4,10 +4,10 @@ project(aeolion CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Release)
+  set(CMAKE_BUILD_TYPE Release)
 endif()
 if(NOT MSVC)
-    set(CMAKE_CXX_FLAGS_RELEASE "-O2")
+  set(CMAKE_CXX_FLAGS_RELEASE "-O2")
 endif()
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
@@ -21,8 +21,8 @@ option(AEOLION_WARNINGS "Build with warnings enabled" ON)
 # their OWN tests/ subdirectory rather than a single central one -- every
 # module is expected to own its build target and its tests together.
 if(AEOLION_BUILD_TESTS)
-    enable_testing()
-    include(AeolionTest)
+  enable_testing()
+  include(AeolionTest)
 endif()
 
 # ------------------------------------------------------------ core library --
@@ -32,10 +32,8 @@ endif()
 # of. This INTERFACE target hands consumers every header-only include
 # path, the C++23 requirement, warnings, and the LAPACK backend.
 add_library(aeolion INTERFACE)
-target_include_directories(aeolion INTERFACE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/solver/include
-)
+target_include_directories(aeolion INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include
+                                             ${CMAKE_CURRENT_SOURCE_DIR}/solver/include)
 target_compile_features(aeolion INTERFACE cxx_std_23)
 
 include(CompilerWarnings)
@@ -64,11 +62,11 @@ add_subdirectory(panelbuilder)
 add_subdirectory(app)
 
 if(AEOLION_BUILD_VIEWER)
-    add_subdirectory(viewer)
+  add_subdirectory(viewer)
 endif()
 
 if(AEOLION_BUILD_TESTS)
-    # The core header-only library's (Math/Lattice/Geometry/DragEstimate)
-    # own tests -- everything else lives beside the module it tests.
-    add_subdirectory(tests)
+  # The core header-only library's (Math/Lattice/Geometry/DragEstimate)
+  # own tests -- everything else lives beside the module it tests.
+  add_subdirectory(tests)
 endif()

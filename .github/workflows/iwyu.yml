@@ -1,0 +1,71 @@
+name: IWYU
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    paths:
+      - 'include/**'
+      - 'solver/**'
+      - 'panelbuilder/**'
+      - 'logger/**'
+      - 'app/**'
+      - 'tests/**'
+      - 'cmake/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/iwyu.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  iwyu:
+    name: include-what-you-use (informational)
+    # GCC 15 for <mdspan> -- see the comment in clang_tidy.yml.
+    runs-on: ubuntu-26.04
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build g++-15 iwyu liblapack-dev libblas-dev \
+            nlohmann-json3-dev libspdlog-dev
+
+      # System packages instead of --preset, for the same reason as the
+      # clang-tidy job: vcpkg would build OpenBLAS and reference LAPACK
+      # from source. The viewer is off because glad/imgui are vcpkg-only.
+      - name: Configure
+        run: |
+          cmake -B build/iwyu -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_COMPILER=g++-15 \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DAEOLION_BUILD_TESTS=ON \
+            -DAEOLION_BUILD_VIEWER=OFF
+
+      - name: Build
+        run: cmake --build build/iwyu
+
+      # Informational only: surfaces IWYU suggestions without failing the
+      # build. The codebase is not yet IWYU-clean, and the packaged iwyu is
+      # built against a different clang than the libstdc++ headers above,
+      # so this produces a report for review rather than a gate.
+      - name: Run include-what-you-use
+        continue-on-error: true
+        run: |
+          iwyu_tool -p build/iwyu app logger panelbuilder solver tests \
+            -- -Xiwyu --cxx17ns -Xiwyu --no_fwd_decls \
+            | tee iwyu-report.txt
+
+      - name: Upload IWYU report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: iwyu-report
+          path: iwyu-report.txt
+          if-no-files-found: ignore

@@ -13,26 +13,26 @@ find_package(glm CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
 find_package(OpenGL REQUIRED)
 
-add_executable(aeolion_viewer
-    src/Main.cpp
-    src/Core/Application.cpp
-    src/Core/Window.cpp
-    src/Renderer/Buffer.cpp
-    src/Renderer/OrbitCamera.cpp
-    src/Renderer/Shader.cpp
-    src/Renderer/VertexArray.cpp
-    src/Visualization/LatticeRenderer.cpp
-    src/Visualization/PropellerRenderer.cpp
-)
+add_executable(
+  aeolion_viewer
+  src/Main.cpp
+  src/Core/Application.cpp
+  src/Core/Window.cpp
+  src/Renderer/Buffer.cpp
+  src/Renderer/OrbitCamera.cpp
+  src/Renderer/Shader.cpp
+  src/Renderer/VertexArray.cpp
+  src/Visualization/LatticeRenderer.cpp
+  src/Visualization/PropellerRenderer.cpp)
 
 target_include_directories(aeolion_viewer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(aeolion_viewer PRIVATE
-    aeolion
-    aeolion_logger
-    aeolion_panelbuilder
-    glfw
-    glad::glad
-    glm::glm
-    imgui::imgui
-    OpenGL::GL
-)
+target_link_libraries(
+  aeolion_viewer
+  PRIVATE aeolion
+          aeolion_logger
+          aeolion_panelbuilder
+          glfw
+          glad::glad
+          glm::glm
+          imgui::imgui
+          OpenGL::GL)

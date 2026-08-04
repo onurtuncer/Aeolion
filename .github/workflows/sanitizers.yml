@@ -1,0 +1,64 @@
+name: Sanitizers
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    paths:
+      - 'include/**'
+      - 'solver/**'
+      - 'panelbuilder/**'
+      - 'logger/**'
+      - 'app/**'
+      - 'tests/**'
+      - 'cmake/**'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - '.github/workflows/sanitizers.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sanitize:
+    name: ${{ matrix.label }}
+    # GCC 15 for <mdspan> -- see the comment in clang_tidy.yml. The
+    # gcc-asan / gcc-ubsan presets pin g++-15 explicitly rather than
+    # relying on the image default.
+    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - preset: gcc-asan
+            label: AddressSanitizer
+          - preset: gcc-ubsan
+            label: UndefinedBehaviorSanitizer
+
+    env:
+      ASAN_OPTIONS: check_initialization_order=1:detect_stack_use_after_return=1
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+
+      # The sanitizer presets deliberately bypass vcpkg -- see the comment
+      # on gcc-sanitizer-base in CMakePresets.json -- so the three real
+      # dependencies (LAPACK, nlohmann_json, spdlog) come from the archive.
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build g++-15 liblapack-dev libblas-dev \
+            nlohmann-json3-dev libspdlog-dev
+
+      - name: Configure
+        run: cmake --preset=${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset=${{ matrix.preset }}
+
+      - name: Run tests
+        run: ctest --preset=${{ matrix.preset }}

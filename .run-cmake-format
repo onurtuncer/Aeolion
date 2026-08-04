@@ -1,0 +1,5 @@
+#!/bin/bash
+# ports/ holds vendored vcpkg port files (upstream copies, kept verbatim so
+# they can be re-synced), so it is pruned along with the build trees.
+find . \( -path ./build -o -path ./out -o -path ./ports -o -path ./vendor -o -path ./.venv \) -prune \
+  -o -type f \( -name CMakeLists.txt -o -name "*.cmake" \) -exec cmake-format -i {} \;

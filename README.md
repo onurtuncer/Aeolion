@@ -1,5 +1,13 @@
 # Aeolion
 
+[![Sanitizers](https://github.com/onurtuncer/Aeolion/actions/workflows/sanitizers.yml/badge.svg)](https://github.com/onurtuncer/Aeolion/actions/workflows/sanitizers.yml)
+[![Clang-Tidy](https://github.com/onurtuncer/Aeolion/actions/workflows/clang_tidy.yml/badge.svg)](https://github.com/onurtuncer/Aeolion/actions/workflows/clang_tidy.yml)
+[![IWYU](https://github.com/onurtuncer/Aeolion/actions/workflows/iwyu.yml/badge.svg)](https://github.com/onurtuncer/Aeolion/actions/workflows/iwyu.yml)
+[![Metrix++](https://github.com/onurtuncer/Aeolion/actions/workflows/metrixpp.yml/badge.svg)](https://github.com/onurtuncer/Aeolion/actions/workflows/metrixpp.yml)
+[![CMake-Format](https://github.com/onurtuncer/Aeolion/actions/workflows/cmake_format.yml/badge.svg)](https://github.com/onurtuncer/Aeolion/actions/workflows/cmake_format.yml)
+[![CMake-Lint](https://github.com/onurtuncer/Aeolion/actions/workflows/cmake_lint.yml/badge.svg)](https://github.com/onurtuncer/Aeolion/actions/workflows/cmake_lint.yml)
+[![Docs](https://github.com/onurtuncer/Aeolion/actions/workflows/deploy-docs.yml/badge.svg)](https://onurtuncer.github.io/Aeolion/)
+
 A small aerodynamics toolkit built around a 3D vortex lattice method:
 lifting-surface VLM coupled to a fuselage source-panel mesh and
 component-buildup viscous drag estimation, with geometry loaded from a

@@ -13,9 +13,8 @@
 # CMAKE_CURRENT_SOURCE_DIR (which would resolve to a different, wrong
 # directory depending on which module's tests/CMakeLists.txt called this).
 function(aeolion_add_test name)
-    add_executable(${name} ${name}.cpp)
-    target_link_libraries(${name} PRIVATE aeolion)
-    target_compile_definitions(${name} PRIVATE
-        AEOLION_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/Data")
-    add_test(NAME ${name} COMMAND ${name})
+  add_executable(${name} ${name}.cpp)
+  target_link_libraries(${name} PRIVATE aeolion)
+  target_compile_definitions(${name} PRIVATE AEOLION_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/Data")
+  add_test(NAME ${name} COMMAND ${name})
 endfunction()
