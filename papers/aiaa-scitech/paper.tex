@@ -140,24 +140,39 @@ conventional vortex lattice or panel method has no freestream dynamic
 pressure to put on a control surface, so vane authority, the thrust
 cost of vectoring, and the recovered swirl torque are outside such
 tools' model entirely, while RANS CFD of the full rotor--duct--vane
-system is too slow for the configuration loop. Classical VLM codes
+system is too slow for the configuration loop --- even the
+GPU-accelerated wall-modelled LES that has brought full-aircraft
+simulation to roughly one-day turnaround~\cite{goc2021} is still a
+day per operating point. Classical VLM codes
 such as AVL~\cite{avl} and OpenVSP's VSPAERO~\cite{openvsp2022} treat
 the airframe with, at most, a prescribed
 actuator-disk propulsor; isolated-rotor methods such as
-XROTOR~\cite{xrotor} carry no airframe and no vanes. The components
+XROTOR~\cite{xrotor} carry no airframe and no vanes. Mid-fidelity
+solvers pairing potential boundary elements with Lagrangian wakes do
+reach interactional VTOL aerodynamics at orders-of-magnitude lower
+cost than CFD~\cite{tugnoli2021}, and potential-flow frameworks have
+recently been extended to powered jet wakes for aeropropulsive
+design~\cite{jois2026}; what neither line closes is the loop this
+paper is about --- a stator row standing in a ducted rotor's own
+hover jet, depleting the swirl that drives it. The components
 themselves are classical: shrouded propulsors and their static thrust
 augmentation are treated at length by K\"uchemann and
 Weber~\cite{kuchemannWeber1953} and revisited experimentally for
 hovering micro air vehicles by Pereira~\cite{pereira2008}; vanes in a
 propulsive jet are among the oldest thrust-vectoring
-devices~\cite{sutton2016}; and swirl-recovery vanes have been
+devices~\cite{sutton2016}, and duct lip shaping and exit control
+devices for hovering ducted-fan UAVs have been surveyed
+experimentally~\cite{graf2005}; and swirl-recovery vanes have been
 wind-tunnel demonstrated on high-speed
 propellers~\cite{gazzaniga1992}. What the established toolchain lacks
 is not the components but their coupled analysis at hover.
 
 This paper describes a method that closes that gap at
 potential-flow-plus-sectional-viscous fidelity, resolving the coupled
-rotor--duct--vane system in seconds. Three ingredients are presented
+rotor--duct--vane system in seconds. Section~\ref{s:rationale} places
+the modelling choices against the cost--accuracy ladder the rotor
+literature has settled on, and states what each choice forfeits.
+Three ingredients are then presented
 in turn: the rotating-frame vortex lattice for the rotor
 (Sec.~\ref{s:rotor}), the two-way ducted solve and the inertial-frame
 vane solve with its reconstructed slipstream (Secs.~\ref{s:duct},
@@ -168,6 +183,57 @@ method is implemented in Aeolion, an open-source C++23 aerodynamics
 toolkit; the mathematical elements --- horseshoe vortices and
 constant-strength source panels --- are the textbook
 ones~\cite{katzPlotkin2001}, and the contribution is the coupling.
+
+\section{Fidelity Tier and Method Rationale}
+\label{s:rationale}
+
+The choices described below are not free parameters, and this section
+states the warrant for each before the method itself is given. The
+cost--accuracy ladder for rotor aerodynamics is by now consistent
+across the review literature: blade-element momentum theory is
+cheapest and gives sound thrust trends but carries no tip-vortex or
+interaction physics; prescribed-wake filament methods follow;
+lifting-line and vortex-lattice blade models with prescribed or free
+wakes occupy the middle; hybrid vortex-lattice/vortex-particle and
+CFD-coupled schemes sit above, at correspondingly higher
+cost~\cite{lee2022,murua2012}. For ducted fans specifically, momentum
+plus blade-element hover models have been reported within roughly
+15\% of bench data~\cite{ai2021} --- adequate for sizing a thrust
+line, but silent about a vane row and structurally unable to carry
+the rotor--duct--vane interaction that sets control authority. At the
+far end, wall-modelled LES of a full aircraft has reached about
+one-day turnaround on GPU hardware~\cite{goc2021}. The tier that fits
+the question is the one where potential boundary elements are paired
+with Lagrangian wakes: for unconventional VTOL configurations such
+methods reproduce CFD vertical force, pitching moment, and shaft
+power at orders-of-magnitude lower cost, and fail only where the flow
+is massively separated~\cite{tugnoli2021}.
+
+That reported failure mode is precisely the hazard of the present
+configuration, and it is better named at the outset than buried in a
+limitations paragraph. At hover the rotor's own swirl parks the exit
+vanes at tens of degrees of local incidence before any control
+command, so the vanes are separation-dominated by construction --- and
+vortex- and blade-element-type methods are known to underperform once
+viscous separation and post-stall nonlinearity
+dominate~\cite{lee2022}. The design that follows is shaped by that
+fact: blades and vanes carry a sectional viscous coupling rather than
+a purely inviscid loading (Secs.~\ref{s:rotor}, \ref{s:vanes}), and
+the default vane model is not a lifting surface at all but the
+angular-momentum closure a stator row obeys (Sec.~\ref{s:cascade}),
+adopted after the lifting-surface closure proved non-unique in exactly
+this regime.
+
+Four further decisions are taken deliberately, each justified where it
+appears: a prescribed, load-consistent helical near wake with finite
+vortex cores instead of a force-free wake (Sec.~\ref{s:rotor}); a
+source-panel duct solved simultaneously with the blade circulation
+(Sec.~\ref{s:duct}); a slipstream reconstructed by annular momentum
+theory rather than sampled from the lattice's own wake field
+(Sec.~\ref{s:vanes}); and a partitioned two-frame iteration between
+the rotating and inertial domains rather than a monolithic unsteady
+solve (Sec.~\ref{s:coupling}). Each buys speed at a stated cost, and
+those costs are collected in Sec.~\ref{s:coupling}.
 
 \section{Rotor: Vortex Lattice in the Rotating Frame}
 \label{s:rotor}
@@ -181,6 +247,25 @@ true $\Omega r$ tangential onset flow. The near-field
 Kutta--Joukowski force evaluation uses that same local velocity, so
 the body-axis load sums are dimensional propeller loads directly:
 thrust $T = -F_x$, shaft torque $Q = -M_x$, power $P = Q\,\Omega$.
+
+Posing the blades in a rotating frame and holding the solution
+quasi-steady is the vortex-method counterpart of the
+multiple-reference-frame treatment that is standard for hovering
+rotors in CFD, where the governing equations are switched between a
+rotating and a stationary frame and the non-inertial terms enter at
+the source level~\cite{silva2021mrf}. Its price is the same in both
+settings --- unsteady interaction effects are not carried --- and it
+is acceptable here for a specific reason: hover of an axisymmetric
+rotor inside an axisymmetric duct is steady in the blade-fixed frame
+to begin with, and the quantities a configuration loop needs are
+cycle means. The blade model is a vortex lattice rather than a
+lifting line because resolving chordwise variation measurably
+improves hover loading and wake prediction over a one-dimensional
+spanwise representation while remaining far below particle or CFD
+cost~\cite{lee2022,murua2012}; it is a vortex lattice rather than
+blade-element momentum theory because blades, duct, and vanes must
+each see the others' induced field, which a per-annulus momentum
+balance cannot supply.
 
 Each blade is meshed with one Weissinger row~\cite{weissinger1947}
 per radial strip on the
@@ -238,13 +323,42 @@ finite Vatistas-style algebraic core~\cite{vatistas1991},
  \qquad r_c = 0.3\,\Delta r ,
 \end{equation}
 with $h$ the perpendicular distance to the segment and $\Delta r$ the
-shedding strip's radial width. The core is not cosmetic: successive
+shedding strip's radial width. The core is not cosmetic and it is not
+optional: a singular filament produces nonphysical induced velocities
+wherever the wake passes close to an evaluation point, so
+regularization is standard practice in filament
+methods~\cite{leishman2002,lee2022}. Here the need is acute ---
+successive
 helix passes bring neighboring blades' filaments within a
 discretization step of control points, and the raw $1/h$ kernel would
 make the solve hostage to exactly where a polyline vertex lands. A
 collinear polyline reproduces the straight-leg kernel identically,
 and an empty path \emph{is} a straight leg, so fixed-wing cases are
 untouched.
+
+The wake is prescribed rather than force-free by deliberate choice.
+Free-wake methods obtain the wake shape as part of the solution and
+are indispensable when wake deformation, rotor--rotor interaction,
+ground effect, or vortex-ring-state physics must emerge from the
+solution; prescribed wakes fix the shape from kinematic or empirical
+arguments and thereby avoid both the cost and the marching-stability
+difficulty of relaxing every wake node, which in hover is acute
+because many interacting vortex sheets must be marched
+together~\cite{murua2012,leishman2002}. For repeated load evaluations
+under steady or mildly distorted conditions --- which is exactly a
+hover design sweep --- the prescribed choice is the recommended one,
+and semi-prescribed variants have been reported reproducing
+interaction-induced thrust and power changes within a few percent of
+experiment at a fraction of free-wake or particle
+cost~\cite{erhardAlonso2024}. The same partition by component appears
+in propeller--wing work, where a free wake on the propeller is paired
+with a prescribed wake on the downstream surface for
+speed~\cite{ribeiro2023}. What the present method adds is to make the
+prescribed helix a function of the solved loading, so that the wake
+shape is a fixed point of the solution rather than a fixed empirical
+prescription --- addressing exactly the generalization across blade
+shapes and loadings that classical prescribed wakes are criticized
+for lacking~\cite{murua2012}.
 
 The lattice so equipped remains quasi-steady, its near-wake helix
 prescribed from momentum-theory kinematics in the lineage of the
@@ -280,6 +394,25 @@ shaft-power sum.
 
 \section{The Ducted Rotor}
 \label{s:duct}
+
+A boundary-element representation is the natural fidelity for the
+duct. Ducted fans are close to axisymmetric, and a panel formulation
+solves the inviscid external problem with unknowns on the surface
+alone rather than on a volume mesh, which is what makes shape studies
+and repeated design iterations affordable; unsteady panel analyses of
+ducted fans go back three decades~\cite{williams1991}. The
+established weakness of this intermediate tier is equally clear: the
+lifting-line-plus-panel lineage that DFDC represents gives rapid and
+useful axial-flight thrust estimates, but tends to overpredict
+torque, and its agreement degrades where its axial-symmetry and
+incompressibility assumptions do~\cite{zhang2021ducted}. Two of those
+weaknesses are addressed here directly --- the duct is solved
+\emph{simultaneously} with the blade circulation rather than applied
+as a prescribed correction, and profile torque comes from the
+sectional viscous coupling rather than from an inviscid lattice ---
+while the third, viscous separation at the bore lip, stays outside an
+inviscid panel model and is the known reason such methods lose
+accuracy at high duct loading and in crosswind~\cite{akturkCamci2021}.
 
 The duct is meshed as a closed annular ring of constant-strength
 source panels (outer wall, bore wall, two caps) centered on the rotor
@@ -346,12 +479,43 @@ axial component developing toward the classical far-wake doubling over
 about a diameter, the swirl carried unchanged, and the duct's exact
 source induction added on top.
 
+Annular momentum theory is a strong assumption set, and a bounded
+one. It supposes incompressible, axisymmetric, inviscid flow with the
+rotor replaced by an actuator disc, and it treats the annuli as
+independent; those assumptions are most defensible at high disc
+loading and where the aim is a low-cost reconstruction of the
+slipstream rather than blade-resolved near-wake
+detail~\cite{bontempoManna2013,vanDerWall2024} --- which is exactly
+the use made of it here, since the vanes need the mean axial and
+swirl profile that drives them, not the tip-vortex structure. The
+assumption carrying the largest known error is annulus independence:
+exact potential-flow solutions for the actuator disc show that annuli
+are in fact coupled through the pressure field, and that the axial
+velocity at the disc is not radially
+uniform~\cite{kuikLignarolo2016,bontempoManna2013}. Both effects are
+partly mitigated in the present construction --- the radial
+distribution is taken from the converged lattice loading rather than
+assumed uniform, and the duct's own source induction is superposed
+exactly --- but what reaches the vane plane is still an axisymmetric,
+undeformed jet. Real slipstreams deform measurably before they meet a
+downstream surface, with root and tip vortex systems rolling up and
+reorganizing the local flow~\cite{duivenvoorden2025}. That
+deformation is outside this model, and the vane loads it returns are
+accordingly passage-mean loads.
+
 The vanes receive the same viscous sectional coupling as the blades,
 with each trailing leg leaving along the \emph{local mean flow} at its
 root --- in the jet, helically, with the swirl. At hover the swirl
 alone puts the vanes at tens of degrees of local incidence before any
 command, so their hover aerodynamics are separation-dominated by
-nature. The section model is assigned where each is honest: the
+nature: the regime in which vortex- and blade-element-type methods
+are least reliable~\cite{lee2022} and in which mid-fidelity VTOL
+solvers are reported to break down~\cite{tugnoli2021}. The
+experimental swirl-recovery-vane literature reports the same failure
+concretely, with inboard vane sections stalling and limiting
+performance until their local pitch is
+raised~\cite{sinnige2018}. A purely inviscid vane model is therefore
+not defensible at hover. The section model is assigned where each is honest: the
 budget-coupled solve uses the smooth analytic polar (nearly the whole
 span sits outside the boundary-layer solver's validity envelope in the
 hover jet, and the budget iteration needs the polar's smoothness to
@@ -382,6 +546,27 @@ swirl as counter-torque.
 
 \section{Two-Way Coupling and the Swirl Momentum Budget}
 \label{s:coupling}
+
+Coupling a rotating component to a stationary one admits three broad
+treatments. A rotating-frame formulation switches the governing
+equations between frames and is efficient for steady and quasi-steady
+problems, at the price of neglecting unsteady
+interaction~\cite{silva2021mrf}. An inertial-frame unsteady solve
+with overset or embedded grids is the most faithful and by far the
+most expensive, and is the accepted reference when blade-resolved
+unsteady interaction is the object of study. Partitioned iterative
+coupling sits between them: each domain keeps its own solver, and
+interface data are exchanged until the pair is consistent, trading
+some stability margin for modelling flexibility and
+cost~\cite{xiongYu2007}. The present method is the third, with the
+rotating and inertial domains as its two partitions, and it takes the
+assumptions this class of coupling is normally granted ---
+circumferential symmetry, a prescribed (here reconstructed) wake
+transfer between the domains, and tolerance of near-rotor
+discrepancies where the target is the first-order installation effect
+rather than blade-resolved unsteady loads. Azimuthal averaging in the
+vane-to-rotor direction, Eq.~\eqnref{e:meanfield} below, is the
+concrete form circumferential symmetry takes here.
 
 Partitioned as above, the scheme is one-way: the vanes read the jet,
 the rotor never feels the vanes, and nothing depletes the prescribed
@@ -563,7 +748,11 @@ away with no $\Gamma$ ever exceeding its cap --- a single vane at
 $8^\circ$ was solved carrying more side force than the entire net
 thrust on one branch, while the same command landed on a sane branch
 at a neighboring rpm. No stabilizer fixes a model whose answer is not
-unique; the model itself is wrong for that regime.
+unique; the model itself is wrong for that regime. This is the
+failure the vortex-method literature predicts for separated stator
+flow~\cite{lee2022} --- arriving here not as a graceful loss of
+accuracy but as non-uniqueness, which is the more dangerous form
+because a single converged run gives no sign of it.
 
 The default vane model therefore replaces the vane lattice with the
 closure a stator row actually obeys: annulus-by-annulus
@@ -756,6 +945,24 @@ forward speed straightens the jet.
    true profile.}
  \label{f:vanes}
 \end{figure}
+
+\paragraph{Consistency with swirl-recovery-vane measurements.} No
+external validation is claimed here --- that anchor is being
+assembled for the journal version --- but the two headline behaviours
+of the coupled solve are the ones the experimental
+swirl-recovery-vane literature reports. Vanes standing in a
+propeller's slipstream consume no shaft power, so any streamwise
+force they produce is a direct credit to propulsive efficiency;
+wind-tunnel campaigns measure a thrust increase of order 2.6\% at the
+design point, together with a roughly 50\% reduction of the
+slipstream's swirl kinetic energy at medium thrust
+settings~\cite{li2018srv,sinnige2018}. The present cruciform behaves
+the same way in kind --- a net thrust credit from the undeflected
+vanes (Table~\ref{t:hover}) and about 70\% of the jet's
+angular-momentum flux recovered as counter-torque --- with the larger
+recovery fraction consistent with the far higher swirl of a static
+ducted fan than of a cruise propeller. The agreement is qualitative
+and is reported as such.
 
 \paragraph{Verification.} Every claim above is pinned by the automated
 test suite: exact cruciform symmetry undeflected, counter-torque
