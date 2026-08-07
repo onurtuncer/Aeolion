@@ -39,6 +39,24 @@ Key types:
 * :cpp:class:`Aeolion::Solver::StationResult` — per-spanwise-station output.
 * :cpp:class:`Aeolion::Solver::StabilityDerivatives` — central-difference
   derivative table.
+* :cpp:class:`Aeolion::Solver::FlowField` — a solved system's velocity
+  field, evaluable at any point after the solve.
+
+Stagnation and attachment lines (see :doc:`theory`):
+
+* :cpp:class:`Aeolion::Solver::SurfaceGrid` — a source-panelled surface as
+  a structured (station, sector) patch with its solved skin flow.
+* :cpp:class:`Aeolion::Solver::CriticalPoint` — a located and classified
+  zero of the surface flow: attachment/separation node, saddle, or focus.
+* :cpp:class:`Aeolion::Solver::SurfaceStreamline` — a traced surface
+  streamline carrying :math:`U_e(s)` and the spreading metric :math:`h(s)`.
+* :cpp:class:`Aeolion::Solver::SectionSolution` — Hess-Smith solve of one
+  thick section: surface velocity, the stagnation point, and its strain rate.
+* :cpp:class:`Aeolion::Solver::SurfaceRun` — one surface's boundary-layer
+  run, measured from the stagnation point.
+* :cpp:class:`Aeolion::Solver::AttachmentStation` — the wing attachment
+  line at one strip, in leading-edge-normal coordinates, with Poll's
+  attachment-line Reynolds number.
 
 .. doxygennamespace:: Aeolion::Solver
    :content-only:
@@ -85,6 +103,9 @@ Strict parser for the ``aeolion_geometry.json`` handoff contract.
   discretization.
 * :cpp:class:`Aeolion::Geometry::PropulsionSpec` — propeller blade
   geometry for a BEMT run.
+* :cpp:class:`Aeolion::Geometry::SectionContour` — the THICK closed
+  contour of a CST section, with its leading-edge radius; what a
+  stagnation-point calculation needs and a camber line cannot supply.
 
 .. doxygennamespace:: Aeolion::Geometry
    :content-only:

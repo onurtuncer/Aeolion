@@ -157,6 +157,75 @@ Reynolds number rises; and the converged coupled lift must sit below the
 same solver's zero-transpiration (inviscid) pass. See theory.rst,
 "Level 3", for the method these checks guard.
 
+TestSurfaceFlow
+---------------
+
+The body skin-flow analysis (``Solver::SurfaceGrid``,
+``Solver::AnalyzeSurfaceFlow``), pinned on the sphere, whose surface
+velocity is exactly :math:`\tfrac32(\mathbf{U} - (\mathbf{U}\cdot
+\hat{\mathbf{n}})\hat{\mathbf{n}})`. It therefore vanishes precisely
+where the outward normal is parallel to the freestream, at ANY angle of
+attack and sideslip -- so the attachment point must land at
+:math:`\hat{\mathbf{n}} = -\hat{\mathbf{U}}` and the separation point at
+:math:`+\hat{\mathbf{U}}` across the whole attitude sweep, not at one
+condition. The strain rate is exact too (:math:`\operatorname{tr} J =
+3U/a`) and is what a boundary layer would start its march from; the
+streamline-spreading metric must follow :math:`h \propto \sin\theta`; and
+the edge speed along a traced meridian must follow
+:math:`\tfrac32 U \sin\theta`. At zero incidence the stagnation point
+sits on the nose apex, upstream of every control point, and the analysis
+must SAY so rather than invent an interior one. A prolate spheroid adds
+the symmetry check that catches an attitude sign error: on any body of
+revolution about :math:`x` the attachment point must lie on the windward
+meridian, :math:`\phi = \operatorname{atan2}(-\sin\alpha\cos\beta,
+-\sin\beta)`. A surface whose panelling does not state its topology must
+be declined, not reconstructed.
+
+TestSectionPanelMethod
+----------------------
+
+The 2-D Hess-Smith section solve (``Solver::SolveSectionContour``). Fed a
+circle instead of an airfoil it must reproduce :math:`|V| = 2U\sin\theta`
+and :math:`C_p = 1 - 4\sin^2\theta` with zero circulation -- a result
+owing nothing to airfoil theory, and one that exercises the influence
+coefficients, the assembly and the solve together. A symmetric section at
+zero incidence must stagnate exactly ON the leading edge and carry no
+lift; the lift slope must sit just above :math:`2\pi\alpha` for
+thickness; and the stagnation point must walk aft monotonically with
+incidence on the scale matched asymptotics predicts,
+:math:`s_{stag}/c \sim \sqrt{2 r_{LE}/c}\,\alpha_e`. That last one is
+asserted as a COLLAPSE across a twelvefold range of nose radius, which no
+fitted constant can fake, and it is what rules out the intuitive
+:math:`r_{LE}\alpha` reading (wrong by an order of magnitude). Finally
+the two boundary-layer runs must cover the contour exactly once between
+them, and the upper run must be longer than half the perimeter because it
+wraps around the nose from a stagnation point on the lower surface.
+
+TestAttachmentLine
+------------------
+
+The wing attachment line (``Solver::ComputeAttachmentLine``), and above
+all its response to sideslip. On a flat lattice at zero incidence there is
+no circulation and hence no induced flow, so the attachment line must sit
+exactly on the leading edge at every strip; at positive incidence it must
+move onto the LOWER surface everywhere, with the local incidence positive
+but below geometric (induced downwash). With no sideslip the effective
+sweep must recover the wing's geometric sweep and be symmetric between the
+two wings.
+
+The load-bearing check is sideslip. On a SWEPT wing at
+:math:`\beta = 10^\circ` the effective sweep must rise on one wing and
+fall on the other, by about :math:`\pm\beta`, carrying the
+attachment-line Reynolds number with it -- so the two wings are not
+equally close to leading-edge contamination. Reversing the sideslip must
+swap them exactly. The control case is an UNSWEPT wing at the same
+sideslip, which must stay symmetric; without it, the swept test would also
+pass for code that merely keyed off the sign of :math:`y`. A swept wing's
+root kink must be detected at exactly the two strips flanking the
+centreline, and a straight leading edge must not be reported as kinked.
+With no section data there is no thickness, so no stagnation point may be
+claimed at all.
+
 TestPropellerLattice
 --------------------
 

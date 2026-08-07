@@ -14,6 +14,15 @@ namespace Aeolion::Solver {
 /** Full result of a VLM solve. */
 struct SolveResult {
     std::vector<double> gamma;
+    /**
+     * Converged SOURCE strengths, aligned with the system's source panels
+     * (empty for a wing-only solve). Kept for the same reason gamma is:
+     * together they are the full state of the solved field, and anything
+     * that wants to re-evaluate the velocity after the fact -- a surface
+     * streamline, a stagnation point, a wake survey -- needs both to
+     * rebuild a Solver::FlowField.
+     */
+    std::vector<double> sigma;
     std::vector<StationResult> Stations;
     double CL = 0.0;
     /**

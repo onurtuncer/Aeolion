@@ -83,6 +83,27 @@ struct SourcePanel {
      * distribution can be reported without re-deriving the topology.
      */
     int StationIndex = -1;
+
+    /**
+     * Azimuthal index around the body at this station -- the SECOND surface
+     * coordinate, of which StationIndex is the first. Together they make a
+     * swept body of revolution's panelling a structured (station x sector)
+     * grid.
+     *
+     * Reporting a pressure distribution needs only StationIndex, which is
+     * why it came first. Anything that has to move ALONG the surface needs
+     * both: a surface streamline crosses panels, so its integrator has to
+     * interpolate the tangential velocity between control points, and that
+     * requires knowing which panels neighbour which. Recovering the
+     * azimuth from atan2(z, y) of a control point works only for a body
+     * whose axis happens to be +x and would silently produce garbage for
+     * one that is not, so the builder states the index instead.
+     *
+     * Negative means the panelling is unstructured (or its topology was
+     * never recorded), and a surface-flow analysis must decline rather
+     * than guess -- see Solver/SurfaceFlow.h.
+     */
+    int SectorIndex = -1;
 };
 
 } // namespace Aeolion::Lattice

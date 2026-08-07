@@ -458,6 +458,133 @@ struct PreparedSystem {
     return Prepare(PanelSystem{panels, {}}, trailLength);
 }
 
+// --------------------------------------------------------- the flow field ----
+// A SOLVED system's velocity field, evaluable anywhere.
+//
+// Every force the solve reports comes from asking one question -- "what is
+// the velocity here?" -- and that question used to be answered by three
+// separate inline loops buried inside SolveWithSystem. Nothing downstream
+// could reach the field: a surface streamline, a stagnation point, a wake
+// survey, a probe rake all had to restate those loops and then drift out of
+// step with them. This states them once, and SolveWithSystem itself now
+// goes through it, so there is no second definition left to drift.
+//
+// THREE evaluations rather than one, because two points in the field are
+// genuinely special and neither is an approximation of the general case:
+//
+//   Velocity(P)                the plain field at an arbitrary point.
+//
+//   BoundMidpointVelocity(i)   at panel i's own bound-vortex midpoint. Its
+//                              own bound segment is singular there and is
+//                              EXCLUDED: Kutta-Joukowski needs the flow the
+//                              segment sits in, not the flow it makes.
+//
+//   SourceSurfaceVelocity(k)   at source panel k's own control point, which
+//                              lies exactly on its own sheet where the
+//                              induced velocity is indeterminate. The
+//                              analytic +1/2 sheet jump is substituted; the
+//                              in-plane part cancels by symmetry.
+//
+// The field holds a NON-OWNING pointer to the system it was solved on --
+// keep the PreparedSystem alive for as long as the field is used.
+/** A solved system's velocity field, evaluable at any point. */
+struct FlowField {
+    const PanelSystem* System = nullptr; ///< Non-owning; must outlive this field.
+    double TrailLength = 0.0;
+    std::vector<double> gamma; ///< Circulations, aligned with System->Vortices.
+    std::vector<double> sigma; ///< Source strengths, aligned with System->Sources.
+
+    Vec3 Vinf{0, 0, 0};     ///< Translational freestream (see FreestreamVelocity).
+    Vec3 Omega{0, 0, 0};    ///< Body rates (p, q, r) [rad/s].
+    Vec3 RefPoint{0, 0, 0}; ///< Rotation center.
+    /** Optional background PERTURBATION, added on top of freestream+rotation. */
+    std::function<Vec3(const Vec3&)> External;
+
+    /** Oncoming flow at a point: freestream, body rotation, external field. */
+    [[nodiscard]] Vec3 KinematicVelocity(const Vec3& point) const {
+        Vec3 v = Vinf - Cross(Omega, point - RefPoint);
+        if (External) v = v + External(point);
+        return v;
+    }
+
+    /** Velocity induced by every singularity in the system at an arbitrary point. */
+    [[nodiscard]] Vec3 InducedVelocity(const Vec3& point) const {
+        Vec3 v(0, 0, 0);
+        if (!System) return v;
+        const int nv = System->VortexCount();
+        for (int j = 0; j < nv; ++j)
+            v = v + HorseshoeVelocity(point, System->Vortices[static_cast<std::size_t>(j)],
+                                      gamma[static_cast<std::size_t>(j)], TrailLength);
+        const int ns = System->SourceCount();
+        for (int k = 0; k < ns; ++k)
+            v = v + SourcePanelVelocity(point, System->Sources[static_cast<std::size_t>(k)]) *
+                        sigma[static_cast<std::size_t>(k)];
+        return v;
+    }
+
+    /** Total velocity at an arbitrary point: kinematic plus induced. */
+    [[nodiscard]] Vec3 Velocity(const Vec3& point) const {
+        return KinematicVelocity(point) + InducedVelocity(point);
+    }
+
+    /** Total velocity at vortex panel i's bound-vortex midpoint, its own bound segment excluded. */
+    [[nodiscard]] Vec3 BoundMidpointVelocity(int i) const {
+        if (!System) return {0, 0, 0};
+        const std::size_t self = static_cast<std::size_t>(i);
+        const Vec3 mid = (System->Vortices[self].A + System->Vortices[self].B) * Half;
+        Vec3 v = KinematicVelocity(mid);
+        const int nv = System->VortexCount();
+        for (int j = 0; j < nv; ++j) {
+            const std::size_t jj = static_cast<std::size_t>(j);
+            v = v + ((j == i) ? HorseshoeVelocityNoBound(mid, System->Vortices[jj], gamma[jj], TrailLength)
+                              : HorseshoeVelocity(mid, System->Vortices[jj], gamma[jj], TrailLength));
+        }
+        const int ns = System->SourceCount();
+        for (int k = 0; k < ns; ++k)
+            v = v + SourcePanelVelocity(mid, System->Sources[static_cast<std::size_t>(k)]) *
+                        sigma[static_cast<std::size_t>(k)];
+        return v;
+    }
+
+    /** Total velocity on source panel k's own face, its self-influence substituted analytically. */
+    [[nodiscard]] Vec3 SourceSurfaceVelocity(int k) const {
+        if (!System) return {0, 0, 0};
+        const std::size_t self = static_cast<std::size_t>(k);
+        const SourcePanel& panel = System->Sources[self];
+        Vec3 v = KinematicVelocity(panel.ControlPoint);
+        const int nv = System->VortexCount();
+        for (int j = 0; j < nv; ++j)
+            v = v + HorseshoeVelocity(panel.ControlPoint, System->Vortices[static_cast<std::size_t>(j)],
+                                      gamma[static_cast<std::size_t>(j)], TrailLength);
+        const int ns = System->SourceCount();
+        for (int m = 0; m < ns; ++m) {
+            const std::size_t mm = static_cast<std::size_t>(m);
+            v = v + ((m == k) ? panel.Normal * (sigma[mm] * SourceSelfInfluence)
+                              : SourcePanelVelocity(panel.ControlPoint, System->Sources[mm]) * sigma[mm]);
+        }
+        return v;
+    }
+};
+
+/**
+ * The flow field of a system already solved for `gamma` (and `sigma`, empty
+ * for a wing-only system). `sys` must outlive the returned field.
+ */
+[[nodiscard]] inline FlowField MakeFlowField(const PreparedSystem& sys, const FreestreamConditions& fc,
+                                             std::vector<double> gamma, std::vector<double> sigma,
+                                             std::function<Vec3(const Vec3&)> externalField = nullptr) {
+    FlowField field;
+    field.System = &sys.System;
+    field.TrailLength = sys.TrailLength;
+    field.gamma = std::move(gamma);
+    field.sigma = std::move(sigma);
+    field.Vinf = FreestreamVelocity(fc);
+    field.Omega = Vec3(fc.p, fc.q, fc.r);
+    field.RefPoint = fc.RefPoint;
+    field.External = std::move(externalField);
+    return field;
+}
+
 /**
  * Core solver, RHS/force part: takes an already-factorized system and just
  * needs the flight condition -- O(N^2) instead of O(N^3), since the
@@ -473,20 +600,13 @@ struct PreparedSystem {
     const std::vector<SourcePanel>& bodies = system.Sources;
     int N = system.VortexCount();
     int NB = system.SourceCount();
-    double trail = sys.TrailLength;
 
-    double alpha = DegToRad(fc.alphaDeg);
-    double beta = DegToRad(fc.betaDeg);
-    Vec3 Vinf(fc.Vinf * std::cos(alpha) * std::cos(beta),
-              fc.Vinf * std::sin(beta),
-              fc.Vinf * std::sin(alpha) * std::cos(beta));
-
-    Vec3 omega(fc.p, fc.q, fc.r);
-    auto kinematicVelocity = [&](const Vec3& p) -> Vec3 {
-        Vec3 v = Vinf - Cross(omega, p - fc.RefPoint);
-        if (externalField) v = v + externalField(p);
-        return v;
-    };
+    // The field starts strengthless: only its KINEMATIC half is needed to
+    // pose the right-hand side, and the solved strengths are filled in
+    // below. From that point on it is the ONE place the velocity anywhere
+    // in this solve is defined (see FlowField).
+    FlowField field = MakeFlowField(sys, fc, {}, {}, externalField);
+    const Vec3 Vinf = field.Vinf;
 
     // One right-hand side for both row types: the normal velocity the
     // boundary condition prescribes, less what the oncoming flow already
@@ -495,24 +615,16 @@ struct PreparedSystem {
     const int unknowns = system.UnknownCount();
     std::vector<double> rhs(static_cast<std::size_t>(unknowns), 0.0);
     for (int i = 0; i < unknowns; ++i)
-        rhs[static_cast<std::size_t>(i)] = system.PrescribedNormalVelocity(i) -
-                                           Dot(kinematicVelocity(system.ControlPoint(i)), system.Normal(i));
+        rhs[static_cast<std::size_t>(i)] =
+            system.PrescribedNormalVelocity(i) -
+            Dot(field.KinematicVelocity(system.ControlPoint(i)), system.Normal(i));
 
     const std::vector<double> strengths = LuSolve(sys.Factorization, rhs);
     // Vortices first, then sources -- the ordering the blocking assumes.
     std::vector<double> gamma(strengths.begin(), strengths.begin() + N);
     std::vector<double> sigma(strengths.begin() + N, strengths.end());
-
-    // Velocity induced by the body's sources at an arbitrary point. Empty
-    // when there is no body, which is what collapses the coupled system
-    // back to the pure lifting-surface one.
-    auto bodyInducedVelocity = [&](const Vec3& p) {
-        Vec3 v(0, 0, 0);
-        for (int k = 0; k < NB; ++k)
-            v = v + SourcePanelVelocity(p, bodies[static_cast<std::size_t>(k)]) *
-                        sigma[static_cast<std::size_t>(k)];
-        return v;
-    };
+    field.gamma = gamma;
+    field.sigma = sigma;
 
     // --- near-field forces & moments ---
     double rho = fc.rho;
@@ -524,6 +636,7 @@ struct PreparedSystem {
     Vec3 totalMoment(0, 0, 0);
     SolveResult res;
     res.gamma = gamma;
+    res.sigma = sigma;
     std::vector<double> panelLift(N, 0.0);
 
     double S = 0.0;
@@ -537,18 +650,10 @@ struct PreparedSystem {
 
     for (int i = 0; i < N; ++i) {
         Vec3 mid = (panels[i].A + panels[i].B) * Half;
-        Vec3 vind(0, 0, 0);
-        for (int j = 0; j < N; ++j) {
-            if (j == i) {
-                vind = vind + HorseshoeVelocityNoBound(mid, panels[j], gamma[j], trail);
-            } else {
-                vind = vind + HorseshoeVelocity(mid, panels[j], gamma[j], trail);
-            }
-        }
         // The body's sources are part of the flow the bound vortex sits in,
         // so they enter Kutta-Joukowski here too -- this is the wing-body
         // interference (upwash/blockage) acting on the lifting surface.
-        Vec3 Vlocal = kinematicVelocity(mid) + vind + bodyInducedVelocity(mid);
+        Vec3 Vlocal = field.BoundMidpointVelocity(i);
         Vec3 dl = panels[i].B - panels[i].A;
         Vec3 F = Cross(Vlocal, dl) * (rho * gamma[i]); // Kutta-Joukowski, rho * gamma * (V x dl)
         totalForce = totalForce + F;
@@ -578,20 +683,9 @@ struct PreparedSystem {
         // condition, but there is no wall there for pressure to push on.
         // See Lattice::SourcePanel::Permeable.
         if (body.Permeable) continue;
-        Vec3 vind(0, 0, 0);
-        for (int j = 0; j < N; ++j)
-            vind = vind + HorseshoeVelocity(body.ControlPoint, panels[j], gamma[j], trail);
-        for (int m = 0; m < NB; ++m) {
-            if (m == k) {
-                // The panel's own contribution at its centroid is purely
-                // normal; the in-plane part cancels by symmetry.
-                vind = vind + body.Normal * (sigma[static_cast<std::size_t>(m)] * SourceSelfInfluence);
-            } else {
-                vind = vind + SourcePanelVelocity(body.ControlPoint, bodies[static_cast<std::size_t>(m)]) *
-                                  sigma[static_cast<std::size_t>(m)];
-            }
-        }
-        const Vec3 Vlocal = kinematicVelocity(body.ControlPoint) + vind;
+        // The panel's own contribution at its centroid is purely normal and
+        // analytic; FlowField::SourceSurfaceVelocity substitutes it.
+        const Vec3 Vlocal = field.SourceSurfaceVelocity(k);
 
         const double speedRatio = (fc.Vinf > CoeffDenomEps) ? Vlocal.Norm() / fc.Vinf : 0.0;
         const double cp = 1.0 - speedRatio * speedRatio;

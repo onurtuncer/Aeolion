@@ -1181,6 +1181,317 @@ slope below-but-near :math:`2\pi`, camber lifting at zero incidence,
 drag falling with Reynolds number, and the transpiration strictly
 DEcambering; ``TestViscousCoupling`` pins the coupled behavior.
 
+Stagnation points and attachment lines
+------------------------------------------
+
+Every integral boundary-layer method marches from an attachment point
+along an external streamline. Before one can be coupled to this solver,
+two questions have to be answered for the airframe at each flight
+condition: *where does the flow divide*, and *what is the edge velocity
+distribution measured from there*. Aeolion answers them differently for
+the body and for the wing, and the difference is not an implementation
+detail --- it follows from what each is made of.
+
+Why the lattice cannot answer, and the body can
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A source-panelled body is a real closed surface carrying a real velocity
+field. Its stagnation points exist in the solution and are *found*, not
+modelled.
+
+A vortex lattice is not a surface at all. It is a zero-thickness sheet on
+the camber line, and the flow never stops anywhere on it: its leading
+edge carries a square-root velocity singularity instead of a stagnation
+point. Any method that claims to locate a wing's stagnation point by
+searching the three-dimensional lattice field is producing a number from
+nothing. The attachment line has to come from the **section**, which
+requires thickness --- and thickness is exactly what the lattice
+discarded.
+
+So the division of labour is the one ``ViscousCoupling.h`` already
+establishes for lift: the lattice owns the induced field and therefore
+what each strip *sees*; the section owns its own shape and therefore what
+the flow *does* there.
+
+The flow field as a first-class object
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Both halves need to evaluate velocity after the solve, which the solver
+previously could not do --- the field lived inside ``SolveWithSystem`` as
+three inline loops and was discarded with the local variables.
+``Solver::FlowField`` states it once, and ``SolveWithSystem`` now goes
+through it, so there is no second definition to drift. It carries the
+converged :math:`\Gamma` and :math:`\sigma` (the latter now kept on
+``SolveResult``) and exposes three evaluations, two of which are special
+in ways that are exact rather than approximate:
+
+* ``Velocity(P)`` --- the plain field anywhere;
+* ``BoundMidpointVelocity(i)`` --- at a panel's own bound-vortex midpoint,
+  with that singular segment excluded, since Kutta--Joukowski needs the
+  flow the segment sits *in*;
+* ``SourceSurfaceVelocity(k)`` --- on a source panel's own face, where the
+  induced velocity is indeterminate and the analytic :math:`+\tfrac12`
+  sheet jump is substituted.
+
+Body: skin-flow topology (``Solver/SurfaceFlow.h``)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The body's surface flow is analysed in the **panelling's own**
+:math:`(\text{station}, \text{sector})` index space, not in a body-fixed
+:math:`(x, \phi)`. Recovering an azimuth as :math:`\operatorname{atan2}(z,
+y)` assumes the surface is swept about :math:`+x` through the origin,
+which is true of the fuselage, false of an offset duct, and *silently*
+false --- the streamline would simply curve wrongly.
+``Lattice::SourcePanel`` therefore states its own ``StationIndex`` and
+``SectorIndex`` and the analysis uses those; a surface that does not state
+a complete topology (the fuselage base cap, a disc stacked in rings at one
+station) is declined rather than guessed at.
+
+Index space needs a metric, which the grid carries:
+
+.. math::
+
+   \mathbf{a}_i = \frac{\partial \mathbf{P}}{\partial i}, \qquad
+   \mathbf{a}_j = \frac{\partial \mathbf{P}}{\partial j}, \qquad
+   \mathbf{V}_t = u\,\mathbf{a}_i + v\,\mathbf{a}_j , \qquad
+   \sqrt{g} = |\mathbf{a}_i \times \mathbf{a}_j| .
+
+The contravariant components :math:`(u, v)` are solved once per node from
+the :math:`2\times2` Gram system and stored, so tracing afterwards is
+plain interpolation. They vanish exactly where :math:`\mathbf{V}_t` does,
+which turns the search for stagnation points into a search for a common
+zero of two bilinear interpolants: cells where both change sign are
+candidates, and a two-dimensional Newton locates the zero inside one.
+
+**Classification.** A critical point's type is read from the Jacobian of
+the surface flow, and the eigenvalues are coordinate-independent --- at a
+point where the velocity vanishes, a change of surface coordinates maps
+:math:`J` to :math:`M J M^{-1}`, so node / saddle / focus and attachment /
+separation are invariant. Streamlines run along :math:`\mathbf{V}_t`, so
+flow *arrives* and spreads at an attachment point and its eigenvalues have
+positive real parts; a separation point is the reverse
+:cite:`lighthill1963,tobakPeake1982`.
+
+Two details decide whether this works in practice:
+
+*The Jacobian is not taken from* :math:`(u,v)`. Those are not smooth
+fields even where the flow is: on a body of revolution the azimuthal basis
+vector shrinks with the local radius, so :math:`v` carries a :math:`1/r`
+factor varying by tens of per cent across one cell near a nose.
+Interpolating it is fine; *differencing* it mixes the chart's own
+distortion into the answer, and a sphere's stagnation point --- exactly
+isotropic --- comes out with a 2:1 eigenvalue split. The strain rate is
+instead taken from the tangential velocity vector differenced in a local
+orthonormal frame, which makes :math:`J` a genuine physical strain rate in
+:math:`\mathrm{s}^{-1}`.
+
+*A focus needs real rotation.* An isotropic node sits exactly on the
+node/focus boundary where the discriminant vanishes, so a bare sign test
+reports a sphere's forward stagnation point as a spiral. A focus is
+declared only when :math:`|\mathrm{Im}\,\lambda|` reaches a quarter of
+:math:`|\mathrm{Re}\,\lambda|`, which reserves the name for the vortical
+separation it is meant to describe.
+
+**Streamlines.** Traced with RK4 in index space, so a step is a fixed
+fraction of a *cell* rather than of a metre. Near a critical point the
+field is :math:`\dot{\xi} = \lambda \xi`, which makes a step size scaled
+by :math:`1/|\mathbf{V}|` grow without bound; the step is therefore capped
+by displacement as well. Each traced line carries what a boundary layer
+consumes: arc length :math:`s`, edge speed :math:`U_e(s)`, and the
+streamline-spreading metric :math:`h(s)`, integrated from the surface
+divergence of the unit flow direction,
+
+.. math::
+
+   \frac{\mathrm{d}\ln h}{\mathrm{d}s} = \nabla_s \cdot \hat{\mathbf{e}},
+   \qquad \hat{\mathbf{e}} = \mathbf{V}_t / |\mathbf{V}_t| .
+
+:math:`h` is what separates the three-dimensional momentum-integral
+equation from its two-dimensional form,
+
+.. math::
+
+   \frac{\mathrm{d}\theta}{\mathrm{d}s}
+   + (H+2)\frac{\theta}{U_e}\frac{\mathrm{d}U_e}{\mathrm{d}s}
+   + \frac{\theta}{h}\frac{\mathrm{d}h}{\mathrm{d}s}
+   = \frac{c_f}{2} ,
+
+so it is carried rather than assumed :cite:`cebeciCousteix2005`.
+
+**The zero-incidence case.** At :math:`\alpha = \beta = 0` the stagnation
+point of a body of revolution sits on the nose apex, which is the
+collapsed forward edge of the first panel ring and not a control point at
+all --- so there is no interior zero to find. The analysis reports
+``AttachesUpstream`` rather than inventing one nearby. Any incidence moves
+the point onto the surface proper, where it is found normally.
+
+Wing: the section problem in the leading-edge-normal plane
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``Geometry/SectionContour.h`` reconstitutes the thick closed contour from
+the same CST coefficients the camber line came from, ordered trailing edge
+:math:`\to` lower :math:`\to` leading edge :math:`\to` upper :math:`\to`
+trailing edge (clockwise, interior on the right), cosine-spaced at both
+ends. The leading-edge radius comes free from the parameterization: with
+:math:`N_1 = 1/2` the surface behaves like :math:`A_0\sqrt{\psi}` near the
+nose, whose vertex radius is
+
+.. math::
+
+   r_{LE}/c = A_0^2 / 2 .
+
+``Solver/SectionPanelMethod.h`` solves that contour by the classical
+Hess--Smith construction :cite:`hessSmith1962,moran1984`: :math:`N`
+constant-strength source panels carrying the thickness plus one constant
+vortex strength over the whole surface carrying the circulation, against
+:math:`N` flow-tangency equations and one Kutta condition, factorized by
+the same LAPACK-backed dense solve the lattice uses. Sources alone cannot
+lift and a distributed vortex alone cannot make a closed body's thickness;
+the single *shared* vortex strength is what keeps the system square with
+exactly one Kutta condition.
+
+**Where the stagnation point actually lands.** Measured along the surface
+from the leading edge, the offset follows
+
+.. math::
+
+   \frac{s_{stag}}{c} \;\sim\; \sqrt{\frac{2\,r_{LE}}{c}}\; \alpha_e ,
+
+with :math:`\alpha_e` the incidence from the zero-lift line --- the
+*square root* of the nose radius. This is worth stating plainly because
+the intuitive reading is wrong and wrong by an order of magnitude. A round
+nose does **not** behave like an isolated cylinder in a stream at angle
+:math:`\alpha`, which would give :math:`s \sim r_{LE}\alpha`; it sits
+inside the leading-edge singularity of the outer thin-airfoil solution,
+where :math:`u \sim \alpha\sqrt{c/s}`. Matching that against the parabolic
+nose's own surface speed :math:`\sqrt{s/r_{LE}}` produces the square root.
+For a NACA 0012 at four degrees the cylinder reading gives
+:math:`0.001\,c` against a true :math:`0.013\,c`. That gap is the argument
+for solving the section rather than correlating it, and
+``TestSectionPanelMethod`` asserts the collapse across a twelvefold range
+of nose radius --- which no fitted constant can fake.
+
+**The leading-edge-normal plane, and why sideslip demands it.**
+``Solver/AttachmentLine.h`` does not pose the section streamwise. Sections
+in the handoff are cut at a span fraction along the flight direction,
+which is the wrong plane once there is sweep. Infinite-swept-wing theory
+splits the flow near a swept leading edge into a two-dimensional problem
+in the plane *normal* to it plus a spanwise velocity that is merely
+convected; the normal problem places the attachment line, and the
+spanwise velocity decides whether it stays laminar. The streamwise
+contour is mapped into that plane by
+
+.. math::
+
+   \psi_n = \psi, \qquad
+   \zeta_n = \zeta / \cos\Lambda, \qquad
+   r_{LE,n} = r_{LE} / \cos^2\Lambda ,
+
+once renormalized by the shortened normal chord :math:`c_n = c\cos\Lambda`
+--- the section gets thicker and its nose blunter.
+
+Sideslip is what makes this load-bearing. The **effective** sweep,
+
+.. math::
+
+   \Lambda_{\text{eff}} = \arcsin\!\left(
+     \frac{|\mathbf{V} \cdot \hat{\mathbf{e}}_{LE}|}{|\mathbf{V}|} \right),
+
+is not the geometric sweep once :math:`\beta \neq 0`, and it moves in
+*opposite* directions on the two wings: at positive sideslip one leading
+edge is swept further from the flow and the other is raked toward it. The
+attachment line therefore shifts asymmetrically and the two wings differ
+in how close they are to leading-edge contamination. A streamwise
+formulation returns a symmetric answer to an asymmetric question, which is
+precisely the failure ``TestAttachmentLine`` is built to catch --- it
+checks both that a swept wing *does* go asymmetric at
+:math:`\beta = 10^\circ` and that an unswept one does *not*.
+
+A swept wing's leading edge is not differentiable at the root: it runs aft
+going outboard on both sides, so a central difference of leading-edge
+position across the centreline returns very nearly an unswept direction
+and hands the two innermost strips about half the true sweep. The break is
+detected and the one-sided direction away from it is used, with the
+station flagged ``AtKink`` --- the root is exactly where the disturbance
+that contaminates an attachment line comes from, so this is information
+rather than a caveat.
+
+Boundary-layer initial conditions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Locating the attachment line is half of what a coupling needs; the other
+half is the state the march starts in, and both come out of the same
+solve. The strain rate :math:`\mathrm{d}U_e/\mathrm{d}s` at the
+attachment point sets the chordwise layer's starting momentum thickness
+through Thwaites' stagnation value,
+
+.. math::
+
+   \theta_0^2 = 0.075\, \frac{\nu}{\mathrm{d}U_e/\mathrm{d}s} ,
+
+which is finite and **not** the zero a flat-plate start assumes --- the
+error matters most exactly where the layer is thinnest and the transition
+correlations are most sensitive. The two ``SurfaceRun`` objects give
+:math:`U_e(s)` on each surface measured from the attachment point; note
+that the upper run *begins* on the lower surface at positive incidence and
+wraps around the nose, and that wrap is real run length, not an artefact
+to be trimmed.
+
+The swept attachment line has its own boundary layer, with length scale
+and momentum thickness
+
+.. math::
+
+   \eta = \sqrt{\nu \big/ (\mathrm{d}U_e/\mathrm{d}s)} , \qquad
+   \theta_{AL} = 0.404\,\eta ,
+
+and state governed by Poll's attachment-line Reynolds number
+:cite:`poll1979`
+
+.. math::
+
+   \bar{R} = \frac{W_e\, \eta}{\nu} ,
+
+with :math:`W_e` the velocity along the leading edge. The two thresholds
+mean different things. Below :math:`\bar{R} \approx 245` a disturbance
+introduced at the root --- a fuselage junction, a trip, a de-icing boot
+--- decays as it travels outboard; above it the disturbance propagates and
+**contaminates** the entire leading edge, turning the whole wing turbulent
+regardless of what the chordwise flow would have done. Above
+:math:`\bar{R} \approx 583` the attachment line goes turbulent unaided.
+Because :math:`W_e` follows the effective sweep, :math:`\bar{R}` is
+asymmetric in sideslip: one wing can be contaminated while the other is
+not, at the same instant, on the same aircraft.
+
+Validation
+~~~~~~~~~~~~
+
+Both halves are pinned against closed-form answers rather than against
+themselves.
+
+``TestSurfaceFlow`` uses the sphere, whose surface velocity is exactly
+:math:`\mathbf{V}_t = \tfrac32 (\mathbf{U} - (\mathbf{U}\cdot
+\hat{\mathbf{n}})\hat{\mathbf{n}})`. It therefore vanishes precisely where
+the outward normal is parallel to the freestream --- an attachment point
+at :math:`\hat{\mathbf{n}} = -\hat{\mathbf{U}}` and a separation point at
+:math:`\hat{\mathbf{n}} = +\hat{\mathbf{U}}` --- at *any* :math:`\alpha`
+and :math:`\beta`, which makes it a complete test of the attitude sweep
+rather than of one condition. The strain rate is likewise exact
+(:math:`\operatorname{tr} J = 3U/a`, held to 15%, converging to about 4%
+by :math:`N = 48`), and the spreading metric must follow
+:math:`h \propto \sin\theta`. A prolate spheroid adds the symmetry
+statement that catches a sign error in the attitude convention: for any
+body of revolution about :math:`x`, the attachment point must lie on the
+windward meridian
+:math:`\phi = \operatorname{atan2}(-\sin\alpha\cos\beta,\,-\sin\beta)`.
+
+``TestSectionPanelMethod`` feeds the solver a circle instead of an
+airfoil, where it must reproduce :math:`|V| = 2U\sin\theta` and
+:math:`C_p = 1 - 4\sin^2\theta` with zero circulation --- a result owing
+nothing to airfoil theory --- then checks the lift slope, the
+:math:`\sqrt{r_{LE}}` scaling above, and that the two boundary-layer runs
+between them cover the contour exactly once.
+
 Viscous drag buildup (Aeolion::DragEstimate)
 -------------------------------------------------
 
