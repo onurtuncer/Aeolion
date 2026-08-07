@@ -6,6 +6,21 @@
 marked inline (author block, paper number, intro literature review,
 regenerated result numbers, acknowledgments)
 
+**Method justification.** Sec. II (*Fidelity Tier and Method
+Rationale*) places the method on the cost–accuracy ladder the rotor
+literature has settled on, and each Methods section carries a
+paragraph stating the warrant for its modelling choice and what that
+choice forfeits. The supporting references were filtered on venue:
+archival journals with editorial standing only (AIAA Journal, Journal
+of Aircraft, JPP, JFM, Progress in Aerospace Sciences, Aerospace
+Science and Technology, Wind Energy, JSV, Flow), plus two non-journal
+sources kept on merit — the VFS Forum quasi-prescribed-wake paper
+(closest prior art for the load-consistent helix) and Graf's thesis
+(the standard reference for ducted-fan UAV control devices).
+Low-selectivity conference-series venues were excluded even where
+topically apt; see the selection note at the top of the
+method-justification block in `references.bib`.
+
 **Figures:** `figures/lattice-views.pdf` is rendered from the solver's
 own output, not screenshotted: `aeolion_lattice_export`
 (app/LatticeFigureExport.cpp) solves the paper's reference case (the
