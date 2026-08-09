@@ -2,8 +2,31 @@
 
 **Venue:** AIAA Journal of Aircraft
 **Type:** full research article
-**Status:** drafting — `paper.tex` exists, Sections I–V written,
-Section VI (Application) is a stub
+**Status:** drafting — `paper.tex` complete through Section VI; author
+block, acknowledgments and external validation remain
+
+**Figures/data pipeline.** Every number and figure in Section VI comes
+from the solver's own output — no screenshots, and no hand-typed tables:
+
+```
+aeolion_attachment_sweep tests/Data/AeolionGeometryHandoff-1.8.0.json \
+    papers/journal-of-aircraft/figures/attachment-sweep.json
+cd papers/journal-of-aircraft/figures
+python render-attachment-figures.py     # the four physics figures
+python render-coefficient-tables.py     # tables/*.tex + separation-boundary
+cd .. && pdflatex paper && bibtex paper && pdflatex paper && pdflatex paper
+```
+
+`aeolion_attachment_sweep` (app/AttachmentSweepExport.cpp) solves the
+α × β matrix on the coupled system and exports coefficients, stability
+derivatives, the per-strip attachment line, the separation survey and the
+fuselage skin-flow topology. The intermediate `attachment-sweep.json` is
+**not** tracked (the repo's `.gitignore` excludes `*.json`) — regenerate it
+with the command above; the same convention the SciTech paper's
+`lattice-solution.json` follows. The tables under `figures/tables/` are
+generated and `\input`-ed by `paper.tex`, so a stale table is impossible:
+rerun the scripts and the paper follows. The sweep takes ~20 minutes (55
+attitudes × 13 solves for the central-difference derivatives).
 
 ## Scope
 
@@ -56,13 +79,21 @@ Official AIAA LaTeX package, pulled unmodified from CTAN
 
 ## Open items
 
-- [ ] **Section VI, Application** — the substantive gap. Needs an α/β
-      sweep on `tests/Data/AeolionGeometryHandoff-1.8.0.json`, which
-      needs `panelbuilder` and therefore vcpkg. Planned content is a
-      comment block in `paper.tex`; see `TODO.md` at the repo root.
-- [ ] Figures: attachment line vs. span across α and β; `Rbar` against
-      the 245/583 thresholds; traced fuselage surface streamlines
-      coloured by Cp.
+- [x] **Section VI, Application** — written against the α × β matrix
+      (α ∈ [−4, 16]°, β ∈ [−10, 10]°) on
+      `tests/Data/AeolionGeometryHandoff-1.8.0.json`: attachment line,
+      separation boundary, and a coefficient/derivative table restricted
+      to the attached attitudes (see the pipeline note above).
+- [x] Figures: attachment line vs. span across α; effective sweep and
+      `Rbar` at β = ±10° against the 245/583 thresholds; fuselage
+      attachment-node migration; traced fuselage surface streamlines
+      coloured by Cp with the wing lattice; separation boundary.
+- [ ] **`CDi` is not trustworthy here** and Sec. VI.E says so: the
+      near-field force integration collects a spurious thrust from the
+      discretized closed bodies, so CDi goes negative at zero lift and the
+      apparent Oswald efficiency is 1.53 (impossible). A Trefftz-plane
+      integration would fix it; see `TODO.md` at the repo root. CL and the
+      moments are unaffected.
 - [ ] Author block — co-authors (the SciTech draft carries three),
       departments, emails, AIAA member grades; acknowledgments/funding.
 - [ ] Validation beyond closed-form verification. Sections V's checks are

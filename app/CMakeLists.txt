@@ -13,3 +13,10 @@ target_link_libraries(aeolion_geometry PRIVATE aeolion aeolion_logger)
 # papers/aiaa-scitech/figures/.
 add_executable(aeolion_lattice_export LatticeFigureExport.cpp)
 target_link_libraries(aeolion_lattice_export PRIVATE aeolion aeolion_panelbuilder)
+
+# Runs the Journal of Aircraft paper's alpha/beta application sweep on the
+# real geometry handoff (wing attachment line + fuselage skin-flow
+# topology) and exports it as JSON for the figure renderer in
+# papers/journal-of-aircraft/figures/.
+add_executable(aeolion_attachment_sweep AttachmentSweepExport.cpp)
+target_link_libraries(aeolion_attachment_sweep PRIVATE aeolion aeolion_panelbuilder)
