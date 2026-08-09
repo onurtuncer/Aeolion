@@ -62,6 +62,66 @@ int main() {
         first = false;
     }
 
+    // --- stability derivatives: the nondimensional rate scaling ------------
+    // The per-rad/s derivatives and their reduced-rate counterparts differ
+    // by 2V/length, and getting that factor upside down is invisible in a
+    // sign check while being wrong by (2V/b)^2 -- a factor of two thousand
+    // at these numbers. So the reduced-rate derivatives are pinned against
+    // textbook values, which is the only form that HAS textbook values:
+    // roll damping of a plain rectangular wing sits near Cl_p = -0.45, and
+    // an unswept wing at zero incidence has essentially no yaw-due-to-roll.
+    {
+        WingParams w;
+        w.Span = 6.0; w.RootChord = 1.0; w.TipChord = 1.0;
+        w.NPanelsSemiSpan = 20;
+        FreestreamConditions fc; fc.Vinf = 25.0; fc.alphaDeg = 2.0; fc.rho = 1.225;
+
+        std::vector<Panel> panels = BuildWing(w);
+        for (auto& p : panels) p.Surface = "wing";
+        double S = 0.0;
+        for (const auto& p : panels) S += p.PlanformArea;
+        ReferenceGeometry ref;
+        ref.Area = S; ref.Span = w.Span; ref.Chord = S / w.Span;
+
+        StabilityDerivatives d = ComputeDerivatives(panels, fc, ref, 50.0 * w.Span);
+        std::cout << "AR=6 rectangular: CL_alpha=" << d.CL_alpha << "  Cl_p(nd)=" << d.Croll_p_nd
+                  << "  Cm_q(nd)=" << d.Cm_q_nd << "\n";
+
+        CHECK(d.CL_alpha > 4.0 && d.CL_alpha < 5.5,
+              "AR=6 lift slope should sit near 4.5-5 per rad, got " << d.CL_alpha);
+        CHECK(d.Croll_p_nd < -0.2 && d.Croll_p_nd > -0.8,
+              "AR=6 roll damping should sit near Cl_p = -0.45, got " << d.Croll_p_nd
+                  << " (a value near -1e-4 means the reduced-rate factor is inverted)");
+
+        // The reduced-rate derivative is the per-rad/s one times 2V/length.
+        // Stating it as an identity is what stops the factor being "fixed"
+        // back to its reciprocal by inspection.
+        const double expected = d.Croll_p * (2.0 * fc.Vinf / ref.Span);
+        CHECK(std::fabs(d.Croll_p_nd - expected) < 1e-9 * std::fabs(expected) + 1e-12,
+              "Croll_p_nd must equal Croll_p * 2V/b, got " << d.Croll_p_nd << " against "
+                                                            << expected);
+
+        // Pitch damping is EXACTLY zero here, and that is the correct
+        // answer rather than a missing term. With one chordwise row every
+        // bound vortex lies on the quarter-chord line and every control
+        // point a half chord behind it, so a pitch rate about a reference
+        // point on that line adds the SAME upwash at every control point:
+        // a uniform change in effective incidence, which moves CL but
+        // exerts no moment about the line it is applied on. Pitch damping
+        // needs either a chordwise-resolved lattice or a reference point
+        // off the quarter chord -- checked next.
+        CHECK(std::fabs(d.Cm_q_nd) < 1e-9,
+              "a single-row wing cannot damp pitch about its own quarter chord, got "
+                  << d.Cm_q_nd);
+
+        FreestreamConditions offset = fc;
+        offset.RefPoint = Vec3(2.0, 0.0, 0.0); // two chords aft of the quarter-chord line
+        StabilityDerivatives shifted = ComputeDerivatives(panels, offset, ref, 50.0 * w.Span);
+        std::cout << "  about a point 2c aft: Cm_q(nd)=" << shifted.Cm_q_nd << "\n";
+        CHECK(shifted.Cm_q_nd < 0.0,
+              "with a real moment arm, pitch damping must be negative, got " << shifted.Cm_q_nd);
+    }
+
     if (failures == 0) { std::cout << "PASS: TestSolverCore\n"; return 0; }
     std::cerr << failures << " check(s) failed in TestSolverCore\n";
     return 1;

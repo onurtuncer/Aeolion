@@ -24,9 +24,18 @@ struct StabilityDerivatives {
     double CY_p = 0, Croll_p = 0, Cn_p = 0;                ///< Per rad/s.
     double CY_r = 0, Croll_r = 0, Cn_r = 0;                ///< Per rad/s.
 
-    double CL_q_nd = 0, Cm_q_nd = 0;                       ///< x cbar/(2V).
-    double Croll_p_nd = 0, Cn_p_nd = 0;                    ///< x b/(2V).
-    double Croll_r_nd = 0, Cn_r_nd = 0;                    ///< x b/(2V).
+    // The CONVENTIONAL nondimensional rate derivatives: the response per
+    // unit reduced rate, C_x_q = dC_x/d(q cbar/(2V)) and likewise
+    // dC_x/d(p b/(2V)), dC_x/d(r b/(2V)). Since the reduced rate is the
+    // rate TIMES length/(2V), converting from the per-rad/s derivative
+    // above divides by that factor -- i.e. multiplies by 2V/length.
+    // Getting this backwards scales roll damping by (2V/b)^2, which at
+    // 25 m/s on a 1 m span is a factor of two thousand: it turns a
+    // textbook Cl_p = -0.45 into -0.0002 and reads as an aircraft with no
+    // roll damping at all.
+    double CL_q_nd = 0, Cm_q_nd = 0;                       ///< per q cbar/(2V).
+    double Croll_p_nd = 0, Cn_p_nd = 0;                    ///< per p b/(2V).
+    double Croll_r_nd = 0, Cn_r_nd = 0;                    ///< per r b/(2V).
 };
 
 } // namespace Aeolion::Solver

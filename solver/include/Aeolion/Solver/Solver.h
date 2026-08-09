@@ -855,8 +855,8 @@ struct FlowField {
         d.CL_q = (rp.CL - rm.CL) / (Two * dq);
         d.CDi_q = (rp.CDi - rm.CDi) / (Two * dq);
         d.Cm_q = (rp.Cm - rm.Cm) / (Two * dq);
-        d.CL_q_nd = d.CL_q * (cbar / (Two * base.Vinf));
-        d.Cm_q_nd = d.Cm_q * (cbar / (Two * base.Vinf));
+        d.CL_q_nd = d.CL_q * (Two * base.Vinf / cbar);
+        d.Cm_q_nd = d.Cm_q * (Two * base.Vinf / cbar);
     }
 
     double dp = rateStepFrac * base.Vinf / b;
@@ -868,8 +868,8 @@ struct FlowField {
         d.CY_p = (rp.CY - rm.CY) / (Two * dp);
         d.Croll_p = (rp.Croll - rm.Croll) / (Two * dp);
         d.Cn_p = (rp.Cn - rm.Cn) / (Two * dp);
-        d.Croll_p_nd = d.Croll_p * (b / (Two * base.Vinf));
-        d.Cn_p_nd = d.Cn_p * (b / (Two * base.Vinf));
+        d.Croll_p_nd = d.Croll_p * (Two * base.Vinf / b);
+        d.Cn_p_nd = d.Cn_p * (Two * base.Vinf / b);
     }
 
     double dr = rateStepFrac * base.Vinf / b;
@@ -881,8 +881,8 @@ struct FlowField {
         d.CY_r = (rp.CY - rm.CY) / (Two * dr);
         d.Croll_r = (rp.Croll - rm.Croll) / (Two * dr);
         d.Cn_r = (rp.Cn - rm.Cn) / (Two * dr);
-        d.Croll_r_nd = d.Croll_r * (b / (Two * base.Vinf));
-        d.Cn_r_nd = d.Cn_r * (b / (Two * base.Vinf));
+        d.Croll_r_nd = d.Croll_r * (Two * base.Vinf / b);
+        d.Cn_r_nd = d.Cn_r * (Two * base.Vinf / b);
     }
 
     return d;
