@@ -944,28 +944,44 @@ it has a textbook value: $C_{l_p}$ comes out at $-0.458$ at $\alpha = 0$
 and drifts only to $-0.440$ by $16^\circ$, against the standard result
 near $-0.45$ for an unswept wing of this aspect ratio.
 
-$C_{D_i}$ is reported in Table~\ref{tab:coefficients} but should not be
-read as an induced-drag prediction for this configuration, and the table
-itself says why: it is negative at $\alpha = -4^\circ$, where the lift is
-essentially zero and induced drag must therefore vanish. Fitting the
-$\beta = 0$ column to $C_{D_i} = C_{D_i,0} + k C_L^2$ returns
-$C_{D_i,0} = -0.0037$ and $k = 0.0347$; the latter implies a span
-efficiency of 1.53, which is not merely optimistic but impossible, since
-$e \leq 1$ for any planar wing. Both symptoms have the same origin. Forces
-here are integrated in the NEAR field, by applying Kutta--Joukowski at each
-bound-vortex midpoint, and on a coupled configuration that integration
-also collects a contribution from the closed source bodies. A closed body
-in potential flow carries no net force exactly, but a \emph{discretized}
-one does, and here the residual acts as a thrust that cancels part of the
-wing's induced drag --- enough to push the apparent $e$ above unity. Lift
-and the moments are unaffected, since the same cancellation does not
-apply to them, and the $C_L$ column is consistent with the lift-slope and
-roll-damping checks above. Obtaining a trustworthy $C_{D_i}$ on a coupled
-configuration requires a Trefftz-plane integration over the wake, which
-measures the wake's kinetic energy rather than the near-field forces and
-is insensitive to the body's spurious residual. That is not implemented
-here, and quoting the near-field number without this paragraph would be
-the more serious omission.
+$C_{D_i}$ is reported twice in Table~\ref{tab:coefficients}, and the
+reason is worth setting out because the near-field column is unusable on
+this configuration in a way that is easy to miss.
+
+Forces are ordinarily integrated in the NEAR field here, by applying
+Kutta--Joukowski at each bound-vortex midpoint. On a wing alone that is
+sound. On a coupled configuration the same integration also collects a
+contribution from the closed source bodies, and while a closed body in
+potential flow carries no net force exactly, a \emph{discretized} one
+does. That residual is negligible beside lift --- which is why $C_L$ and
+the moments are unaffected, and consistent with the lift-slope and
+roll-damping checks above --- and comparable with induced drag, which is a
+far smaller number. It acts as a thrust. The two symptoms follow: the
+near-field $C_{D_i}$ is \emph{negative} at $\alpha = -4^\circ$, where the
+lift is essentially zero and induced drag must vanish, and fitting the
+$\beta = 0$ column to $C_{D_i} = C_{D_i,0} + kC_L^2$ returns
+$C_{D_i,0} = -0.0037$ with a $k$ implying a span efficiency of 1.53 ---
+not merely optimistic but impossible, since $e \leq 1$ for any planar
+wing.
+
+The far-field column removes both. A Trefftz-plane integration measures
+the crossflow kinetic energy the wake carries off, and a closed body
+sheds no wake: its source distribution has no trailing vorticity and puts
+nothing through a plane at downstream infinity. The body's residual is
+therefore excluded by construction rather than by a correction that would
+have to be calibrated. The zero-lift intercept falls from $-0.0037$ to
+$-0.0003$, and $C_{D_i}$ is positive at every attitude in the matrix.
+
+Span efficiency then requires one care in its formation, which is worth
+stating because getting it wrong looks exactly like a defect in the
+integral. The far-field drag belongs to the \emph{lifting system}, since
+only the lifting system sheds a wake, so it must be compared against the
+lifting system's lift. On this airframe the fuselage carries about 9\% of
+the total, and using the configuration $C_L$ returns $e = 1.17$ --- still
+above the bound --- while the wing's own lift returns $e = 0.965$, with
+per-condition values between 0.96 and 0.99 across the attached range. That
+is the physically admissible answer, and it is the one the method was
+always producing; only the comparison was mismatched.
 
 $C_{m_q}$ deserves a caveat rather than a comparison. It is reported as
 roughly $-0.20$, and that value is a floor rather than an estimate. The

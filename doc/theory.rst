@@ -1580,6 +1580,62 @@ number and length, which must neither bubble nor separate --- without it,
 the Howarth test would also be passed by code that reports separation
 eagerly.
 
+Induced drag from the far field
+---------------------------------
+
+``Solver/TrefftzPlane.h`` measures induced drag as the crossflow kinetic
+energy the wake carries off, rather than as the streamwise component of
+the near-field forces.
+
+The near-field route -- Kutta--Joukowski at each bound-vortex midpoint --
+gives lift and induced drag together and needs no wake integration, which
+is why it is the default. On a **wing** it is sound. On a **coupled**
+configuration it is not, and the failure is not subtle: ``CDi`` comes out
+negative at zero lift, and fitting :math:`C_{D_i} = C_{D_i,0} + kC_L^2`
+over an alpha sweep of the airframe in ``tests/Data`` implies a span
+efficiency of 1.53, where :math:`e \leq 1` for any planar wing.
+
+A closed body in potential flow carries no net force exactly --
+d'Alembert -- but a *discretized* one does. That residual is negligible
+beside lift, which is why ``CL`` and the moments are unaffected, and
+comparable with induced drag, which is a far smaller number. It happens to
+act as a thrust.
+
+The Trefftz plane measures something the body cannot contribute to. A
+closed non-lifting body sheds no wake: its source distribution has no
+trailing vorticity and puts nothing through a plane at downstream
+infinity. Only the lifting surfaces' trailing vorticity crosses it, so the
+body's residual is excluded by construction rather than by a calibrated
+correction. The classical result reduces to
+
+.. math::
+
+   D_i = -\frac{\rho}{2}\int \Gamma(y)\, w_T(y)\, \mathrm{d}y ,
+
+with :math:`w_T` the downwash induced *in the plane* -- twice that at the
+lifting line, since the wake there is doubly infinite rather than
+semi-infinite. That factor of two is what makes this more than the
+near-field calculation rearranged.
+
+Two implementation points carry the sign and the topology. A chordwise
+stack sharing a ``StripIndex`` sheds **one** net filament pair, its
+interior legs cancelling, so circulations are summed per strip before the
+trace is built. And the shed signs come from the horseshoe circuit rather
+than from intuition: ``Solver.h`` traverses inf → A → B → inf, so the
+filament at A is traversed in :math:`-x` and the one at B in :math:`+x`,
+and the plane looking downstream sees them as :math:`-\Gamma` and
+:math:`+\Gamma`. Reversing that leaves every magnitude exactly right --
+elliptic loading still returns :math:`|e| = 1` -- and flips the drag
+negative, which looks precisely like the defect being fixed.
+
+**Which lift.** The far-field drag belongs to the lifting system, since
+only the lifting system sheds a wake, so a span efficiency formed from it
+needs the lifting system's lift. On the airframe in ``tests/Data`` the
+fuselage carries about 9% of the total, and using the configuration
+:math:`C_L` returns :math:`e = 1.17` -- still above the bound -- against
+:math:`0.965` for the wing's own lift. The integral is the same either
+way; only the comparison differs.
+
 Disk induction: what a rotor does upstream of itself
 -----------------------------------------------------
 

@@ -196,7 +196,7 @@ pinned by any test):
    ~0.48 m, about one body length, inflating Cm_α by an order of
    magnitude. Mine, introduced in this branch.
 
-**One real defect found and NOT fixed — worth its own branch:**
+**One real defect found — NOW FIXED on `fix/trefftz-induced-drag`:**
 
 `SolveResult::CDi` is not trustworthy on a coupled (wing + closed body)
 configuration. Forces are integrated in the near field (Kutta-Joukowski
@@ -212,13 +212,30 @@ residual acts as a thrust:
   (e ≤ 1 for any planar wing).
 
 CL and the moments are unaffected — the lift slope (4.86) and roll damping
-(−0.458) both check out against theory. The fix is a **Trefftz-plane
-integration** over the wake, which measures the wake's kinetic energy and
-is blind to the body's near-field residual. `Solver.h` explicitly notes it
-does induced drag "without a separate Trefftz-plane integration"; that is
-fine for a wing alone and not fine once a closed body is in the system.
-Documented as a stated limitation in `papers/journal-of-aircraft/paper.tex`
-Sec. VI.E rather than papered over.
+(−0.458) both check out against theory.
+
+**Fixed** by `solver/include/Aeolion/Solver/TrefftzPlane.h`: a far-field
+integration over the wake trace, blind to the body's near-field residual
+because a closed body sheds no wake at all. On the coupled airframe the
+zero-lift intercept falls −0.0037 → −0.0003 and CDi is positive at every
+attitude. `TestTrefftzPlane` pins it on elliptic loading (e = 1 and
+CDi = CL²/(πAR)), the e ≤ 1 bound across five distributions, exact
+cancellation of chordwise stacks, and agreement with the near-field
+method to 0.4% on a wing alone.
+
+**The gotcha that cost an hour, so it is written down:** span efficiency
+must be formed with the LIFTING SYSTEM's lift, not the configuration's.
+Only the lifting system sheds a wake, so the far-field drag is its alone.
+The fuselage here carries ~9% of the lift, and comparing the whole CL
+against a wing-only CDi gives e = 1.17 — still above the bound, and
+looking exactly like a defect in a perfectly sound integral. Against the
+wing's own lift (`SolveResult::LiftBySurface["wing"]`) it is 0.965, with
+per-condition values 0.96–0.99.
+
+Still open: `SolveResult::CDi` remains the near-field number, with the
+Trefftz result computed alongside rather than replacing it. Making the
+far-field value the default is a behaviour change to a tested field and
+wants its own decision.
 
 ### 3b. Third paper — aft-fan inflow induction (scoped 2026-08-09)
 
