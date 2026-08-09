@@ -117,6 +117,48 @@ Three things fall out, and together they are the paper:
 The magnitudes are inviscid, one-way-coupled induction. They set the
 expectation; the deliverable is still Δα_sep from the separation march.
 
+## First coupled result (2026-08-09) — and a problem
+
+`aeolion_attachment_sweep` now takes optional thrust [N] and airspeed
+[m/s] arguments and applies `DiskInductionField` as the solve's
+`externalField`. At the transition point V = 12 m/s, T = 25 N
+(v_i = 14.3 m/s), against the same sweep unpowered:
+
+| α | ΔC_L | separated span off → on | separation x/c_n off → on |
+|---|---|---|---|
+| 6 | +0.026 | 64% → 59% | 0.853 → 0.866 |
+| 8 | +0.028 | 100% → 100% | 0.810 → 0.828 |
+| 12 | +0.032 | 100% → 100% | 0.653 → 0.698 |
+| 16 | +0.036 | 100% → 100% | 0.468 → 0.498 |
+
+The sign is right everywhere — lift up, separation aft — and at cruise
+speed the same comparison gives roughly a third of this, which is the
+expected scaling with v_i/V.
+
+**But the separation ONSET does not move.** It is α = 6° powered and
+unpowered. The fan pushes the separation point aft *once the wing has
+separated*; it does not delay the incidence at which separation begins.
+That is a real result and it is not the one the paper was scoped around,
+so it needs confronting rather than presenting as Δα_sep ≈ 0:
+
+- The onset is set by the station that separates *first*, and the
+  criterion is a threshold crossing (x/c < 0.90). A 1–4% chord shift
+  moves the crossing within an α interval but not across one — the α grid
+  is 2° and may simply be too coarse to resolve a sub-degree shift.
+  **Refining α near onset is the first thing to try.**
+- The onset station is inboard at |2y/b| ≈ 0.15, which is where the
+  induction is strongest, so the mechanism is acting in the right place;
+  the question is only whether it is worth a degree.
+- Δα_sep may genuinely be small at these thrust settings, in which case
+  the honest paper reports the *separation-extent* shift rather than an
+  onset shift, and the headline becomes "the fan does not delay stall
+  onset but substantially reduces separated area once stalled" — still a
+  result, and a more surprising one.
+
+Either way the deliverable needs restating from "Δα_sep" to something the
+data can actually support. Do not write the abstract before the refined-α
+sweep settles this.
+
 ## Scope
 
 - upstream induction of the ducted fan, applied to the coupled
