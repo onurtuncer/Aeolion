@@ -213,7 +213,6 @@ struct SectionPanels {
     if (n < MinSectionPanels) return solution;
 
     const std::size_t nn = static_cast<std::size_t>(n);
-    const double cosAlpha = std::cos(alphaRad), sinAlpha = std::sin(alphaRad);
     const double inv2Pi = 1.0 / (2.0 * std::numbers::pi);
 
     // --- influence coefficients -----------------------------------------------

@@ -226,6 +226,43 @@ centreline, and a straight leading edge must not be reported as kinked.
 With no section data there is no thickness, so no stagnation point may be
 claimed at all.
 
+TestAttachmentBoundaryLayer
+---------------------------
+
+The separation march (``Solver::MarchSurfaceRun``,
+``Solver::SurveySeparation``), pinned against closed-form answers rather
+than against itself.
+
+A **flat plate** has no pressure gradient, so Thwaites must give
+:math:`\theta = \sqrt{0.45\,s/Re}` -- within 1% of Blasius'
+:math:`0.664\,s/\sqrt{Re_s}`, the known bias of Thwaites' constant -- with
+:math:`H = 2.61` throughout and no separation anywhere.
+
+**Howarth's linearly retarded flow** :math:`U_e = U_0(1 - s/L)` is the
+textbook test of a Thwaites march: laminar separation must land at
+:math:`s/L = 0.123` (exact: 0.120). Since the march treats that crossing
+as a bubble and transitions there, the checked quantity is the bubble
+location. It must also be **mesh-converged** -- 2000 against 8000 stations
+must agree to :math:`10^{-3}` -- which a crossing quantized to whole
+stations would fail, and the reattached turbulent layer must then separate
+again in a gradient that adverse, downstream of the bubble that triggered
+it.
+
+The **stagnation start** is the check that the march begins where it
+claims to: a run with :math:`U_e = a s` must produce
+:math:`\theta_0 = \sqrt{0.075/(Re\,a)}` with no seed supplied, across a
+sixteenfold range of strain rate, and hold it through the constant-strain
+region. That is the same number ``StagnationMomentumThickness`` computes
+from the Hiemenz similarity solution by an entirely different route. This
+test is what caught the trapezoid rule's factor-of-three error on the
+first Thwaites step (see theory.rst).
+
+The control is an **accelerating** flow at the same Reynolds number and
+length, which must neither bubble nor separate; without it the Howarth
+test would also be passed by code that reports separation eagerly. Empty
+runs, runs below ``MinMarchStations``, and a zero Reynolds number are all
+declined rather than answered.
+
 TestPropellerLattice
 --------------------
 

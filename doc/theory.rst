@@ -1463,11 +1463,84 @@ Because :math:`W_e` follows the effective sweep, :math:`\bar{R}` is
 asymmetric in sideslip: one wing can be contaminated while the other is
 not, at the same instant, on the same aircraft.
 
+Marching to separation
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+``Solver/AttachmentBoundaryLayer.h`` closes the loop the section above
+opens: it consumes a converged attachment line and marches each strip's
+two ``SurfaceRun`` objects to report where the layer separates. It is a
+**diagnostic**, not a coupling --- nothing iterates on it and it feeds
+nothing back into the lattice --- which is what licenses it to do
+something ``Solver/SectionBoundaryLayer.h`` deliberately must not: latch
+the first separation crossing and stop. That module marches inside two
+nested fixed points and so ramps its skin friction smoothly to zero
+without latching, because a latched flag would make the marched state
+hysteretic and hysteresis inside the section is what feeds limit cycles in
+the coupling loops. The correlations themselves are shared between the two
+--- Thwaites, Michel, Head with Ludwieg--Tillmann :cite:`cebeciCousteix2005`
+--- so they can differ in what they do at a crossing but never in physics.
+
+Thwaites' integral supplies its own initial condition when it starts at
+the attachment point, which is worth stating because it looks like a
+missing input. With :math:`U_e \sim a s` near the stagnation point,
+
+.. math::
+
+   \theta^2 = \frac{0.45}{Re\, U_e^6} \int_0^s U_e^5 \,\mathrm{d}s
+            \;\longrightarrow\; \frac{0.45\, a^5 s^6}{6\, Re\, a^6 s^6}
+            = \frac{0.075}{Re\, a} ,
+
+which is exactly the :math:`\theta_0` of the previous subsection, reached
+by a completely different route. The march therefore needs no seed, and
+``TestAttachmentBoundaryLayer`` asserts the agreement rather than assuming
+it.
+
+One numerical point earns its own paragraph because it is worth three in
+:math:`\theta_0`. The Thwaites integrand is :math:`U_e^5`, and on the
+*first* step out of an attachment point :math:`U_e` rises linearly from
+zero, so the trapezoid rule returns :math:`h U_{e,1}^5/2` where the true
+value is :math:`h U_{e,1}^5/6` --- a factor of three in the integral and
+hence :math:`\sqrt{3}` in :math:`\theta_0`, the one number a march from a
+stagnation point exists to get right. Integrating the piecewise-linear
+interpolant exactly,
+
+.. math::
+
+   \int_0^h U_e^5 \,\mathrm{d}s = h\,\frac{U_{e,1}^6 - U_{e,0}^6}
+                                          {6\,(U_{e,1} - U_{e,0})} ,
+
+removes it. (A march starting from a leading edge with :math:`\theta = 0`
+never sees this, because it has no :math:`\theta_0` to be wrong about.)
+
+**What counts as separation.** At the Reynolds number of a small airframe
+(:math:`Re_n \sim 3\times10^5`) the laminar layer reaches Thwaites'
+:math:`\lambda = -0.09` before Michel's criterion trips at *every*
+incidence, including negative ones. Reporting that as "the wing has
+separated" is true of the laminar layer and useless as an answer: it
+marks every attitude separated and draws no boundary. What happens
+physically is a laminar separation **bubble** --- the sheared layer
+transitions just downstream and reattaches turbulent a few percent chord
+later, which is the defining feature of low-Reynolds airfoils rather than
+a failure of the flow. So the bubble is treated as the transition trigger,
+the march continues turbulent, and the verdict is **turbulent** separation
+(:math:`H \geq 2.4`): the trailing-edge separation point moving forward,
+which is what stalls a wing. The laminar separation point is still
+reported, through ``BubbleFormed`` and its location, because it is the
+part of the march that is verifiable in closed form and because a designer
+wants to know where the bubble sits.
+
+The stated limitation is bubble **bursting**. A short bubble that fails to
+reattach is what actually ends the lift curve of a thin section below
+:math:`Re \approx 2\times10^5`, and predicting it needs a bubble-length
+correlation or an :math:`e^N` envelope this method does not carry. The
+turbulent separation boundary is therefore an upper bound on usable
+incidence, not a stall prediction.
+
 Validation
 ~~~~~~~~~~~~
 
-Both halves are pinned against closed-form answers rather than against
-themselves.
+All three halves are pinned against closed-form answers rather than
+against themselves.
 
 ``TestSurfaceFlow`` uses the sphere, whose surface velocity is exactly
 :math:`\mathbf{V}_t = \tfrac32 (\mathbf{U} - (\mathbf{U}\cdot
@@ -1491,6 +1564,21 @@ airfoil, where it must reproduce :math:`|V| = 2U\sin\theta` and
 nothing to airfoil theory --- then checks the lift slope, the
 :math:`\sqrt{r_{LE}}` scaling above, and that the two boundary-layer runs
 between them cover the contour exactly once.
+
+``TestAttachmentBoundaryLayer`` pins the march itself. A flat plate must
+recover Blasius: Thwaites gives :math:`\theta = \sqrt{0.45\,s/Re}`, a
+known 1% above the exact :math:`0.664\,s/\sqrt{Re_s}`, with
+:math:`H = 2.61` throughout and no separation. Howarth's linearly retarded
+flow :math:`U_e = U_0(1 - s/L)` is the textbook Thwaites test and must
+place laminar separation at :math:`s/L = 0.123` (exact: 0.120), converged
+under mesh refinement --- a crossing quantized to whole stations would
+jump instead. A stagnation-like run :math:`U_e = a s` must produce
+:math:`\theta_0 = \sqrt{0.075/(Re\,a)}` unseeded across a sixteenfold
+range of strain rate, which is the check that the march starts where it
+claims to. The control is an *accelerating* flow at the same Reynolds
+number and length, which must neither bubble nor separate --- without it,
+the Howarth test would also be passed by code that reports separation
+eagerly.
 
 Viscous drag buildup (Aeolion::DragEstimate)
 -------------------------------------------------

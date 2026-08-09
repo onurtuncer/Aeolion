@@ -57,6 +57,11 @@ Stagnation and attachment lines (see :doc:`theory`):
 * :cpp:class:`Aeolion::Solver::AttachmentStation` — the wing attachment
   line at one strip, in leading-edge-normal coordinates, with Poll's
   attachment-line Reynolds number.
+* :cpp:class:`Aeolion::Solver::SurfaceMarch` — one surface run marched
+  from its attachment point to separation: bubble location, transition,
+  and the turbulent separation point.
+* :cpp:class:`Aeolion::Solver::SeparationSurvey` — the separation picture
+  across a lifting surface at one flight condition.
 
 .. doxygennamespace:: Aeolion::Solver
    :content-only:
