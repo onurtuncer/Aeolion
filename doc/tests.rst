@@ -157,6 +157,149 @@ Reynolds number rises; and the converged coupled lift must sit below the
 same solver's zero-transpiration (inviscid) pass. See theory.rst,
 "Level 3", for the method these checks guard.
 
+TestSurfaceFlow
+---------------
+
+The body skin-flow analysis (``Solver::SurfaceGrid``,
+``Solver::AnalyzeSurfaceFlow``), pinned on the sphere, whose surface
+velocity is exactly :math:`\tfrac32(\mathbf{U} - (\mathbf{U}\cdot
+\hat{\mathbf{n}})\hat{\mathbf{n}})`. It therefore vanishes precisely
+where the outward normal is parallel to the freestream, at ANY angle of
+attack and sideslip -- so the attachment point must land at
+:math:`\hat{\mathbf{n}} = -\hat{\mathbf{U}}` and the separation point at
+:math:`+\hat{\mathbf{U}}` across the whole attitude sweep, not at one
+condition. The strain rate is exact too (:math:`\operatorname{tr} J =
+3U/a`) and is what a boundary layer would start its march from; the
+streamline-spreading metric must follow :math:`h \propto \sin\theta`; and
+the edge speed along a traced meridian must follow
+:math:`\tfrac32 U \sin\theta`. At zero incidence the stagnation point
+sits on the nose apex, upstream of every control point, and the analysis
+must SAY so rather than invent an interior one. A prolate spheroid adds
+the symmetry check that catches an attitude sign error: on any body of
+revolution about :math:`x` the attachment point must lie on the windward
+meridian, :math:`\phi = \operatorname{atan2}(-\sin\alpha\cos\beta,
+-\sin\beta)`. A surface whose panelling does not state its topology must
+be declined, not reconstructed.
+
+TestSectionPanelMethod
+----------------------
+
+The 2-D Hess-Smith section solve (``Solver::SolveSectionContour``). Fed a
+circle instead of an airfoil it must reproduce :math:`|V| = 2U\sin\theta`
+and :math:`C_p = 1 - 4\sin^2\theta` with zero circulation -- a result
+owing nothing to airfoil theory, and one that exercises the influence
+coefficients, the assembly and the solve together. A symmetric section at
+zero incidence must stagnate exactly ON the leading edge and carry no
+lift; the lift slope must sit just above :math:`2\pi\alpha` for
+thickness; and the stagnation point must walk aft monotonically with
+incidence on the scale matched asymptotics predicts,
+:math:`s_{stag}/c \sim \sqrt{2 r_{LE}/c}\,\alpha_e`. That last one is
+asserted as a COLLAPSE across a twelvefold range of nose radius, which no
+fitted constant can fake, and it is what rules out the intuitive
+:math:`r_{LE}\alpha` reading (wrong by an order of magnitude). Finally
+the two boundary-layer runs must cover the contour exactly once between
+them, and the upper run must be longer than half the perimeter because it
+wraps around the nose from a stagnation point on the lower surface.
+
+TestAttachmentLine
+------------------
+
+The wing attachment line (``Solver::ComputeAttachmentLine``), and above
+all its response to sideslip. On a flat lattice at zero incidence there is
+no circulation and hence no induced flow, so the attachment line must sit
+exactly on the leading edge at every strip; at positive incidence it must
+move onto the LOWER surface everywhere, with the local incidence positive
+but below geometric (induced downwash). With no sideslip the effective
+sweep must recover the wing's geometric sweep and be symmetric between the
+two wings.
+
+The load-bearing check is sideslip. On a SWEPT wing at
+:math:`\beta = 10^\circ` the effective sweep must rise on one wing and
+fall on the other, by about :math:`\pm\beta`, carrying the
+attachment-line Reynolds number with it -- so the two wings are not
+equally close to leading-edge contamination. Reversing the sideslip must
+swap them exactly. The control case is an UNSWEPT wing at the same
+sideslip, which must stay symmetric; without it, the swept test would also
+pass for code that merely keyed off the sign of :math:`y`. A swept wing's
+root kink must be detected at exactly the two strips flanking the
+centreline, and a straight leading edge must not be reported as kinked.
+With no section data there is no thickness, so no stagnation point may be
+claimed at all.
+
+TestAttachmentBoundaryLayer
+---------------------------
+
+The separation march (``Solver::MarchSurfaceRun``,
+``Solver::SurveySeparation``), pinned against closed-form answers rather
+than against itself.
+
+A **flat plate** has no pressure gradient, so Thwaites must give
+:math:`\theta = \sqrt{0.45\,s/Re}` -- within 1% of Blasius'
+:math:`0.664\,s/\sqrt{Re_s}`, the known bias of Thwaites' constant -- with
+:math:`H = 2.61` throughout and no separation anywhere.
+
+**Howarth's linearly retarded flow** :math:`U_e = U_0(1 - s/L)` is the
+textbook test of a Thwaites march: laminar separation must land at
+:math:`s/L = 0.123` (exact: 0.120). Since the march treats that crossing
+as a bubble and transitions there, the checked quantity is the bubble
+location. It must also be **mesh-converged** -- 2000 against 8000 stations
+must agree to :math:`10^{-3}` -- which a crossing quantized to whole
+stations would fail, and the reattached turbulent layer must then separate
+again in a gradient that adverse, downstream of the bubble that triggered
+it.
+
+The **stagnation start** is the check that the march begins where it
+claims to: a run with :math:`U_e = a s` must produce
+:math:`\theta_0 = \sqrt{0.075/(Re\,a)}` with no seed supplied, across a
+sixteenfold range of strain rate, and hold it through the constant-strain
+region. That is the same number ``StagnationMomentumThickness`` computes
+from the Hiemenz similarity solution by an entirely different route. This
+test is what caught the trapezoid rule's factor-of-three error on the
+first Thwaites step (see theory.rst).
+
+The control is an **accelerating** flow at the same Reynolds number and
+length, which must neither bubble nor separate; without it the Howarth
+test would also be passed by code that reports separation eagerly. Empty
+runs, runs below ``MinMarchStations``, and a zero Reynolds number are all
+declined rather than answered.
+
+TestDiskInduction
+-----------------
+
+The actuator disk's vortex-cylinder field (``Solver::BuildVortexCylinder``,
+``Solver::DiskAxisInducedVelocity``), checked against closed-form answers
+rather than against itself.
+
+**Momentum theory on the axis.** The three values a loaded disk must
+produce are :math:`v_i` at the disk plane, :math:`2 v_i` far downstream
+and zero far upstream. They are consequences of the vortex system, not
+inputs to it, so the model has to reproduce them unprompted. One radius
+upstream --- roughly where a wing sits --- the exact value
+:math:`v_i(1 - 1/\sqrt{2})` is pinned explicitly, since it is the number
+the whole aft-fan interaction argument turns on.
+
+**The discretized sheet against the exact axis solution**, at stations
+spanning four radii upstream to ten downstream, holding to 2% of
+:math:`v_i`; and the on-axis field must be purely axial, its transverse
+components vanishing by symmetry. Refinement must then *reduce* the error
+rather than merely change it.
+
+**The annulus** must reproduce its own closed form, which is the real
+check on the inner sheet's sign and strength: cancellation at the disk
+plane and asymptotically, a weaker upstream acceleration than an
+equivalent full disk (the bore shields the axis), and a *reversed* axial
+induction inside the bore downstream --- the centerbody wake.
+
+**Direction** is the check the magnitude tests cannot make. The induction
+must point downstream for a thrusting disk, both in the jet and ahead of
+it, and must reverse when the disk's axis reverses. Getting the ring
+circulation sense backwards would turn the upstream acceleration into a
+deceleration while every magnitude check still passed.
+
+Finally the momentum inversion :math:`T = 2\rho A v_i (V + v_i)` must
+round-trip, forward speed must reduce :math:`v_i` at fixed thrust, and an
+unloaded or windmilling disk must be declined rather than answered.
+
 TestPropellerLattice
 --------------------
 

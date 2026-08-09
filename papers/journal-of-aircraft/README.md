@@ -2,18 +2,58 @@
 
 **Venue:** AIAA Journal of Aircraft
 **Type:** full research article
-**Status:** planned
+**Status:** drafting — `paper.tex` complete through Section VI; author
+block, acknowledgments and external validation remain
+
+**Figures/data pipeline.** Every number and figure in Section VI comes
+from the solver's own output — no screenshots, and no hand-typed tables:
+
+```
+aeolion_attachment_sweep tests/Data/AeolionGeometryHandoff-1.8.0.json \
+    papers/journal-of-aircraft/figures/attachment-sweep.json
+cd papers/journal-of-aircraft/figures
+python render-attachment-figures.py     # the four physics figures
+python render-coefficient-tables.py     # tables/*.tex + separation-boundary
+cd .. && pdflatex paper && bibtex paper && pdflatex paper && pdflatex paper
+```
+
+`aeolion_attachment_sweep` (app/AttachmentSweepExport.cpp) solves the
+α × β matrix on the coupled system and exports coefficients, stability
+derivatives, the per-strip attachment line, the separation survey and the
+fuselage skin-flow topology. The intermediate `attachment-sweep.json` is
+**not** tracked (the repo's `.gitignore` excludes `*.json`) — regenerate it
+with the command above; the same convention the SciTech paper's
+`lattice-solution.json` follows. The tables under `figures/tables/` are
+generated and `\input`-ed by `paper.tex`, so a stale table is impossible:
+rerun the scripts and the paper follows. The sweep takes ~20 minutes (55
+attitudes × 13 solves for the central-difference derivatives).
 
 ## Scope
 
-Applied case study: coupled wing-body-propeller analysis of the VBAT
-airframe using Aeolion. Core novel content is the numerical coupling, not
-just an application of an existing VLM:
+Stagnation points and attachment lines on the coupled wing–body solver,
+for angle-of-attack and sideslip sweeps. The novel content is the method,
+not an application of an existing VLM:
 
-- permeable source panels coupling propeller efflux to the fuselage base
-- wing circulation carried through the fuselage (source-panel + horseshoe
-  vortex blocked linear system)
-- BEMT-to-slipstream handoff feeding the body/control-vane interaction
+- the asymmetric treatment the two halves force: a source-panelled body's
+  stagnation points are *found* by searching a real surface field, while
+  a vortex lattice is a zero-thickness sheet on which the flow never
+  stops and whose attachment line must come from a 2-D section solve
+- skin-flow topology resolved in the panelling's own surface-index space,
+  with critical points classified from a strain-rate tensor taken in a
+  local orthonormal frame (not from contravariant components, whose chart
+  factors do not converge away)
+- the wing section posed in the plane **normal to the leading edge**,
+  which is what makes sideslip's left/right asymmetry representable at
+  all — and hence which wing is closer to leading-edge contamination
+- everything an integral boundary-layer march needs to start: attachment
+  location, `U_e(s)` from it, Thwaites' `θ₀`, the spreading metric `h(s)`,
+  and Poll's attachment-line Reynolds number
+
+The earlier planned scope — an applied wing-body-propeller case study of
+the VBAT airframe (permeable base panels coupling propeller efflux,
+BEMT-to-slipstream handoff) — is **not** this paper. The ducted-fan
+vectored-thrust material is covered by the SciTech draft in
+`papers/aiaa-scitech/`.
 
 ## Style files (`style/`)
 
@@ -37,13 +77,29 @@ Official AIAA LaTeX package, pulled unmodified from CTAN
   `bibtex_database.bib` — supporting reference material from the same
   package.
 
-## Open items before drafting
+## Open items
 
-- [ ] Decide whether to frame this as analysis-only or as a stepping stone
-      toward the CppAD-templated design-optimization path noted in the
-      main README (affects scope and related-work framing)
-- [ ] Validation case(s) beyond the unit-test physical bounds — need a
-      wind-tunnel or higher-fidelity CFD comparison point for a full
-      article (JOSS-level checks are not sufficient evidence here)
-- [ ] Figures: lattice + source panel mesh, pressure/circulation
-      distribution, propeller-airframe interaction results
+- [x] **Section VI, Application** — written against the α × β matrix
+      (α ∈ [−4, 16]°, β ∈ [−10, 10]°) on
+      `tests/Data/AeolionGeometryHandoff-1.8.0.json`: attachment line,
+      separation boundary, and a coefficient/derivative table restricted
+      to the attached attitudes (see the pipeline note above).
+- [x] Figures: attachment line vs. span across α; effective sweep and
+      `Rbar` at β = ±10° against the 245/583 thresholds; fuselage
+      attachment-node migration; traced fuselage surface streamlines
+      coloured by Cp with the wing lattice; separation boundary.
+- [ ] **`CDi` is not trustworthy here** and Sec. VI.E says so: the
+      near-field force integration collects a spurious thrust from the
+      discretized closed bodies, so CDi goes negative at zero lift and the
+      apparent Oswald efficiency is 1.53 (impossible). A Trefftz-plane
+      integration would fix it; see `TODO.md` at the repo root. CL and the
+      moments are unaffected.
+- [ ] Author block — co-authors (the SciTech draft carries three),
+      departments, emails, AIAA member grades; acknowledgments/funding.
+- [ ] Validation beyond closed-form verification. Sections V's checks are
+      exact-solution comparisons (sphere, cylinder, matched asymptotics),
+      which is strong for *verification* but is not *validation* — a
+      wind-tunnel or higher-fidelity CFD attachment-line comparison would
+      strengthen the article considerably.
+- [ ] Regenerate `style/aiaa-tc.cls` and `style/aiaa.bst` with
+      `latex aiaa.ins` before submission (see below).

@@ -635,6 +635,7 @@ std::vector<Lattice::SourcePanel> LatticeBuilder::BuildBody() const {
                                      : centroid;
             panel.Surface = BodySurfaceName;
             panel.StationIndex = static_cast<int>(i);
+            panel.SectorIndex = j;
             if (panel.Area > BodyDegenerateArea) panels.push_back(panel);
         }
     }
@@ -680,6 +681,14 @@ std::vector<Lattice::SourcePanel> LatticeBuilder::BuildBody() const {
                                                   centroidRadius * std::sin(midAngle));
                 panel.Surface = BodyBaseSurfaceName;
                 panel.StationIndex = static_cast<int>(stations.size()) - 1;
+                // SectorIndex is deliberately left unset. The cap is a flat
+                // disc stacked in RINGS at one axial station, not a swept
+                // surface with a meridional coordinate, so (StationIndex,
+                // SectorIndex) would not be a unique key here. Leaving it
+                // negative declares the cap unstructured, which is what
+                // makes a surface-flow analysis decline it rather than
+                // build a grid whose cells silently overlap (see
+                // Lattice::SourcePanel::SectorIndex).
                 if (panel.Area > BodyDegenerateArea) panels.push_back(panel);
             }
         }
@@ -761,6 +770,7 @@ std::vector<Lattice::SourcePanel> AnnularRingPanels(double xLeadSolver, double x
                 panel.ControlPoint = centroidOf(panel.Corners);
                 panel.Surface = surfaceName;
                 panel.StationIndex = a;
+                panel.SectorIndex = j;
                 if (panel.Area > BodyDegenerateArea) panels.push_back(panel);
             }
         }
@@ -783,6 +793,7 @@ std::vector<Lattice::SourcePanel> AnnularRingPanels(double xLeadSolver, double x
             panel.ControlPoint = centroidOf(panel.Corners);
             panel.Surface = surfaceName;
             panel.StationIndex = stationIndex;
+            panel.SectorIndex = j;
             if (panel.Area > BodyDegenerateArea) panels.push_back(panel);
         }
     };
