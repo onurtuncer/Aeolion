@@ -76,6 +76,47 @@ disk bore is 0.10 m against a 0.53 m semi-span, so the induction is
 concentrated exactly where the separation is — inboard — and is negligible
 outboard. That radial falloff is not a nuisance, it is the result.
 
+## First numbers from the induction model (2026-08-09)
+
+`Solver/DiskInduction.h` now exists and is verified (see
+`TestDiskInduction`). Probing it on the real geometry — annular disk at
+solver x = 0.468, bore 0.1045 m, boom 0.0406 m, wing from x = 0.207 to
+0.384 — gives the following **increase in axial velocity across the wing
+chord**, as a percentage of freestream:
+
+| 2y/b | hover-ish (V=5) | transition (V=12) | late (V=18) | cruise (V=25) |
+|---|---|---|---|---|
+| 0.10 | +66% | +23.0% | +11.2% | +4.5% |
+| 0.15 | +57% | +19.7% | +9.6% | +3.8% |
+| 0.20 | +42% | +14.5% | +7.1% | +2.8% |
+| 0.30 | +15% | +5.1% | +2.5% | +1.0% |
+| 0.60 | −1.8% | −0.6% | −0.3% | −0.1% |
+| 1.00 | −1.1% | −0.4% | −0.2% | −0.1% |
+
+Three things fall out, and together they are the paper:
+
+1. **The gradient, not the magnitude, is the mechanism.** At the quarter
+   chord the induction is a modest few percent of freestream. Across the
+   *chord* it is 15–23% in transition, because the trailing edge sits
+   three times closer to the disk than the leading edge. That is a
+   favourable streamwise gradient, and it is concentrated at the trailing
+   edge — which is exactly where turbulent separation begins and from
+   which it marches forward.
+
+2. **It is concentrated inboard**, falling by a factor of four between
+   2y/b = 0.10 and 0.30. The second paper found separation most advanced
+   at |2y/b| ≈ 0.15–0.23. The fan protects the span it sheds first.
+
+3. **It REVERSES outboard.** Beyond roughly 2y/b ≈ 0.4 the chordwise
+   change goes slightly negative: outside the vortex cylinder the induced
+   axial velocity is a return flow, so the fan marginally *penalizes* the
+   outer wing. Small (under 2%), but it is a real sign change and not an
+   artifact — and it is the sort of result that only appears once the
+   upstream field is modelled at all.
+
+The magnitudes are inviscid, one-way-coupled induction. They set the
+expectation; the deliverable is still Δα_sep from the separation march.
+
 ## Scope
 
 - upstream induction of the ducted fan, applied to the coupled

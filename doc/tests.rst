@@ -263,6 +263,43 @@ test would also be passed by code that reports separation eagerly. Empty
 runs, runs below ``MinMarchStations``, and a zero Reynolds number are all
 declined rather than answered.
 
+TestDiskInduction
+-----------------
+
+The actuator disk's vortex-cylinder field (``Solver::BuildVortexCylinder``,
+``Solver::DiskAxisInducedVelocity``), checked against closed-form answers
+rather than against itself.
+
+**Momentum theory on the axis.** The three values a loaded disk must
+produce are :math:`v_i` at the disk plane, :math:`2 v_i` far downstream
+and zero far upstream. They are consequences of the vortex system, not
+inputs to it, so the model has to reproduce them unprompted. One radius
+upstream --- roughly where a wing sits --- the exact value
+:math:`v_i(1 - 1/\sqrt{2})` is pinned explicitly, since it is the number
+the whole aft-fan interaction argument turns on.
+
+**The discretized sheet against the exact axis solution**, at stations
+spanning four radii upstream to ten downstream, holding to 2% of
+:math:`v_i`; and the on-axis field must be purely axial, its transverse
+components vanishing by symmetry. Refinement must then *reduce* the error
+rather than merely change it.
+
+**The annulus** must reproduce its own closed form, which is the real
+check on the inner sheet's sign and strength: cancellation at the disk
+plane and asymptotically, a weaker upstream acceleration than an
+equivalent full disk (the bore shields the axis), and a *reversed* axial
+induction inside the bore downstream --- the centerbody wake.
+
+**Direction** is the check the magnitude tests cannot make. The induction
+must point downstream for a thrusting disk, both in the jet and ahead of
+it, and must reverse when the disk's axis reverses. Getting the ring
+circulation sense backwards would turn the upstream acceleration into a
+deceleration while every magnitude check still passed.
+
+Finally the momentum inversion :math:`T = 2\rho A v_i (V + v_i)` must
+round-trip, forward speed must reduce :math:`v_i` at fixed thrust, and an
+unloaded or windmilling disk must be declined rather than answered.
+
 TestPropellerLattice
 --------------------
 

@@ -62,6 +62,11 @@ Stagnation and attachment lines (see :doc:`theory`):
   and the turbulent separation point.
 * :cpp:class:`Aeolion::Solver::SeparationSurvey` — the separation picture
   across a lifting surface at one flight condition.
+* :cpp:class:`Aeolion::Solver::ActuatorDisk` — a uniformly loaded rotor
+  disk, stated by geometry and disk-plane induced velocity.
+* :cpp:class:`Aeolion::Solver::VortexCylinderMesh` — its semi-infinite
+  cylindrical vortex sheet, discretized into ring filaments; the field it
+  induces is valid upstream of the disk as well as in the wake.
 
 .. doxygennamespace:: Aeolion::Solver
    :content-only:

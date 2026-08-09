@@ -1580,6 +1580,76 @@ number and length, which must neither bubble nor separate --- without it,
 the Howarth test would also be passed by code that reports separation
 eagerly.
 
+Disk induction: what a rotor does upstream of itself
+-----------------------------------------------------
+
+``Solver/DiskInduction.h`` answers a question the slipstream model
+structurally cannot: what a loaded disk does to the flow **ahead** of it.
+
+``Solver::SlipstreamField`` reconstructs a rotor's wake from annular
+momentum theory and returns zero for any point ahead of the disk plane.
+That is the right economy when the influenced surface sits in the wake ---
+duct-jet vanes, a downstream tail --- and exactly wrong when it sits in
+front. On a tail-sitter with a pusher fan the wing's trailing edge is a
+fifth of a chord *ahead* of the duct, so a wake-only model reports
+precisely zero interaction: a property of the model, not of the aircraft.
+
+The equivalence that makes the upstream field tractable is classical. A
+uniformly loaded actuator disk is exactly a semi-infinite **cylindrical
+vortex sheet**: azimuthal vorticity of constant strength
+:math:`\gamma_t = 2 v_i` per unit length, shed from the disk edge and
+trailing downstream forever. On the axis it integrates in closed form,
+
+.. math::
+
+   u(s) = \frac{\gamma_t}{2}\left[1 + \frac{s}{\sqrt{s^2 + R^2}}\right],
+
+which is :math:`v_i` at the disk plane, :math:`2 v_i` far downstream and
+zero far upstream --- momentum theory's three values, recovered from the
+vortex system rather than assumed. One radius upstream it is
+:math:`v_i(1 - 1/\sqrt{2}) = 0.293\,v_i`, which is the number an aft-fan
+interaction argument turns on.
+
+Off the axis the sheet is discretized into vortex **rings**, polygonized
+into straight filaments and evaluated with the ordinary
+``SegmentVelocity`` kernel --- the same choice the propeller wake makes in
+discretizing helical legs rather than using an analytic helix. It reuses a
+tested kernel, converges under refinement, and leaves the axis available
+as an exact check rather than as another approximation.
+
+Two discretization points earn their keep. Ring spacing **grows
+geometrically** downstream: the first radius or two sets essentially the
+whole upstream answer while the far tail varies slowly, which is what
+makes a fifty-radius cylinder affordable. And that spacing keys to *each
+cylinder's own radius*, not the disk's outer one --- an annulus's inner
+sheet can be a third the outer radius, and keying both to the outer radius
+leaves it about three rings across its own scale, costing an order of
+magnitude in the annular axis field.
+
+An **annulus** --- a ducted fan around a tail boom --- carries no trailing
+vorticity between its radii, since :math:`d\Gamma/dr` vanishes there. It
+sheds only at the two edges, the outer at :math:`+\gamma_t` and the inner
+at :math:`-\gamma_t`, so it is two superposed cylinders and nothing else
+changes. On the axis the two cancel at the disk plane and asymptotically,
+but *not* in between: downstream inside the bore the inner sheet dominates
+and the axial induction reverses, which is the centerbody wake and a real
+feature of annular jets rather than a defect.
+
+Swirl is deliberately absent. The root vortex and the wake's axial
+vorticity live downstream of the disk and contribute nothing ahead of it,
+which is the region this module exists to serve; a consumer wanting swirl
+in the jet should keep using ``SlipstreamField``, which has it. Uniform
+loading is likewise assumed --- real loading tapers at both edges,
+softening the sheet into a band, which superposing cylinders at
+intermediate radii would represent.
+
+The field is exposed as an ``externalField`` callable, with the sheet
+built once and captured so that evaluation does no geometry work per
+point. The coupling is **one-way**: the airframe sees the disk, the disk
+does not see the airframe. Closing it needs the partitioned outer fixed
+point ``SolveRotorVaneCoupled`` already establishes, because a static
+airframe and a rotating rotor cannot share one ``FreestreamConditions``.
+
 Viscous drag buildup (Aeolion::DragEstimate)
 -------------------------------------------------
 
