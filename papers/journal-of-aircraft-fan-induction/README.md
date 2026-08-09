@@ -159,23 +159,31 @@ quantized to the grid and a sub-degree shift is invisible by construction.
 The right measurement is the **horizontal shift of the separation curve**
 x_sep(α), not the crossing of one threshold. Measured that way:
 
+Measured on a **0.5° grid** (α = 3° to 16°, 27 stations), V = 12 m/s,
+T = 25 N, v_i = 14.3 m/s:
+
 | criterion x/c_n | α (fan off) | α (fan on) | Δα |
 |---|---|---|---|
-| 0.90 | 4.36° | 4.66° | **+0.30°** |
-| 0.85 | 6.16° | 6.84° | **+0.68°** |
-| 0.80 | 8.31° | 9.07° | **+0.76°** |
-| 0.75 | 9.95° | 10.66° | **+0.71°** |
-| 0.70 | 11.02° | 11.95° | **+0.93°** |
-| 0.60 | 13.07° | 13.89° | **+0.82°** |
-| 0.55 | 14.08° | 14.92° | **+0.84°** |
+| 0.90 | 4.52° | 5.05° | **+0.52°** |
+| 0.85 | 6.18° | 6.91° | **+0.73°** |
+| 0.80 | 8.36° | 9.17° | **+0.81°** |
+| 0.75 | 9.96° | 10.75° | **+0.79°** |
+| 0.70 | 11.09° | 11.95° | **+0.86°** |
+| 0.60 | 13.04° | 13.89° | **+0.85°** |
+| 0.55 | 14.08° | 14.88° | **+0.80°** |
 
-So the fan buys roughly **0.7–0.9° of incidence** at V = 12 m/s, T = 25 N,
-consistent across criterion levels rather than at one arbitrary threshold
-— which is what makes it a property of the flow rather than of the
-definition. The shift is smallest near onset (+0.30° at x/c = 0.90) and
-settles near +0.8° once separation is established, because near onset the
-separation point is at the trailing edge where the fan's favourable
-gradient is strongest but the layer is least sensitive.
+So the fan buys **Δα = +0.81°** (mean over x/c = 0.85 to 0.55), and the
+consistency across criterion levels is what makes it a property of the
+flow rather than of the definition. The shift is smaller near onset
+(+0.52° at x/c = 0.90), where the separation point sits at the trailing
+edge and the layer is least sensitive to the gradient.
+
+The same shift computed by interpolating the original **2°** grid gave
++0.68 to +0.93° — agreeing with the fine grid to within 0.08° everywhere
+separation is established, and differing most (0.30° against 0.52°) right
+at onset, which is exactly where a coarse grid should be least trusted.
+The coarse data always contained the answer; only the threshold *statistic*
+destroyed it.
 
 **Lesson for the paper:** report Δα as the shift of the curve at several
 criterion levels, and state the criterion. A single threshold on a coarse
