@@ -420,6 +420,22 @@ int main(int argc, char** argv) {
     // is comparable to flight speed only when the flight speed is low).
     const double flightSpeed = (argc > 4) ? std::atof(argv[4]) : FlightSpeed;
 
+    // Optional alpha range: start, end, step. The default matrix steps 2
+    // degrees, which is fine for a coefficient table and far too coarse to
+    // locate a separation BOUNDARY -- a boundary is a threshold crossing,
+    // and a shift smaller than the grid moves the crossing within an
+    // interval without ever moving it across one. Resolving how much
+    // incidence the fan buys needs the curve, not the crossing.
+    std::vector<double> alphaList(std::begin(Alphas), std::end(Alphas));
+    if (argc > 7) {
+        const double start = std::atof(argv[5]), end = std::atof(argv[6]);
+        const double step = std::atof(argv[7]);
+        if (step > 0.0 && end >= start) {
+            alphaList.clear();
+            for (double a = start; a <= end + 1e-9; a += step) alphaList.push_back(a);
+        }
+    }
+
     Geometry::HandoffContract contract;
     try {
         contract = Geometry::LoadHandoff(handoffPath);
@@ -505,7 +521,7 @@ int main(int argc, char** argv) {
     out << "]},\n\"conditions\":[\n";
 
     bool firstCondition = true;
-    for (const double alphaDeg : Alphas) {
+    for (const double alphaDeg : alphaList) {
         for (const double betaDeg : (thrust > 0.0 ? std::span<const double>(PoweredBetas)
                                                   : std::span<const double>(Betas))) {
             fc.alphaDeg = alphaDeg;
@@ -540,7 +556,7 @@ int main(int argc, char** argv) {
             const S::StabilityDerivatives derivatives =
                 CoupledDerivatives(preparedCarry, fc, ref);
 
-            if (disk.Valid() && alphaDeg == Alphas[0] && betaDeg == 0.0)
+            if (disk.Valid() && alphaDeg == alphaList.front() && betaDeg == 0.0)
                 std::cout << "fan: T=" << thrust << " N, disk r=" << disk.Radius << " hub="
                           << disk.HubRadius << " at x=" << disk.Center.x
                           << ", vi=" << disk.InducedVelocity << " m/s\n";
