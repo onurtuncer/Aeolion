@@ -43,16 +43,19 @@
 #include "Aeolion/PanelBuilder/PanelBuilder.h"
 #include "Aeolion/Solver/AttachmentBoundaryLayer.h"
 #include "Aeolion/Solver/AttachmentLine.h"
+#include "Aeolion/Solver/DiskInduction.h"
 #include "Aeolion/Solver/Solver.h"
 #include "Aeolion/Solver/SurfaceFlow.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
 #include <fstream>
 #include <functional>
 #include <iostream>
 #include <numbers>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -97,6 +100,12 @@ constexpr double NoseRefineFraction = 0.10; // of body length
 // past where the wing is expected to let go.
 const double Alphas[] = {-4.0, -2.0, 0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0};
 const double Betas[] = {-10.0, -5.0, 0.0, 5.0, 10.0};
+
+// With the fan running the study is an alpha x THRUST matrix rather than
+// alpha x beta: the unpowered sweep already established that the separation
+// boundary is insensitive to sideslip, so spending solves on beta again
+// would buy nothing. Sideslip collapses to the symmetry plane.
+const double PoweredBetas[] = {0.0};
 
 // Conditions the figures are drawn at (a subset of the matrix above).
 const double FigureAlphas[] = {0.0, 4.0, 8.0};
@@ -159,6 +168,32 @@ std::vector<S::StripSection> StripsFromPanels(const std::vector<S::Panel>& panel
 // A carry-through strip's bound segment starts AT the centreline.
 bool IsCarryThroughStrip(const S::Panel& panel) {
     return std::min(std::fabs(panel.A.y), std::fabs(panel.B.y)) < 1e-9;
+}
+
+// The fan as an actuator disk, positioned from the contract.
+//
+// The blades sweep to propulsion_bemt.disk_radius inside the duct bore, and
+// the tail boom occupies the middle, so the disk is an ANNULUS between the
+// body radius at that station and the blade tip. Contract frame is x-forward
+// and the solver x-aft, so the placement flips and the downstream axis is
+// +x in solver axes -- this is a PUSHER installation, and the sign is the
+// whole point: it puts the wing in the disk's upstream induction rather than
+// in its wake.
+S::ActuatorDisk MakeFanDisk(const Geometry::HandoffContract& contract, double thrust, double rho,
+                            double axialSpeed) {
+    S::ActuatorDisk disk;
+    if (!(thrust > 0.0) || !contract.Duct.IsStated || !(contract.Propulsion.DiskRadius > 0.0))
+        return disk;
+
+    const double diskContractX = contract.Duct.Center.x;
+    disk.Center = S::Vec3(-diskContractX, contract.Duct.Center.y, -contract.Duct.Center.z);
+    disk.Axis = S::Vec3(1.0, 0.0, 0.0); // downstream, solver aft
+    disk.Radius = contract.Propulsion.DiskRadius;
+    disk.HubRadius = Geometry::RadiusAt(contract.Body, diskContractX);
+    if (!(disk.HubRadius < disk.Radius)) disk.HubRadius = 0.0;
+    disk.InducedVelocity =
+        S::InducedVelocityFromThrust(thrust, rho, disk.Area(), axialSpeed);
+    return disk;
 }
 
 // Central-difference derivatives about `base`, on the COUPLED system.
@@ -375,6 +410,31 @@ int main(int argc, char** argv) {
     const std::string handoffPath =
         (argc > 1) ? argv[1] : "tests/Data/AeolionGeometryHandoff-1.8.0.json";
     const std::string outPath = (argc > 2) ? argv[2] : "attachment-sweep.json";
+    // Fan thrust [N]. Zero (the default) is the unpowered airframe of the
+    // second paper; positive turns the aft fan on and switches the sweep
+    // from alpha x beta to alpha at the symmetry plane.
+    const double thrust = (argc > 3) ? std::atof(argv[3]) : 0.0;
+    // Airspeed [m/s]. A powered sweep MUST be able to vary this: transition
+    // is low speed at high thrust, and running the fan at the cruise speed
+    // instead understates its induction several-fold (the induced velocity
+    // is comparable to flight speed only when the flight speed is low).
+    const double flightSpeed = (argc > 4) ? std::atof(argv[4]) : FlightSpeed;
+
+    // Optional alpha range: start, end, step. The default matrix steps 2
+    // degrees, which is fine for a coefficient table and far too coarse to
+    // locate a separation BOUNDARY -- a boundary is a threshold crossing,
+    // and a shift smaller than the grid moves the crossing within an
+    // interval without ever moving it across one. Resolving how much
+    // incidence the fan buys needs the curve, not the crossing.
+    std::vector<double> alphaList(std::begin(Alphas), std::end(Alphas));
+    if (argc > 7) {
+        const double start = std::atof(argv[5]), end = std::atof(argv[6]);
+        const double step = std::atof(argv[7]);
+        if (step > 0.0 && end >= start) {
+            alphaList.clear();
+            for (double a = start; a <= end + 1e-9; a += step) alphaList.push_back(a);
+        }
+    }
 
     Geometry::HandoffContract contract;
     try {
@@ -417,7 +477,7 @@ int main(int argc, char** argv) {
     ref.Chord = ref.Area / contract.Span;
 
     S::FreestreamConditions fc;
-    fc.Vinf = FlightSpeed;
+    fc.Vinf = flightSpeed;
     fc.rho = Rho;
     // Contract frame is x-forward / z-down, the solver x-aft / z-up: the
     // same 180-degree rotation about y that LatticeBuilder applies to the
@@ -436,7 +496,7 @@ int main(int argc, char** argv) {
     }
     out.precision(9);
 
-    out << "{\n\"meta\":{\"handoff\":\"" << contract.SchemaVersion << "\",\"Vinf\":" << FlightSpeed
+    out << "{\n\"meta\":{\"handoff\":\"" << contract.SchemaVersion << "\",\"Vinf\":" << flightSpeed
         << ",\"rho\":" << Rho << ",\"nu\":" << S::SeaLevelKinematicViscosity
         << ",\"span\":" << contract.Span << ",\"area\":" << ref.Area << ",\"chord\":" << ref.Chord
         << ",\"trimEta\":" << carryBuilder.TrimEta() << ",\"wingStrips\":" << wingCarry.size()
@@ -444,7 +504,15 @@ int main(int argc, char** argv) {
         << ",\"RbarContamination\":" << S::AttachmentLineContaminationReynolds
         << ",\"RbarTransition\":" << S::AttachmentLineTransitionReynolds
         << ",\"figureAlphaDeg\":" << FigureAlphaDeg << ",\"figureBetaDeg\":" << FigureBetaDeg
-        << ",\"figureAlphas\":[";
+        << ",\"fanThrust\":" << thrust;
+    {
+        const S::ActuatorDisk probe = MakeFanDisk(contract, thrust, Rho, flightSpeed);
+        out << ",\"fanDisk\":{\"active\":" << (probe.Valid() ? "true" : "false")
+            << ",\"radius\":" << probe.Radius << ",\"hubRadius\":" << probe.HubRadius
+            << ",\"area\":" << (probe.Valid() ? probe.Area() : 0.0)
+            << ",\"x\":" << probe.Center.x << ",\"viAtCruise\":" << probe.InducedVelocity << "}";
+    }
+    out << ",\"figureAlphas\":[";
     for (std::size_t i = 0; i < std::size(FigureAlphas); ++i)
         out << (i ? "," : "") << FigureAlphas[i];
     out << "],\"figureBetas\":[";
@@ -453,17 +521,25 @@ int main(int argc, char** argv) {
     out << "]},\n\"conditions\":[\n";
 
     bool firstCondition = true;
-    for (const double alphaDeg : Alphas) {
-        for (const double betaDeg : Betas) {
+    for (const double alphaDeg : alphaList) {
+        for (const double betaDeg : (thrust > 0.0 ? std::span<const double>(PoweredBetas)
+                                                  : std::span<const double>(Betas))) {
             fc.alphaDeg = alphaDeg;
             fc.betaDeg = betaDeg;
 
-            const S::SolveResult carry = S::SolveWithSystem(preparedCarry, fc, ref);
-            const S::SolveResult clean = S::SolveWithSystem(preparedClean, fc, ref);
+            // The disk is rebuilt per condition: momentum theory's induced
+            // velocity depends on the axial speed through the disk, so a
+            // fixed-thrust sweep is NOT a fixed-induction one.
+            const S::ActuatorDisk disk = MakeFanDisk(contract, thrust, Rho, fc.Vinf);
+            const auto fanField =
+                disk.Valid() ? S::DiskInductionField(disk) : std::function<S::Vec3(const S::Vec3&)>{};
+
+            const S::SolveResult carry = S::SolveWithSystem(preparedCarry, fc, ref, fanField);
+            const S::SolveResult clean = S::SolveWithSystem(preparedClean, fc, ref, fanField);
             const S::FlowField fieldCarry =
-                S::MakeFlowField(preparedCarry, fc, carry.gamma, carry.sigma);
+                S::MakeFlowField(preparedCarry, fc, carry.gamma, carry.sigma, fanField);
             const S::FlowField fieldClean =
-                S::MakeFlowField(preparedClean, fc, clean.gamma, clean.sigma);
+                S::MakeFlowField(preparedClean, fc, clean.gamma, clean.sigma, fanField);
 
             const S::AttachmentLine lineClean =
                 S::ComputeAttachmentLine(fieldClean, wingClean, stripsClean, sections);
@@ -480,6 +556,10 @@ int main(int argc, char** argv) {
             const S::StabilityDerivatives derivatives =
                 CoupledDerivatives(preparedCarry, fc, ref);
 
+            if (disk.Valid() && alphaDeg == alphaList.front() && betaDeg == 0.0)
+                std::cout << "fan: T=" << thrust << " N, disk r=" << disk.Radius << " hub="
+                          << disk.HubRadius << " at x=" << disk.Center.x
+                          << ", vi=" << disk.InducedVelocity << " m/s\n";
             std::cout << "alpha=" << alphaDeg << " beta=" << betaDeg << ": CL=" << carry.CL
                       << " Cm=" << carry.Cm << " CLa=" << derivatives.CL_alpha
                       << " Cnb=" << derivatives.Cn_beta << " sep=" << separation.SeparatedStations

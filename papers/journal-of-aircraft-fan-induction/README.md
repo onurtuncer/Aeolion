@@ -2,8 +2,17 @@
 
 **Venue:** AIAA Journal of Aircraft
 **Type:** full research article
-**Status:** scoped — no draft yet. The method it depends on does not exist
-in the solver yet; see "What has to be built" below.
+**Status:** method built and first result in hand; no draft yet. The
+upstream induction model (`Solver/DiskInduction.h`, verified by
+`TestDiskInduction`) exists and is wired into `aeolion_attachment_sweep`,
+which now takes optional thrust and airspeed. The headline number is
+**Δα ≈ 0.7–0.9° of incidence** bought by the fan at the transition point
+V = 12 m/s, T = 25 N — see "The onset that did not move" below, which is
+also a cautionary tale about how that number was nearly missed.
+
+Still to build: the two-way coupling (the rotor does not yet see the
+airframe) and the Level-B blade-lattice induction that would verify the
+Level-A cylinder used here.
 
 The second Journal of Aircraft article
 ([../journal-of-aircraft/](../journal-of-aircraft/)) establishes where a
@@ -117,6 +126,69 @@ Three things fall out, and together they are the paper:
 The magnitudes are inviscid, one-way-coupled induction. They set the
 expectation; the deliverable is still Δα_sep from the separation march.
 
+## First coupled result (2026-08-09) — and a problem
+
+`aeolion_attachment_sweep` now takes optional thrust [N] and airspeed
+[m/s] arguments and applies `DiskInductionField` as the solve's
+`externalField`. At the transition point V = 12 m/s, T = 25 N
+(v_i = 14.3 m/s), against the same sweep unpowered:
+
+| α | ΔC_L | separated span off → on | separation x/c_n off → on |
+|---|---|---|---|
+| 6 | +0.026 | 64% → 59% | 0.853 → 0.866 |
+| 8 | +0.028 | 100% → 100% | 0.810 → 0.828 |
+| 12 | +0.032 | 100% → 100% | 0.653 → 0.698 |
+| 16 | +0.036 | 100% → 100% | 0.468 → 0.498 |
+
+The sign is right everywhere — lift up, separation aft — and at cruise
+speed the same comparison gives roughly a third of this, which is the
+expected scaling with v_i/V.
+
+### The onset that "did not move" — resolved
+
+A first pass reported the separation onset unchanged at α = 6° powered and
+unpowered, which looked like Δα_sep ≈ 0. It was a measurement artifact,
+and the way it failed is worth keeping.
+
+"Onset" was defined as a **threshold crossing** — the first α at which any
+station separates forward of x/c = 0.90 — evaluated on a **2° grid**. A
+shift smaller than the grid spacing moves the crossing *within* an
+interval without ever moving it *across* one, so the reported onset is
+quantized to the grid and a sub-degree shift is invisible by construction.
+
+The right measurement is the **horizontal shift of the separation curve**
+x_sep(α), not the crossing of one threshold. Measured that way:
+
+Measured on a **0.5° grid** (α = 3° to 16°, 27 stations), V = 12 m/s,
+T = 25 N, v_i = 14.3 m/s:
+
+| criterion x/c_n | α (fan off) | α (fan on) | Δα |
+|---|---|---|---|
+| 0.90 | 4.52° | 5.05° | **+0.52°** |
+| 0.85 | 6.18° | 6.91° | **+0.73°** |
+| 0.80 | 8.36° | 9.17° | **+0.81°** |
+| 0.75 | 9.96° | 10.75° | **+0.79°** |
+| 0.70 | 11.09° | 11.95° | **+0.86°** |
+| 0.60 | 13.04° | 13.89° | **+0.85°** |
+| 0.55 | 14.08° | 14.88° | **+0.80°** |
+
+So the fan buys **Δα = +0.81°** (mean over x/c = 0.85 to 0.55), and the
+consistency across criterion levels is what makes it a property of the
+flow rather than of the definition. The shift is smaller near onset
+(+0.52° at x/c = 0.90), where the separation point sits at the trailing
+edge and the layer is least sensitive to the gradient.
+
+The same shift computed by interpolating the original **2°** grid gave
++0.68 to +0.93° — agreeing with the fine grid to within 0.08° everywhere
+separation is established, and differing most (0.30° against 0.52°) right
+at onset, which is exactly where a coarse grid should be least trusted.
+The coarse data always contained the answer; only the threshold *statistic*
+destroyed it.
+
+**Lesson for the paper:** report Δα as the shift of the curve at several
+criterion levels, and state the criterion. A single threshold on a coarse
+grid would have reported "no effect" from data that contains a 0.8° one.
+
 ## Scope
 
 - upstream induction of the ducted fan, applied to the coupled
@@ -139,24 +211,29 @@ answer would be set by the four hand-tuned constants in
 
 ## What has to be built
 
-Nothing here is a small edit; this is the honest cost.
-
-1. **An upstream induction model.** Two levels, the cheap one verifying
-   the expensive one:
-   - *Level A* — semi-infinite vortex cylinder / actuator disk, which has
-     a **closed-form** upstream axial induction. This is what makes the
-     paper verifiable in the way the previous two are.
-   - *Level B* — azimuthal mean of the solved blade lattice's own
-     Biot–Savart field. `Solver::MeanInducedField` already does exactly
-     this construction in the vane→rotor direction; the rotor→airframe
-     direction needs the same treatment, with the caveat its own comment
-     raises — the rotor's wake is prescribed, so its near field is
-     approximate in a way the vanes' explicit wake legs are not.
-2. **A coupled transition solve.** Airframe (static frame) and rotor
-   (rotating frame, `fc.p = Omega`) cannot share one
-   `FreestreamConditions`, so this needs the partitioned outer fixed point
-   `SolveRotorVaneCoupled` already established for the rotor–vane problem.
-3. **Tests**, in the repo's style — see the verification plan below.
+1. ~~**An upstream induction model, Level A**~~ — **DONE**.
+   `Solver/DiskInduction.h`: the semi-infinite vortex cylinder, with a
+   closed-form axis solution as its verification anchor, exposed as an
+   `externalField` callable. `TestDiskInduction` pins it against momentum
+   theory, refinement convergence, the annulus, and direction.
+2. **Level B — the blade lattice's own field.** Azimuthal mean of the
+   solved rotor's Biot–Savart field, to verify the uniform-loading
+   cylinder against a real spanwise load distribution.
+   `Solver::MeanInducedField` already does this construction in the
+   vane→rotor direction; the rotor→airframe direction needs the same
+   treatment, with the caveat its own comment raises — the rotor's wake is
+   prescribed, so its near field is approximate in a way the vanes'
+   explicit wake legs are not.
+3. **Two-way coupling.** Currently one-way: the airframe sees the disk,
+   the disk does not see the airframe, so every number here is a lower
+   bound on the interaction. Airframe (static frame) and rotor (rotating,
+   `fc.p = Omega`) cannot share one `FreestreamConditions`, so closing it
+   needs the partitioned outer fixed point `SolveRotorVaneCoupled` already
+   establishes.
+4. **The transition operating line.** Thrust and airspeed are currently
+   independent arguments; a real transition walks a coupled schedule
+   (thrust roughly balancing weight minus wing lift as α and V change).
+   The sweep should follow that line, not the full rectangle.
 
 ## Verification plan
 
