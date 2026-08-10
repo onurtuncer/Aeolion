@@ -26,3 +26,9 @@ target_link_libraries(aeolion_attachment_sweep PRIVATE aeolion aeolion_panelbuil
 # vortex-cylinder model in Solver/DiskInduction.h.
 add_executable(aeolion_fan_induction FanInductionExport.cpp)
 target_link_libraries(aeolion_fan_induction PRIVATE aeolion aeolion_panelbuilder)
+
+# Phase 0 of the post-separation study: the Level-2 coupled solve pushed
+# over alpha in [-4, 90] x beta in [0, 30] with the current analytic
+# deep-stall blend, exporting the flat-plate convergence metrics as JSON.
+add_executable(aeolion_poststall_sweep PostStallSweepExport.cpp)
+target_link_libraries(aeolion_poststall_sweep PRIVATE aeolion aeolion_panelbuilder)

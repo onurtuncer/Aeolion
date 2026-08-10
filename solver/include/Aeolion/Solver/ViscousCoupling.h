@@ -73,6 +73,22 @@ inline constexpr double DefaultCouplingTolerance = 1e-4;  // on max |cl residual
 // affecting converged states (see theory.rst).
 inline constexpr double MaxTargetSectionCl = 2.0;
 
+// Strips beyond the cl-matching contract decay their circulation toward
+// zero rather than inverting k for a target. Near |alpha_eff| = 90 deg the
+// circulatory force rho Gamma (v x dl) is PERPENDICULAR to the lift
+// direction, so the projection k passes through zero: the raw cl/k slams
+// the target between +-gammaCap with the sign of k's numerical noise
+// (measured on a planar wing at alpha = 90: CN ~ 5, pure artifact), and
+// the |k| ~ 0 branch used to FREEZE the stale circulation of the previous
+// continuation step, which is no better. The decay ramps in smoothly from
+// the residual's own contract edge (ResidualIncidenceLimitDeg) over this
+// many degrees, so a strip hovering at the edge sees no switching
+// nonlinearity. Inside the contract the inversion is exactly the one the
+// propeller consumers converge on -- a Tikhonov-damped inversion was
+// tried first and rejected: its 0.25% bias floors the residual above the
+// coupling tolerance on every converged solve.
+inline constexpr double TargetDecayRampDeg = 10.0;
+
 /**
  * The section-plane frame and section data of one spanwise strip -- what a
  * 2-D section model needs to know about the geometry it is a section OF.
@@ -405,9 +421,15 @@ struct ViscousCoupledResult {
             const double residual = clVlm - sect.cl;
             rawResidual[i] = residual;
             vrelMaxSq = std::max(vrelMaxSq, vrel * vrel);
-            target[i] = (std::fabs(k) > Math::Tiny)
-                            ? std::clamp(sect.cl / k, -gammaCap[i], gammaCap[i])
-                            : gamma[i];
+            const double rawTarget = (std::fabs(k) > Math::Tiny)
+                                         ? std::clamp(sect.cl / k, -gammaCap[i], gammaCap[i])
+                                         : 0.0;
+            const double contractWeight =
+                std::clamp((options.ResidualIncidenceLimitDeg + TargetDecayRampDeg -
+                            std::fabs(alphaEffDeg)) /
+                               TargetDecayRampDeg,
+                           0.0, 1.0);
+            target[i] = contractWeight * rawTarget;
 
             StripState& state = res.Strips[i];
             state.alphaEffDeg = alphaEffDeg;

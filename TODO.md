@@ -275,6 +275,90 @@ set by the four hand-tuned constants of `AnalyticSectionModel`'s
 deep-stall blend rather than by the method. Recorded here so the decision
 is not relitigated.
 
+### 3c. Post-separation study — Phase 0 (2026-08-10)
+
+A separate study from the papers: where does the configuration's behaviour
+converge to flat-plate scaling in alpha AND sideslip? Phase 0 built the
+scaffolding and the convergence metrics, ran the Level-2 coupled solve far
+past anything it had seen (alpha in [-4, 90] x beta in [0, 30]), and fixed
+what broke. The deep-stall NUMBERS are still set by AnalyticSectionModel's
+hand-tuned constants — the 3b caveat stands; Phase 1 replaces them.
+
+**New driver** `aeolion_poststall_sweep` (app/PostStallSweepExport.cpp):
+Level-2 coupled solve on the CLEAN lattice (a carry strip's bound midpoint
+is inside the fuselage where the source field is the interior continuation),
+warm-start continuation up each alpha column, body+duct sources coupled.
+Exports per condition: CN/CC/CL/CD/Cm, total and wing-only force/moment
+vectors, force angle off the chord-plane normal, sigma (total inclination),
+xcp, per-strip [eta, alpha_eff, cl, cd, residual], coupling diagnostics.
+CLI: handoff, out, Vinf, relaxation, andersonDepth, maxIterations, [beta].
+Reproduce the map:
+`aeolion_poststall_sweep tests/Data/AeolionGeometryHandoff-1.8.0.json out.json 25 0.05 0 1000`
+
+**Three failure modes found, all understood, two fixed:**
+
+1. **Spanwise checkerboard multistability.** The Anderson-accelerated fixed
+   point on 44 tightly packed wing strips lands on sawtooth equilibria
+   (alpha_eff alternating +-5 deg strip to strip; alpha=4 gave CL 0.35 or
+   0.93 depending on start). These are the classic spurious equilibria of
+   collocation nonlinear lifting-line. Plain damped iteration (omega=0.05,
+   AndersonDepth=0) converges the whole attached range to residual < 1e-4
+   in ~110 iterations; the propeller consumers (12 strips, kinematic-
+   dominated) never see this. NOT fixed in the solver — driver passes the
+   options. A spanwise-smoothed or Newton update is the real cure if the
+   wing becomes a first-class Level-2 consumer.
+2. **Camber double-count in strip frames** (driver-side, fixed). Building
+   ChordDir/LiftDir from the cambered panel geometry absorbs the lattice's
+   zero-lift shift, and Alpha0Deg then subtracts camber again: measured
+   coupled zero-lift at -7.8 deg = lattice -3.9 + thin-airfoil -4.2. The
+   driver now uses the true chord frame; coupled CL matches the inviscid
+   lattice to 4 digits at zero lift. The exact trap the ViscousCoupling.h
+   header warns about; a future PanelBuilder wing-strip builder must carry
+   the section plane for swept/twisted wings.
+3. **cl->Gamma inversion degeneracy at |alpha_eff| ~ 90 deg** (solver,
+   fixed in ViscousCoupling.h). The circulatory force is perpendicular to
+   the lift direction there, k passes through zero, and cl/k slammed the
+   target between +-gammaCap with the sign of k's noise (CN ~ 5 at
+   alpha=90, artifact), while the |k|~0 branch froze stale continuation
+   circulation. Fix: targets ramp to zero beyond the residual's own
+   contract edge (ResidualIncidenceLimitDeg, TargetDecayRampDeg=10). A
+   Tikhonov-damped inversion was tried first and REJECTED: its 0.25% bias
+   floors the residual above tolerance — TestViscousCoupling and
+   TestPropellerDuct caught it. With the decay, all suites pass and the
+   rotor-vane suites run ~20x faster (reversed vane tips stop chasing the
+   degenerate inversion): TestRotorVaneCoupling 137 s -> 7 s,
+   TestVaneCascade 191 s -> 17 s.
+
+**Deep-stall limit cycles are inherent, and the cycle means are
+reproducible**: independent iteration paths (Anderson vs plain damped)
+agree to 4+ digits on the cycle-mean loads at alpha 25..80. The map's
+deep-stall values are cycle means, exported with Converged=false and the
+residual — by design, not laundering.
+
+**The Phase-0 map** (donated constants and all): cross-beta collapse in
+total inclination sigma (sin sigma = sin alpha cos beta) holds to <5%
+spread from alpha ~ 6 deg through 75 deg — sideslip up to 30 deg only
+rescales the loads through cos beta. CN/sin sigma decays from ~7.5
+(attached) to the plate plateau ~2.1-2.3 by alpha ~ 55-65. CLmax = 1.39 at
+alpha = 20 (the analytic blend stalls 14 deg later than the computed
+separation onset at 6 — the gap Phase 1's Kirchhoff bridge closes).
+CN(90) = 2.11 vs Viterna CDmax(AR=6) = 1.22: +73%, the quantified cost of
+the AR-blind PlateNormal=1.8. xcp is structurally pinned at ~0.25c:
+SectionCoefficients has no cm, so the strip force acts at the quarter
+chord and the plate's walk to mid-chord CANNOT be represented — Phase 1
+must add cm to the section interface. Above alpha ~ 80 (and beta >= 15)
+the strip contract itself dies (most strips beyond the incidence limit);
+that corner of the map is scaffolding, not physics.
+
+**Phases agreed** (chat, 2026-08-10): 1 — anchored post-stall section
+models (Viterna AR-aware CDmax + Hoerner CN as the deep anchor, Kirchhoff
+attenuation driven by AttachmentBoundaryLayer's computed separation point,
+section cm, validation against Sheldahl & Klimas Re=3.6e5 / Ostowari-Naik;
+plus hysteresis map via up/down continuation). 2 — Maskew-Dvorak double
+wake on SectionPanelMethod's Hess-Smith solve. 3 — vortex particles (2D
+LESP discrete-vortex sections first, 3D particle wake from the computed
+separation line as an unsteady spot-check).
+
 ### 4. The actual boundary-layer coupling
 
 This work deliberately stopped at the *prerequisite*. Everything a march
