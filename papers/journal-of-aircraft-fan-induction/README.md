@@ -2,7 +2,7 @@
 
 **Venue:** AIAA Journal of Aircraft
 **Type:** full research article
-**Status:** method built and first result in hand; no draft yet. The
+**Status:** skeleton draft written (`paper.tex`, 6 pages, compiles). The
 upstream induction model (`Solver/DiskInduction.h`, verified by
 `TestDiskInduction`) exists and is wired into `aeolion_attachment_sweep`,
 which now takes optional thrust and airspeed. The headline number is
@@ -13,6 +13,31 @@ also a cautionary tale about how that number was nearly missed.
 Still to build: the two-way coupling (the rotor does not yet see the
 airframe) and the Level-B blade-lattice induction that would verify the
 Level-A cylinder used here.
+
+**What the draft does and does not contain.** Sections I--IV are written
+against implemented, tested code and against the sweeps recorded below;
+every quantitative claim traces to one of them. Section II now carries the
+full derivation of the vortex-cylinder model --- the disk/cylinder
+equivalence, the ring integral and its closed form, the three momentum
+limits recovered rather than assumed, the inverse-square upstream decay,
+and the annulus by superposition --- with three figures and two generated
+tables. Section V (Conclusions) is deliberately a stub, because it needs
+the two-way coupling and the transition operating line, and writing it
+from the one-way numbers would present a lower bound as a result.
+
+**Regenerating the figures and tables:**
+
+```
+aeolion_fan_induction tests/Data/AeolionGeometryHandoff-1.8.0.json     papers/journal-of-aircraft-fan-induction/figures/fan-induction.json
+# the two sweeps the separation figure compares (V = 12 m/s):
+aeolion_attachment_sweep tests/Data/AeolionGeometryHandoff-1.8.0.json     papers/journal-of-aircraft-fan-induction/figures/fine-off.json 0.001 12.0 3.0 16.0 0.5
+aeolion_attachment_sweep tests/Data/AeolionGeometryHandoff-1.8.0.json     papers/journal-of-aircraft-fan-induction/figures/fine-on.json  25.0  12.0 3.0 16.0 0.5
+cd papers/journal-of-aircraft-fan-induction/figures && python render-fan-figures.py
+```
+
+The `.json` files are untracked (the repo ignores `*.json`); the figures,
+tables and renderer are tracked, the same convention the other papers
+follow.
 
 The second Journal of Aircraft article
 ([../journal-of-aircraft/](../journal-of-aircraft/)) establishes where a
