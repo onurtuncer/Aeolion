@@ -1,0 +1,302 @@
+% AIAA Journal of Aircraft -- full research article -- EARLY DRAFT
+%
+% Build:  pdflatex paper && bibtex paper && pdflatex paper && pdflatex paper
+% with TEXINPUTS=./style: BSTINPUTS=./style:  (see README.md)
+%
+% STATUS: skeleton draft. Sections I-IV are written against implemented,
+% tested code (Solver/DiskInduction.h, TestDiskInduction) and against the
+% sweeps recorded in README.md. Section V is a stub: it needs the two-way
+% coupling and the transition operating line, neither of which exists yet,
+% and it must not be written from the one-way numbers as though they were
+% final. Every quantitative claim below is traceable to a sweep listed in
+% README.md -- do not add one that is not.
+
+\documentclass[submit]{aiaa-tc}% journal mode: 12pt, double-spaced
+
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{url}
+
+\title{Aft-Fan Inflow Induction and Wing Separation\\
+       During Tail-Sitter Transition}
+
+% Same author block and open items as the companion drafts.
+\author{
+ Onur Tuncer%
+  \thanks{Professor, Department of Aeronautical Engineering;
+    onur.tuncer@itu.edu.tr. TODO: AIAA member grade.}\\
+ {\normalsize\itshape
+  Istanbul Technical University, Istanbul, T\"urkiye}
+ \and
+ \c{C}a\u{g}lar \"U\c{c}ler%
+  \thanks{Associate Professor; caglar.ucler@ozyegin.edu.tr.
+    TODO: department and AIAA member grade.}\\
+ {\normalsize\itshape
+  \"Ozye\u{g}in University, Istanbul, T\"urkiye}
+ \and
+ Ahmet G\"une\c{s}%
+  \thanks{Associate Professor, Faculty of TODO; TODO: email and AIAA
+    member grade.}\\
+ {\normalsize\itshape
+  Istanbul Technical University, Istanbul, T\"urkiye}
+}
+
+\newcommand{\eqnref}[1]{(\ref{#1})}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+A tail-sitter with an aft-mounted ducted fan spends its transition at
+incidences where the wing is separated, and the fan sits close enough
+behind the wing to change that. The mechanism is not the one a blown-wing
+study would model: the duct leading edge lies a fifth of a chord
+\emph{aft} of the wing trailing edge, so its slipstream never reaches the
+wing. What reaches the wing is the fan's \emph{upstream induction} --- the
+accelerating field ahead of a loaded disk --- which is a favourable
+streamwise pressure gradient and therefore delays separation. This paper
+models that induction as the semi-infinite cylindrical vortex sheet
+equivalent to a uniformly loaded actuator disk, verified against the
+closed-form axial solution and against momentum theory, and applies it as
+an external field to a coupled wing--body panel solve whose separation
+behaviour is established independently. On the demonstrator airframe the
+fan is found to buy $\Delta\alpha \approx 0.8^\circ$ of incidence at the
+transition point, measured as the shift of the separation-location curve
+rather than as the crossing of a single threshold --- a distinction that
+matters, since a threshold evaluated on a two-degree grid reports no
+effect at all from data containing this one. The benefit is concentrated
+inboard, over precisely the span station that separates first, and
+reverses sign outboard where the wing leaves the fan's streamtube and
+meets its return flow.
+\end{abstract}
+
+\section*{Nomenclature}
+
+\begin{tabbing}
+  XXXXXXX \= \kill
+  $A$ \> disk area, m$^2$ \\
+  $b$ \> wing span, m \\
+  $c_n$ \> chord in the leading-edge-normal plane, m \\
+  $C_L$ \> lift coefficient \\
+  $R$ \> disk radius, m \\
+  $s$ \> axial distance from the disk plane, m \\
+  $T$ \> fan thrust, N \\
+  $u_x$ \> axial induced velocity, m/s \\
+  $v_h$ \> hover induced velocity, $\sqrt{T/(2\rho A)}$, m/s \\
+  $v_i$ \> induced velocity at the disk plane, m/s \\
+  $V_\infty$ \> freestream speed, m/s \\
+  $x_{\text{sep}}$ \> chordwise separation station, fraction of $c_n$ \\
+  $\alpha$ \> angle of attack, deg \\
+  $\gamma_t$ \> cylindrical vortex sheet strength, m/s \\
+  $\mu$ \> velocity ratio, $V_\infty / v_h$ \\
+  $\rho$ \> density, kg/m$^3$ \\
+\end{tabbing}
+
+\section{Introduction}
+
+Transition is the part of a tail-sitter's envelope that sizes its wing and
+its control authority, and it is the part a potential-flow method is least
+able to speak to, because the wing is separated over much of it. The
+companion study of this airframe establishes where separation begins and
+how far forward it moves with incidence. This paper asks what the
+propulsion system does about it.
+
+The question is usually posed for a \emph{tractor} installation, where the
+propeller slipstream washes the wing and raises its dynamic pressure --- a
+blown wing, extensively studied. The airframe here is the other
+arrangement, and the difference is not a detail. Its ducted fan sits at
+the tail: the duct leading edge is $0.21$ chord \emph{behind} the wing
+trailing edge, so the slipstream leaves downstream and never touches the
+wing. A model that represents only the wake therefore reports exactly zero
+interaction, which is a statement about the model rather than about the
+aircraft.
+
+What does reach the wing is the induction \emph{ahead} of the disk. A
+loaded actuator disk accelerates the flow approaching it, from zero far
+upstream to $v_i$ at the disk plane; a wing sitting in that field
+experiences a favourable streamwise pressure gradient, and a favourable
+gradient delays separation. The effect is the same in sign as a blown
+wing's and entirely different in mechanism, and it is much less studied.
+
+Two features of this configuration make the question sharp rather than
+academic. First, the induced velocity is not a small correction: with the
+annular disk area of the demonstrator, $v_h$ runs $14$--$24$~m/s against a
+$25$~m/s cruise, so the induction is comparable to the flight speed
+throughout transition and largest exactly where the airspeed is lowest.
+Second, the geometry aligns: the duct outer radius is $0.21$ semi-span,
+and the companion study places the wing's most advanced separation at
+$|2y/b| \approx 0.15$--$0.23$. The part of the wing that sheds first is
+the part the fan protects.
+
+\section{The induction model}
+\label{sec:model}
+
+\subsection{Why the wake model cannot serve}
+
+The solver's existing slipstream model reconstructs a rotor's wake from
+annular momentum theory and returns zero induced velocity at any point
+ahead of the disk plane. That is a correct economy for a surface lying in
+the wake, and it is the wrong tool here by construction. Applied to a wing
+upstream of the disk it returns zero, and the zero is the model's rather
+than the flow's.
+
+\subsection{The disk as a vortex cylinder}
+
+A uniformly loaded actuator disk is exactly equivalent to a semi-infinite
+cylindrical vortex sheet: azimuthal vorticity of constant strength
+$\gamma_t = 2 v_i$ per unit length, shed from the disk edge and trailing
+downstream. The equivalence is what makes the upstream field tractable,
+because it turns ``what does a disk do ahead of itself'' into a
+Biot--Savart integral over a known geometry with a closed-form answer on
+the axis:
+%
+\begin{equation}
+  \label{eq:axis}
+  u_x(s) = \frac{\gamma_t}{2}\left[1 + \frac{s}{\sqrt{s^2 + R^2}}\right],
+\end{equation}
+%
+with $s$ measured downstream from the disk plane. Equation~\eqnref{eq:axis}
+returns $v_i$ at the disk, $2 v_i$ far downstream and zero far upstream ---
+momentum theory's three values, recovered from the vortex system rather
+than assumed --- and $v_i(1 - 1/\sqrt{2}) = 0.293\,v_i$ one radius
+upstream, which is the number the whole interaction argument turns on.
+
+Off the axis the sheet is discretized into vortex rings, each polygonized
+into straight filaments and evaluated with the same Biot--Savart kernel
+the lattice uses for its own wake. Ring spacing grows geometrically
+downstream, since the first radius or two sets essentially the entire
+upstream answer while the far tail varies slowly, and that spacing keys to
+each cylinder's own radius rather than the disk's outer one.
+
+A ducted fan around a tail boom is an \emph{annulus}, not a disk. A
+uniformly loaded annulus carries no trailing vorticity between its radii,
+so it sheds only at the two edges --- the outer at $+\gamma_t$, the inner
+at $-\gamma_t$ --- and is therefore two superposed cylinders. On the axis
+the two cancel at the disk plane and asymptotically but not in between:
+downstream inside the bore the inner sheet dominates and the axial
+induction reverses, which is the centerbody wake and a real feature of
+annular jets.
+
+Swirl is deliberately absent. The root vortex and the wake's axial
+vorticity lie downstream of the disk and contribute nothing ahead of it,
+which is the region this model exists to serve.
+
+\subsection{Verification}
+
+The discretized sheet is checked against Eq.~\eqnref{eq:axis} at stations
+from four radii upstream to ten downstream, holding to 2\% of $v_i$, with
+the transverse components vanishing on the axis by symmetry and the error
+falling under refinement. The annulus is checked against its own closed
+form, which pins the inner sheet's sign and strength, including the
+reversed induction inside the bore. The momentum inversion
+$T = 2\rho A v_i (V_\infty + v_i)$ round-trips, and forward speed reduces
+$v_i$ at fixed thrust.
+
+One further check is the one that magnitude comparisons cannot make: the
+induction must point \emph{downstream} for a thrusting disk, both in the
+jet and ahead of it, and must reverse when the disk axis reverses.
+Inverting the ring circulation sense would turn the upstream acceleration
+this paper rests on into a deceleration while leaving every magnitude
+correct.
+
+\section{Application to the demonstrator}
+\label{sec:application}
+
+The induction is applied as an external perturbation field to the coupled
+wing--body--duct solve of the companion study, and the separation march is
+run with the fan on and off at otherwise identical conditions. The
+coupling is presently \emph{one-way}: the airframe sees the fan, the fan
+does not see the airframe, so every result below is a lower bound on the
+interaction.
+
+\subsection{Magnitude and distribution}
+
+The quantity that matters is not the induction at a point but its
+variation \emph{along the chord}, because that variation is the pressure
+gradient. The wing trailing edge sits roughly three times closer to the
+disk than its leading edge, so the induction rises substantially across
+the chord: at the transition point $V_\infty = 12$~m/s, $T = 25$~N, the
+rise is $23\%$ of freestream at $2y/b = 0.10$, $14.5\%$ at $0.20$ and
+$5\%$ at $0.30$. It is a favourable gradient, and it is strongest at the
+trailing edge, which is where turbulent separation begins and from which
+it marches forward.
+
+Two features of the spanwise distribution deserve emphasis. It falls by a
+factor of four between $2y/b = 0.10$ and $0.30$, concentrating the benefit
+inboard --- over the stations that separate first. And beyond
+$2y/b \approx 0.4$ it \emph{reverses}: outside the vortex cylinder the
+induced axial velocity is a return flow, so the fan marginally penalizes
+the outer wing. The penalty is under $2\%$ and the sign change is real,
+not numerical, and it exists in the answer only because the upstream field
+is modelled at all.
+
+\subsection{How much incidence the fan buys}
+
+% METHODOLOGICAL POINT -- keep this. The first pass of this study reported
+% no effect, from data that contained a 0.8 degree shift.
+Measuring the benefit requires care, and the obvious measurement fails.
+Defining separation onset as a threshold crossing --- the first $\alpha$
+at which any station separates forward of a fixed chordwise station ---
+and evaluating it on the two-degree grid used for the coefficient tables
+returns \emph{no change at all} between fan on and fan off. That result is
+an artifact: a shift smaller than the grid spacing moves the crossing
+within an interval without moving it across one, so the reported onset is
+quantized to the grid and any sub-degree shift is invisible by
+construction.
+
+The appropriate measurement is the horizontal shift of the separation
+curve $x_{\text{sep}}(\alpha)$, evaluated at several criterion levels.
+Measured that way on a $0.5^\circ$ grid, the fan buys
+$\Delta\alpha = +0.81^\circ$ averaged over criteria from
+$x_{\text{sep}} = 0.85$ to $0.55$, with individual values between
+$+0.73^\circ$ and $+0.86^\circ$. The consistency across criterion levels
+is what makes this a property of the flow rather than of the definition;
+the shift is smaller near onset, $+0.52^\circ$, where the separation point
+lies at the trailing edge and the layer is least sensitive to the
+gradient.
+
+The benefit scales as expected with the velocity ratio: at cruise speed
+the same comparison returns roughly a third of the transition value,
+consistent with the induction scaling as $v_i/V_\infty$.
+
+\section{Limitations}
+
+The coupling is one-way, so the reported shift is a lower bound. The
+induction model assumes uniform disk loading; real loading tapers at both
+edges, softening the sheet into a band that superposed cylinders at
+intermediate radii would represent. The fuselage boundary layer that an
+aft fan genuinely ingests is not modelled, and it acts to reduce the
+benefit. The analysis is quasi-steady, while transition is a manoeuvre
+rather than a sequence of trim points. And the separation criterion
+inherits the companion study's caveat: bubble bursting is not modelled, so
+the separation boundary is an upper bound on usable incidence rather than
+a predicted stall.
+
+\section{Conclusions}
+\label{sec:conclusions}
+
+% STUB -- do not finalize. Needs the two-way coupling and the transition
+% operating line (thrust and airspeed are currently independent parameters
+% where a real transition walks a coupled schedule). See README.md.
+
+\emph{[Draft: conclusions pending the two-way coupling and the transition
+operating line. See the repository README.]}
+
+\section*{Acknowledgments}
+
+This work was supported by the Istanbul Technical University Scientific
+Research Projects Coordination Unit (\.IT\"U BAP) under project
+MGA-2026-48282, ``JETTAIL: Design, Control, and Autonomous Mission
+Capability Development of a Jet-Flow-Vectored EDF-Based Tail-Sitter VTOL
+UAV.''
+
+% TODO: AI-assistance disclosure per AIAA policy, as in the companion
+% drafts.
+
+\bibliographystyle{aiaa}
+\bibliography{references}
+
+\end{document}

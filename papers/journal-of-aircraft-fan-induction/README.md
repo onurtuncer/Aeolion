@@ -2,7 +2,7 @@
 
 **Venue:** AIAA Journal of Aircraft
 **Type:** full research article
-**Status:** method built and first result in hand; no draft yet. The
+**Status:** skeleton draft written (`paper.tex`, 6 pages, compiles). The
 upstream induction model (`Solver/DiskInduction.h`, verified by
 `TestDiskInduction`) exists and is wired into `aeolion_attachment_sweep`,
 which now takes optional thrust and airspeed. The headline number is
@@ -13,6 +13,16 @@ also a cautionary tale about how that number was nearly missed.
 Still to build: the two-way coupling (the rotor does not yet see the
 airframe) and the Level-B blade-lattice induction that would verify the
 Level-A cylinder used here.
+
+**What the draft does and does not contain.** Sections I--IV are written
+against implemented, tested code and against the sweeps recorded below;
+every quantitative claim traces to one of them. Section V (Conclusions) is
+deliberately a stub, because it needs the two-way coupling and the
+transition operating line, and writing it from the one-way numbers would
+present a lower bound as a result. There are no figures yet: the obvious
+three are the upstream induction field against Eq. (1), the chordwise
+gradient across the span, and the two separation curves with their
+horizontal shift.
 
 The second Journal of Aircraft article
 ([../journal-of-aircraft/](../journal-of-aircraft/)) establishes where a
