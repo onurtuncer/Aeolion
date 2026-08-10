@@ -1595,18 +1595,30 @@ negative at zero lift, and fitting :math:`C_{D_i} = C_{D_i,0} + kC_L^2`
 over an alpha sweep of the airframe in ``tests/Data`` implies a span
 efficiency of 1.53, where :math:`e \leq 1` for any planar wing.
 
-A closed body in potential flow carries no net force exactly --
-d'Alembert -- but a *discretized* one does. That residual is negligible
-beside lift, which is why ``CL`` and the moments are unaffected, and
-comparable with induced drag, which is a far smaller number. It happens to
-act as a thrust.
+The cause is **not** a violation of d'Alembert, which is worth stating
+because it is the tempting explanation and it is measurably false: closed
+bodies in this solver carry zero net force in uniform flow to *machine
+precision* (:math:`|F|/qA \sim 10^{-16}`, ``TestBodyPanels`` and
+``TestDuctPanels``). The body's force in a coupled solve is physical --- it
+sits in the wing's upwash and carries about 8% of the lift on the airframe
+in ``tests/Data``.
+
+The cause is that near-field induced drag is a small difference of much
+larger quantities: it is the streamwise component of forces dominated by
+lift, so its relative error is amplified by the lift-to-drag ratio. On a
+wing alone this is benign, and near and far field agree here to 0.4%.
+Adding a body substantially changes the induced velocity at the wing's
+bound vortices, most of all near the root, and adds a pressure integration
+over the body in a strongly non-uniform field. Both errors are negligible
+beside lift --- which is why ``CL`` and the moments are unaffected --- and
+comparable with induced drag.
 
 The Trefftz plane measures something the body cannot contribute to. A
 closed non-lifting body sheds no wake: its source distribution has no
 trailing vorticity and puts nothing through a plane at downstream
 infinity. Only the lifting surfaces' trailing vorticity crosses it, so the
-body's residual is excluded by construction rather than by a calibrated
-correction. The classical result reduces to
+far-field integral never evaluates the body at all and cannot inherit the
+near-field evaluation's error. The classical result reduces to
 
 .. math::
 

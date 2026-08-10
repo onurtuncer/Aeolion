@@ -201,10 +201,11 @@ pinned by any test):
 `SolveResult::CDi` is not trustworthy on a coupled (wing + closed body)
 configuration. Forces are integrated in the near field (Kutta-Joukowski
 at each bound-vortex midpoint, see the header comment at the top of
-`Solver.h`), and on a coupled solve that integration also collects a
-contribution from the discretized closed source bodies. A closed body
-carries no net force exactly, but a *panelled* one does, and here the
-residual acts as a thrust:
+`Solver.h`), and near-field induced drag is a small difference of much
+larger quantities — the streamwise component of forces dominated by lift,
+so its relative error scales with L/D. Adding a body changes the induced
+velocity at the wing's bound vortices and adds a pressure integration over
+the body in a non-uniform field:
 
 - CDi is **negative** at zero lift (−0.006 at α = −4° where CL ≈ −0.013);
 - fitting CDi = CDi0 + k·CL² over the α sweep gives CDi0 = −0.0037 and
@@ -214,9 +215,15 @@ residual acts as a thrust:
 CL and the moments are unaffected — the lift slope (4.86) and roll damping
 (−0.458) both check out against theory.
 
+NOT a d'Alembert violation — that is the tempting explanation and it is
+measurably false. Closed bodies here carry zero net force in uniform flow
+to **machine precision** (|F|/qA ~ 1e-16, TestBodyPanels/TestDuctPanels),
+and the body's force in a coupled solve is physical: it sits in the wing's
+upwash and carries ~8% of the lift.
+
 **Fixed** by `solver/include/Aeolion/Solver/TrefftzPlane.h`: a far-field
-integration over the wake trace, blind to the body's near-field residual
-because a closed body sheds no wake at all. On the coupled airframe the
+integration over the wake trace, which never evaluates the body at all
+because a closed body sheds no wake. On the coupled airframe the
 zero-lift intercept falls −0.0037 → −0.0003 and CDi is positive at every
 attitude. `TestTrefftzPlane` pins it on elliptic loading (e = 1 and
 CDi = CL²/(πAR)), the e ≤ 1 bound across five distributions, exact

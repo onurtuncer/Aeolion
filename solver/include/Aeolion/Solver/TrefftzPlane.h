@@ -16,20 +16,32 @@
 //     tests/Data implies an Oswald efficiency of 1.53, and e <= 1 for any
 //     planar wing.
 //
-// A closed body in potential flow carries no net force exactly -- d'Alembert
-// -- but a DISCRETIZED one does. That residual is small compared with lift,
-// which is why CL and the moments are unaffected, and it is comparable with
-// induced drag, which is a much smaller number. It happens to act as a
-// thrust, so it cancels part of the wing's induced drag and pushes the
-// apparent span efficiency above unity.
+// The cause is NOT a violation of d'Alembert, and it is worth saying so
+// because that is the tempting explanation and it is measurably false:
+// closed bodies in this solver carry zero net force in uniform flow to
+// MACHINE PRECISION (|F|/qA ~ 1e-16, TestBodyPanels and TestDuctPanels).
+// The body's force in a coupled solve is physical -- it sits in the wing's
+// upwash and carries about 8% of the lift on the airframe in tests/Data.
+//
+// The cause is that near-field induced drag is a small difference of much
+// larger quantities. It is the streamwise component of forces dominated by
+// lift, so its relative error is amplified by the ratio of lift to drag,
+// and it converges slowly for that reason alone. On a wing this is benign
+// -- near and far field agree to 0.4% here. Adding a body changes the
+// induced velocity at the wing's bound vortices substantially, most of all
+// near the root, and adds a pressure integration over the body in a
+// strongly non-uniform field. Both errors are negligible beside lift, which
+// is why CL and the moments are unaffected, and comparable with induced
+// drag, which is a far smaller number.
 //
 // --- what the far field does about it -----------------------------------------
 // The Trefftz plane measures something the body cannot contribute to. A
 // closed non-lifting body sheds no wake: its source distribution has no
 // trailing vorticity, so it puts nothing through a plane at downstream
 // infinity. Only the lifting surfaces' trailing vorticity crosses it. The
-// far-field integral is therefore blind to the body's near-field residual by
-// construction, rather than by a correction that has to be tuned.
+// far-field integral therefore never evaluates the body at all, and cannot
+// inherit the near-field evaluation's error, by construction rather than by
+// a correction that has to be tuned.
 //
 // The classical result (Munk; Katz & Plotkin) is that the induced drag equals
 // the crossflow kinetic energy left in the wake, which for a wake trace of

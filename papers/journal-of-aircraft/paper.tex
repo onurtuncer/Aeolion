@@ -950,27 +950,38 @@ this configuration in a way that is easy to miss.
 
 Forces are ordinarily integrated in the NEAR field here, by applying
 Kutta--Joukowski at each bound-vortex midpoint. On a wing alone that is
-sound. On a coupled configuration the same integration also collects a
-contribution from the closed source bodies, and while a closed body in
-potential flow carries no net force exactly, a \emph{discretized} one
-does. That residual is negligible beside lift --- which is why $C_L$ and
-the moments are unaffected, and consistent with the lift-slope and
-roll-damping checks above --- and comparable with induced drag, which is a
-far smaller number. It acts as a thrust. The two symptoms follow: the
-near-field $C_{D_i}$ is \emph{negative} at $\alpha = -4^\circ$, where the
-lift is essentially zero and induced drag must vanish, and fitting the
-$\beta = 0$ column to $C_{D_i} = C_{D_i,0} + kC_L^2$ returns
-$C_{D_i,0} = -0.0037$ with a $k$ implying a span efficiency of 1.53 ---
-not merely optimistic but impossible, since $e \leq 1$ for any planar
-wing.
+sound. On a coupled configuration it is not: the near-field $C_{D_i}$ is
+\emph{negative} at $\alpha = -4^\circ$, where the lift is essentially zero
+and induced drag must vanish, and fitting the $\beta = 0$ column to
+$C_{D_i} = C_{D_i,0} + kC_L^2$ returns $C_{D_i,0} = -0.0037$ with a $k$
+implying a span efficiency of 1.53 --- not merely optimistic but
+impossible, since $e \leq 1$ for any planar wing.
 
-The far-field column removes both. A Trefftz-plane integration measures
-the crossflow kinetic energy the wake carries off, and a closed body
-sheds no wake: its source distribution has no trailing vorticity and puts
-nothing through a plane at downstream infinity. The body's residual is
-therefore excluded by construction rather than by a correction that would
-have to be calibrated. The zero-lift intercept falls from $-0.0037$ to
-$-0.0003$, and $C_{D_i}$ is positive at every attitude in the matrix.
+The cause is worth stating precisely, because the tempting explanation is
+wrong. It is \emph{not} that the discretized body carries a spurious
+force: closed bodies in this solver satisfy d'Alembert to machine
+precision in uniform flow, $|F|/(q A) \sim 10^{-16}$, and the force the
+body carries in the coupled solve is physical --- it sits in the wing's
+upwash and accounts for about 8\% of the configuration's lift. The cause
+is that near-field induced drag is a small difference of much larger
+quantities. It is the streamwise component of forces dominated by lift, so
+its relative error is amplified by the lift-to-drag ratio and converges
+slowly for that reason alone. Introducing a body substantially alters the
+induced velocity at the wing's bound vortices, most of all near the root,
+and adds a pressure integration over the body in a strongly non-uniform
+field. Both errors are negligible beside lift --- which is why $C_L$ and
+the moments are unaffected, consistent with the lift-slope and
+roll-damping checks above --- and comparable with induced drag, which is a
+far smaller number.
+
+The far-field column removes both symptoms. A Trefftz-plane integration
+measures the crossflow kinetic energy the wake carries off, and a closed
+body sheds no wake: its source distribution has no trailing vorticity and
+puts nothing through a plane at downstream infinity. The far-field
+integral therefore never evaluates the body at all, and cannot inherit the
+near-field evaluation's error. The zero-lift intercept falls from
+$-0.0037$ to $-0.0003$, and $C_{D_i}$ is positive at every attitude in the
+matrix.
 
 Span efficiency then requires one care in its formation, which is worth
 stating because getting it wrong looks exactly like a defect in the
