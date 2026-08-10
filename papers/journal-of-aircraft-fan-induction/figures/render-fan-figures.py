@@ -62,6 +62,59 @@ def load():
 
 
 
+# --------------------------- fig 0a: the configuration in three dimensions --
+def fig_configuration3d(d):
+    """Orthographic view of the whole coupled solve -- wing lattice,
+    source-panelled fuselage and duct, and the fan disk -- painter-sorted.
+    The camera looks from ahead and above the left wing, which is the view
+    that shows the fan sitting behind and inboard of the wing at once."""
+    g = d["geometry3d"]
+    m = d["meta"]
+
+    view = np.array([0.62, 0.60, -0.50])   # camera direction (into the scene)
+    view /= np.linalg.norm(view)
+    right = np.cross(np.array([0.0, 0.0, 1.0]), view)
+    right /= np.linalg.norm(right)
+    up = np.cross(view, right)
+
+    def project(p):
+        p = np.asarray(p)
+        return p @ right, p @ up, p @ view
+
+    quads, depth, face, edge = [], [], [], []
+    for name, colour, ec in (("body", "#d9d9d9", "#9a9a9a"),
+                             ("duct", "#bdbdbd", "#7f7f7f"),
+                             ("wing", "#6baed6", "#2171b5")):
+        for corners in g[name]:
+            pr = [project(c) for c in corners]
+            quads.append([(u, v) for u, v, _ in pr])
+            depth.append(np.mean([w for _, _, w in pr]))
+            face.append(colour)
+            edge.append(ec)
+
+    order = np.argsort(depth)[::-1]        # far first
+    fig, ax = plt.subplots(figsize=(5.0, 3.2))
+    ax.add_collection(matplotlib.collections.PolyCollection(
+        [quads[k] for k in order], facecolors=[face[k] for k in order],
+        edgecolors=[edge[k] for k in order], linewidths=0.18, zorder=1))
+
+    # The fan disk, drawn as its annulus in the disk plane.
+    th = np.linspace(0.0, 2.0 * np.pi, 121)
+    for r in (m["hubRadius"], m["radius"]):
+        ring = np.column_stack([np.full_like(th, m["diskX"]),
+                                r * np.cos(th), r * np.sin(th)])
+        pr = np.array([project(p) for p in ring])
+        ax.plot(pr[:, 0], pr[:, 1], color="#b2182b", linewidth=1.1, zorder=3)
+    ax.plot([], [], color="#b2182b", linewidth=1.1, label="fan disk")
+
+    ax.set_aspect("equal")
+    ax.axis("off")
+    ax.autoscale_view()
+    ax.legend(loc="upper right", frameon=False, fontsize=7, labelcolor=INK)
+    fig.subplots_adjust(left=0.01, right=0.99, bottom=0.01, top=0.99)
+    return fig
+
+
 # ------------------------------- fig 0: the configuration being solved -----
 def fig_configuration(d):
     """Planform and meridional views of the coupled wing-body-duct solve,
@@ -293,7 +346,8 @@ def table_operating(d):
 def main():
     d, off, on = load()
     TABLES.mkdir(exist_ok=True)
-    for name, fig in (("configuration", fig_configuration(d)),
+    for name, fig in (("configuration-3d", fig_configuration3d(d)),
+                      ("configuration", fig_configuration(d)),
                       ("axis-induction", fig_axis(d)),
                       ("chordwise-gradient", fig_gradient(d)),
                       ("separation-shift", fig_shift(off, on))):

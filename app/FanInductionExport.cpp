@@ -177,6 +177,51 @@ int main(int argc, char** argv) {
             << ",\"x1\":" << (-contract.Duct.Center.x + 0.5 * contract.Duct.Chord)
             << ",\"rInner\":" << 0.5 * contract.Duct.InnerDiameter
             << ",\"rOuter\":" << 0.5 * contract.Duct.OuterDiameter << "}},\n";
+
+        // The same geometry as QUADS, for the three-dimensional view: wing
+        // panels reconstructed the way the viewer draws them (a quarter
+        // chord ahead of the bound segment, three quarters aft), and the
+        // body and duct as the source panels the solve actually carries.
+        const auto body3d = builder.BuildBody();
+        const auto duct3d = builder.BuildDuct();
+        const auto quad = [&out](const S::Vec3 c[4], bool first) {
+            if (!first) out << ',';
+            out << '[';
+            for (int i = 0; i < 4; ++i)
+                out << (i ? "," : "") << '[' << c[i].x << ',' << c[i].y << ',' << c[i].z << ']';
+            out << ']';
+        };
+
+        out << "\"geometry3d\":{\"wing\":[";
+        bool firstQuad = true;
+        for (const auto& panel : wing) {
+            const double c = (panel.SpanwiseWidth > 0.0)
+                                 ? panel.PlanformArea / panel.SpanwiseWidth : 0.0;
+            S::Vec3 dir = panel.ControlPoint - (panel.A + panel.B) * 0.5;
+            const double n = dir.Norm();
+            dir = (n > 1e-12) ? dir * (1.0 / n) : S::Vec3(1, 0, 0);
+            const S::Vec3 corners[4] = {panel.A - dir * (0.25 * c), panel.B - dir * (0.25 * c),
+                                        panel.B + dir * (0.75 * c), panel.A + dir * (0.75 * c)};
+            quad(corners, firstQuad);
+            firstQuad = false;
+        }
+        out << "],\"body\":[";
+        firstQuad = true;
+        for (const auto& panel : body3d) {
+            const S::Vec3 corners[4] = {panel.Corners[0], panel.Corners[1], panel.Corners[2],
+                                        panel.Corners[3]};
+            quad(corners, firstQuad);
+            firstQuad = false;
+        }
+        out << "],\"duct\":[";
+        firstQuad = true;
+        for (const auto& panel : duct3d) {
+            const S::Vec3 corners[4] = {panel.Corners[0], panel.Corners[1], panel.Corners[2],
+                                        panel.Corners[3]};
+            quad(corners, firstQuad);
+            firstQuad = false;
+        }
+        out << "]},\n";
     }
 
     // --- 4. meridional slice of the induction field ------------------------
