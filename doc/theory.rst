@@ -1580,6 +1580,74 @@ number and length, which must neither bubble nor separate --- without it,
 the Howarth test would also be passed by code that reports separation
 eagerly.
 
+Induced drag from the far field
+---------------------------------
+
+``Solver/TrefftzPlane.h`` measures induced drag as the crossflow kinetic
+energy the wake carries off, rather than as the streamwise component of
+the near-field forces.
+
+The near-field route -- Kutta--Joukowski at each bound-vortex midpoint --
+gives lift and induced drag together and needs no wake integration, which
+is why it is the default. On a **wing** it is sound. On a **coupled**
+configuration it is not, and the failure is not subtle: ``CDi`` comes out
+negative at zero lift, and fitting :math:`C_{D_i} = C_{D_i,0} + kC_L^2`
+over an alpha sweep of the airframe in ``tests/Data`` implies a span
+efficiency of 1.53, where :math:`e \leq 1` for any planar wing.
+
+The cause is **not** a violation of d'Alembert, which is worth stating
+because it is the tempting explanation and it is measurably false: closed
+bodies in this solver carry zero net force in uniform flow to *machine
+precision* (:math:`|F|/qA \sim 10^{-16}`, ``TestBodyPanels`` and
+``TestDuctPanels``). The body's force in a coupled solve is physical --- it
+sits in the wing's upwash and carries about 8% of the lift on the airframe
+in ``tests/Data``.
+
+The cause is that near-field induced drag is a small difference of much
+larger quantities: it is the streamwise component of forces dominated by
+lift, so its relative error is amplified by the lift-to-drag ratio. On a
+wing alone this is benign, and near and far field agree here to 0.4%.
+Adding a body substantially changes the induced velocity at the wing's
+bound vortices, most of all near the root, and adds a pressure integration
+over the body in a strongly non-uniform field. Both errors are negligible
+beside lift --- which is why ``CL`` and the moments are unaffected --- and
+comparable with induced drag.
+
+The Trefftz plane measures something the body cannot contribute to. A
+closed non-lifting body sheds no wake: its source distribution has no
+trailing vorticity and puts nothing through a plane at downstream
+infinity. Only the lifting surfaces' trailing vorticity crosses it, so the
+far-field integral never evaluates the body at all and cannot inherit the
+near-field evaluation's error. The classical result reduces to
+
+.. math::
+
+   D_i = -\frac{\rho}{2}\int \Gamma(y)\, w_T(y)\, \mathrm{d}y ,
+
+with :math:`w_T` the downwash induced *in the plane* -- twice that at the
+lifting line, since the wake there is doubly infinite rather than
+semi-infinite. That factor of two is what makes this more than the
+near-field calculation rearranged.
+
+Two implementation points carry the sign and the topology. A chordwise
+stack sharing a ``StripIndex`` sheds **one** net filament pair, its
+interior legs cancelling, so circulations are summed per strip before the
+trace is built. And the shed signs come from the horseshoe circuit rather
+than from intuition: ``Solver.h`` traverses inf → A → B → inf, so the
+filament at A is traversed in :math:`-x` and the one at B in :math:`+x`,
+and the plane looking downstream sees them as :math:`-\Gamma` and
+:math:`+\Gamma`. Reversing that leaves every magnitude exactly right --
+elliptic loading still returns :math:`|e| = 1` -- and flips the drag
+negative, which looks precisely like the defect being fixed.
+
+**Which lift.** The far-field drag belongs to the lifting system, since
+only the lifting system sheds a wake, so a span efficiency formed from it
+needs the lifting system's lift. On the airframe in ``tests/Data`` the
+fuselage carries about 9% of the total, and using the configuration
+:math:`C_L` returns :math:`e = 1.17` -- still above the bound -- against
+:math:`0.965` for the wing's own lift. The integral is the same either
+way; only the comparison differs.
+
 Disk induction: what a rotor does upstream of itself
 -----------------------------------------------------
 

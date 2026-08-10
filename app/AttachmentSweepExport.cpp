@@ -46,6 +46,7 @@
 #include "Aeolion/Solver/DiskInduction.h"
 #include "Aeolion/Solver/Solver.h"
 #include "Aeolion/Solver/SurfaceFlow.h"
+#include "Aeolion/Solver/TrefftzPlane.h"
 
 #include <algorithm>
 #include <cmath>
@@ -570,8 +571,18 @@ int main(int argc, char** argv) {
 
             if (!firstCondition) out << ",\n";
             firstCondition = false;
+            // Far-field induced drag alongside the near-field one. On a
+            // coupled configuration the near-field number collects a
+            // spurious thrust from the discretized closed bodies; the
+            // Trefftz integral cannot, because a closed body sheds no wake.
+            const S::TrefftzResult trefftz = S::TrefftzInducedDrag(
+                wingCarry, carry.gamma, ref, Rho, fc.Vinf, carry.CL);
+
             out << R"( {"alphaDeg":)" << alphaDeg << R"(,"betaDeg":)" << betaDeg << R"(,"CL":)"
-                << carry.CL << R"(,"CDi":)" << carry.CDi << R"(,"CY":)" << carry.CY << R"(,"Cm":)"
+                << carry.CL << R"(,"CDi":)" << carry.CDi << R"(,"CDiTrefftz":)" << trefftz.CDi
+                << R"(,"spanEfficiency":)" << trefftz.SpanEfficiency
+                << R"(,"liftWing":)" << (carry.LiftBySurface.count("wing") ? carry.LiftBySurface.at("wing") : 0.0)
+                << R"(,"liftTotal":)" << carry.L << R"(,"CY":)" << carry.CY << R"(,"Cm":)"
                 << carry.Cm << R"(,"Croll":)" << carry.Croll << R"(,"Cn":)" << carry.Cn
                 << R"(,"CLClean":)" << clean.CL << ",\n  \"derivatives\":{"
                 << R"("CL_alpha":)" << derivatives.CL_alpha << R"(,"CDi_alpha":)"

@@ -126,12 +126,14 @@ def full_coefficient_table(data):
                 continue
             rows.append(
                 rf"  {a:5.0f} & {b:5.0f} & {fmt(cond['CL'], 4)} & {fmt(cond['CDi'], 5)} & "
+                rf"{fmt(cond.get('CDiTrefftz', float('nan')), 5)} & "
                 rf"{fmt(cond['CY'], 5)} & {fmt(cond['Cm'], 4)} & {fmt(cond['Croll'], 5)} & "
                 rf"{fmt(cond['Cn'], 5)} \\")
     return "\n".join([
-        r"\begin{tabular}{rrrrrrrr}",
+        r"\begin{tabular}{rrrrrrrrr}",
         r"  \hline",
-        r"  $\alpha$ & $\beta$ & $C_L$ & $C_{D_i}$ & $C_Y$ & $C_m$ & $C_l$ & $C_n$ \\",
+        r"  $\alpha$ & $\beta$ & $C_L$ & $C_{D_i}$(near) & $C_{D_i}$(far) & $C_Y$ & $C_m$ & "
+        r"$C_l$ & $C_n$ \\",
         r"  \hline",
         *rows,
         r"  \hline",

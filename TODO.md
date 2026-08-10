@@ -196,15 +196,16 @@ pinned by any test):
    ~0.48 m, about one body length, inflating Cm_α by an order of
    magnitude. Mine, introduced in this branch.
 
-**One real defect found and NOT fixed — worth its own branch:**
+**One real defect found — NOW FIXED on `fix/trefftz-induced-drag`:**
 
 `SolveResult::CDi` is not trustworthy on a coupled (wing + closed body)
 configuration. Forces are integrated in the near field (Kutta-Joukowski
 at each bound-vortex midpoint, see the header comment at the top of
-`Solver.h`), and on a coupled solve that integration also collects a
-contribution from the discretized closed source bodies. A closed body
-carries no net force exactly, but a *panelled* one does, and here the
-residual acts as a thrust:
+`Solver.h`), and near-field induced drag is a small difference of much
+larger quantities — the streamwise component of forces dominated by lift,
+so its relative error scales with L/D. Adding a body changes the induced
+velocity at the wing's bound vortices and adds a pressure integration over
+the body in a non-uniform field:
 
 - CDi is **negative** at zero lift (−0.006 at α = −4° where CL ≈ −0.013);
 - fitting CDi = CDi0 + k·CL² over the α sweep gives CDi0 = −0.0037 and
@@ -212,13 +213,36 @@ residual acts as a thrust:
   (e ≤ 1 for any planar wing).
 
 CL and the moments are unaffected — the lift slope (4.86) and roll damping
-(−0.458) both check out against theory. The fix is a **Trefftz-plane
-integration** over the wake, which measures the wake's kinetic energy and
-is blind to the body's near-field residual. `Solver.h` explicitly notes it
-does induced drag "without a separate Trefftz-plane integration"; that is
-fine for a wing alone and not fine once a closed body is in the system.
-Documented as a stated limitation in `papers/journal-of-aircraft/paper.tex`
-Sec. VI.E rather than papered over.
+(−0.458) both check out against theory.
+
+NOT a d'Alembert violation — that is the tempting explanation and it is
+measurably false. Closed bodies here carry zero net force in uniform flow
+to **machine precision** (|F|/qA ~ 1e-16, TestBodyPanels/TestDuctPanels),
+and the body's force in a coupled solve is physical: it sits in the wing's
+upwash and carries ~8% of the lift.
+
+**Fixed** by `solver/include/Aeolion/Solver/TrefftzPlane.h`: a far-field
+integration over the wake trace, which never evaluates the body at all
+because a closed body sheds no wake. On the coupled airframe the
+zero-lift intercept falls −0.0037 → −0.0003 and CDi is positive at every
+attitude. `TestTrefftzPlane` pins it on elliptic loading (e = 1 and
+CDi = CL²/(πAR)), the e ≤ 1 bound across five distributions, exact
+cancellation of chordwise stacks, and agreement with the near-field
+method to 0.4% on a wing alone.
+
+**The gotcha that cost an hour, so it is written down:** span efficiency
+must be formed with the LIFTING SYSTEM's lift, not the configuration's.
+Only the lifting system sheds a wake, so the far-field drag is its alone.
+The fuselage here carries ~9% of the lift, and comparing the whole CL
+against a wing-only CDi gives e = 1.17 — still above the bound, and
+looking exactly like a defect in a perfectly sound integral. Against the
+wing's own lift (`SolveResult::LiftBySurface["wing"]`) it is 0.965, with
+per-condition values 0.96–0.99.
+
+Still open: `SolveResult::CDi` remains the near-field number, with the
+Trefftz result computed alongside rather than replacing it. Making the
+far-field value the default is a behaviour change to a tested field and
+wants its own decision.
 
 ### 3b. Third paper — aft-fan inflow induction (scoped 2026-08-09)
 

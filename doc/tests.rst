@@ -263,6 +263,39 @@ test would also be passed by code that reports separation eagerly. Empty
 runs, runs below ``MinMarchStations``, and a zero Reynolds number are all
 declined rather than answered.
 
+TestTrefftzPlane
+----------------
+
+Far-field induced drag (``Solver::TrefftzInducedDrag``), checked against
+the results that bound it.
+
+**Elliptic loading** is the one distribution whose span efficiency is
+exactly 1, and the classical minimum no planar wing can beat. The integral
+must return :math:`e = 1` and
+:math:`C_{D_i} = C_L^2/(\pi A\!R)` for it; if it does not, nothing else
+it says is worth reading.
+
+**The bound itself**, :math:`e \leq 1`, across five distributions --
+elliptic, uniform, triangular, tip-loaded, parabolic. This is the
+assertion the near-field method fails on a coupled configuration, where it
+reports 1.53. The tolerance admits about half a percent, because the bound
+is a continuum statement and a piecewise-constant approximation of the
+optimum straddles it by the discretization error.
+
+**Zero lift, zero drag** -- exactly, which is the sharpest statement of
+the defect being replaced, since the near-field result is *negative*
+there. Paired with an antisymmetric loading that carries no net lift and
+must still carry real induced drag: a method returning zero whenever
+:math:`C_L` vanished would be wrong in the other direction.
+
+**Chordwise stacks collapse.** A stack sharing a ``StripIndex`` sheds one
+net filament pair -- its interior legs cancel -- so splitting a strip's
+circulation across three rows must not move the answer by a bit.
+
+**Agreement with the near field on a wing alone**, within 15%. The
+near-field result is sound there, so a far-field method that disagreed
+would be the suspect one.
+
 TestDiskInduction
 -----------------
 

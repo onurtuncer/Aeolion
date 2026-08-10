@@ -62,6 +62,9 @@ Stagnation and attachment lines (see :doc:`theory`):
   and the turbulent separation point.
 * :cpp:class:`Aeolion::Solver::SeparationSurvey` — the separation picture
   across a lifting surface at one flight condition.
+* :cpp:class:`Aeolion::Solver::TrefftzResult` — far-field induced drag and
+  span efficiency, from the wake trace rather than the near-field forces;
+  the trustworthy ``CDi`` on a coupled configuration.
 * :cpp:class:`Aeolion::Solver::ActuatorDisk` — a uniformly loaded rotor
   disk, stated by geometry and disk-plane induced velocity.
 * :cpp:class:`Aeolion::Solver::VortexCylinderMesh` — its semi-infinite
