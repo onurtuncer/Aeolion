@@ -20,3 +20,9 @@ target_link_libraries(aeolion_lattice_export PRIVATE aeolion aeolion_panelbuilde
 # papers/journal-of-aircraft/figures/.
 add_executable(aeolion_attachment_sweep AttachmentSweepExport.cpp)
 target_link_libraries(aeolion_attachment_sweep PRIVATE aeolion aeolion_panelbuilder)
+
+# Exports the aft-fan induction paper's figure data (axis verification,
+# chordwise gradient across the span, meridional field slice) from the
+# vortex-cylinder model in Solver/DiskInduction.h.
+add_executable(aeolion_fan_induction FanInductionExport.cpp)
+target_link_libraries(aeolion_fan_induction PRIVATE aeolion aeolion_panelbuilder)

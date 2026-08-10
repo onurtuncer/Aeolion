@@ -98,17 +98,22 @@ meets its return flow.
 \section{Introduction}
 
 Transition is the part of a tail-sitter's envelope that sizes its wing and
-its control authority, and it is the part a potential-flow method is least
+its control authority~\cite{stone2008,ozdemir2014}, and it is the part a potential-flow method is least
 able to speak to, because the wing is separated over much of it. The
-companion study of this airframe establishes where separation begins and
-how far forward it moves with incidence. This paper asks what the
+companion study of this airframe~\cite{aeolion2026} establishes where
+separation begins and how far forward it moves with incidence, marching an
+integral boundary layer from the located attachment
+point~\cite{thwaites1949,cebeciCousteix2005}. This paper asks what the
 propulsion system does about it.
 
 The question is usually posed for a \emph{tractor} installation, where the
 propeller slipstream washes the wing and raises its dynamic pressure --- a
-blown wing, extensively studied. The airframe here is the other
-arrangement, and the difference is not a detail. Its ducted fan sits at
-the tail: the duct leading edge is $0.21$ chord \emph{behind} the wing
+blown wing, studied exhaustively for both conventional and wingtip-mounted
+layouts~\cite{veldhuis2005,sinnigeEtAl2019}. The airframe here is the other
+arrangement, and the difference is not a detail. Its ducted fan --- a configuration whose static performance and
+lip-suction thrust split are classical~\cite{kruger1949,blackReddy1968} and
+whose small-scale behaviour is well
+characterized~\cite{pereira2008} --- sits at the tail: the duct leading edge is $0.21$ chord \emph{behind} the wing
 trailing edge, so the slipstream leaves downstream and never touches the
 wing. A model that represents only the wake therefore reports exactly zero
 interaction, which is a statement about the model rather than about the
@@ -116,13 +121,20 @@ aircraft.
 
 What does reach the wing is the induction \emph{ahead} of the disk. A
 loaded actuator disk accelerates the flow approaching it, from zero far
-upstream to $v_i$ at the disk plane; a wing sitting in that field
-experiences a favourable streamwise pressure gradient, and a favourable
-gradient delays separation. The effect is the same in sign as a blown
-wing's and entirely different in mechanism, and it is much less studied.
+upstream to $v_i$ at the disk plane~\cite{froude1889,glauert1935}; a wing
+sitting in that field experiences a favourable streamwise pressure
+gradient, and a favourable gradient delays
+separation~\cite{smith1993}. The effect is the same in sign as a blown
+wing's and entirely different in mechanism. Its closest studied analogue is
+the upstream blockage of wind-turbine rotors, where the same vortex-cylinder
+model is used to quantify how far ahead of a rotor the flow is
+disturbed~\cite{branlardMeyerForsting2020}; the present application reverses
+the question, asking what that disturbance does to a lifting surface placed
+inside it.
 
-Two features of this configuration make the question sharp rather than
-academic. First, the induced velocity is not a small correction: with the
+Figure~
+ef{fig:configuration} shows the configuration and the field in
+question. Two features make it sharp rather than academic. First, the induced velocity is not a small correction: with the
 annular disk area of the demonstrator, $v_h$ runs $14$--$24$~m/s against a
 $25$~m/s cruise, so the induction is comparable to the flight speed
 throughout transition and largest exactly where the airspeed is lowest.
@@ -134,10 +146,26 @@ the part the fan protects.
 \section{The induction model}
 \label{sec:model}
 
+\begin{figure}[tb]
+  \centering
+  \includegraphics[width=\linewidth]{figures/configuration.pdf}
+  \caption{The coupled configuration being solved. Top: planform, showing
+    the wing lattice (44 strips, one Weissinger row each), the fuselage
+    outline, the duct annulus and the fan disk edge-on. The shaded bands
+    mark the span stations that separate first; the dotted lines are the
+    fan tip radius, and their coincidence is the geometric claim of
+    Sec.~
+ef{sec:model}. Bottom: the same geometry with the axial
+    induction $u_x/v_i$ the fan puts on it, at $V_\infty = 12$~m/s,
+    $T = 25$~N. The wing lies in the accelerating (red) region ahead of the
+    disk; outside the streamtube the induction reverses.}
+  \label{fig:configuration}
+\end{figure}
+
 \subsection{Why the wake model cannot serve}
 
 The solver's existing slipstream model reconstructs a rotor's wake from
-annular momentum theory and returns zero induced velocity at any point
+annular momentum theory~\cite{glauert1935} and returns zero induced velocity at any point
 ahead of the disk plane. That is a correct economy for a surface lying in
 the wake, and it is the wrong tool here by construction. Applied to a wing
 upstream of the disk it returns zero, and the zero is the model's rather
@@ -146,23 +174,92 @@ than the flow's.
 \subsection{The disk as a vortex cylinder}
 
 A uniformly loaded actuator disk is exactly equivalent to a semi-infinite
-cylindrical vortex sheet: azimuthal vorticity of constant strength
-$\gamma_t = 2 v_i$ per unit length, shed from the disk edge and trailing
-downstream. The equivalence is what makes the upstream field tractable,
-because it turns ``what does a disk do ahead of itself'' into a
-Biot--Savart integral over a known geometry with a closed-form answer on
-the axis:
+cylindrical vortex sheet~\cite{branlardGaunaa2015}. The equivalence is worth
+deriving rather than asserting, because everything downstream of it --- including the sign of
+the effect this paper reports --- follows from the derivation.
+
+Across a disk of radius $R$ carrying uniform loading, the pressure jump
+$\Delta p$ is constant over the disk face and the bound circulation on a
+blade element is therefore independent of radius. Trailing vorticity is
+shed only where the bound circulation \emph{changes}, so for uniform
+loading it is shed only at the edge $r = R$, and the shed sheet is
+convected downstream to form a cylinder. Its strength follows from the
+velocity jump across the sheet: far downstream the flow inside the
+streamtube is faster than outside by the fully developed wake increment,
+so
 %
 \begin{equation}
-  \label{eq:axis}
-  u_x(s) = \frac{\gamma_t}{2}\left[1 + \frac{s}{\sqrt{s^2 + R^2}}\right],
+  \label{eq:gamma}
+  \gamma_t \;=\; \left[u_x\right]^{\text{in}}_{\text{out}}
+             \;=\; 2 v_i ,
 \end{equation}
 %
-with $s$ measured downstream from the disk plane. Equation~\eqnref{eq:axis}
-returns $v_i$ at the disk, $2 v_i$ far downstream and zero far upstream ---
-momentum theory's three values, recovered from the vortex system rather
-than assumed --- and $v_i(1 - 1/\sqrt{2}) = 0.293\,v_i$ one radius
-upstream, which is the number the whole interaction argument turns on.
+per unit axial length, with the vorticity purely azimuthal. This is the
+hydrodynamic analogue of a solenoid, and the axial field follows the same
+way.
+
+\paragraph{The axis solution.} Take the disk plane at $s = 0$ with the
+cylinder occupying $s \in [0, \infty)$. A ring element of the sheet at
+axial station $s'$ carries circulation $\mathrm{d}\Gamma = \gamma_t\,
+\mathrm{d}s'$, and a circular vortex filament of radius $R$ and
+circulation $\mathrm{d}\Gamma$ induces, on its own axis at a distance
+$\xi = s - s'$,
+%
+\begin{equation}
+  \label{eq:ring}
+  \mathrm{d}u_x = \frac{\mathrm{d}\Gamma}{2}\,
+                  \frac{R^2}{\left(R^2 + \xi^2\right)^{3/2}} .
+\end{equation}
+%
+Integrating Eq.~\eqnref{eq:ring} over the whole semi-infinite cylinder,
+%
+\begin{equation}
+  \label{eq:integrate}
+  u_x(s) = \frac{\gamma_t R^2}{2}\int_{0}^{\infty}
+           \frac{\mathrm{d}s'}{\left[R^2 + (s - s')^2\right]^{3/2}}
+         = \frac{\gamma_t}{2}\left[1 + \frac{s}{\sqrt{s^2 + R^2}}\right],
+\end{equation}
+%
+which is the closed form the model is verified against. Its three limits
+are the three statements of momentum theory, recovered from the vortex
+system rather than assumed:
+%
+\begin{equation}
+  \label{eq:limits}
+  u_x(-\infty) = 0, \qquad u_x(0) = \frac{\gamma_t}{2} = v_i, \qquad
+  u_x(+\infty) = \gamma_t = 2 v_i .
+\end{equation}
+%
+The middle limit is the classical result that half the ultimate induction
+is present at the disk, and here it is a consequence of the cylinder being
+\emph{semi}-infinite: the disk plane sees exactly half the sheet.
+
+\paragraph{The upstream field, which is what this paper needs.} Setting
+$s < 0$ in Eq.~\eqnref{eq:integrate} gives the induction ahead of the
+disk, and expanding for $|s| \gg R$,
+%
+\begin{equation}
+  \label{eq:upstream}
+  u_x(s) \;=\; \frac{\gamma_t}{2}\left[1 - \frac{|s|}{\sqrt{s^2+R^2}}\right]
+         \;\sim\; \frac{v_i R^2}{2 s^2}
+         \qquad (s \to -\infty),
+\end{equation}
+%
+so the upstream induction decays as the inverse square of distance --- the
+signature of a semi-infinite vortex cylinder viewed from far upstream,
+where it appears as a point sink of strength $\pi R^2 \gamma_t$. The decay
+is fast, which is why the effect reported here is a near-field one and why
+the wing's proximity to the duct is essential rather than incidental. At
+one radius upstream Eq.~\eqnref{eq:integrate} gives
+%
+\begin{equation}
+  \label{eq:oneradius}
+  u_x(-R) = \frac{\gamma_t}{2}\left(1 - \frac{1}{\sqrt{2}}\right)
+          = 0.293\,v_i ,
+\end{equation}
+%
+the number the whole interaction argument turns on, and the one
+Fig.~\ref{fig:axis} marks.
 
 Off the axis the sheet is discretized into vortex rings, each polygonized
 into straight filaments and evaluated with the same Biot--Savart kernel
@@ -171,22 +268,50 @@ downstream, since the first radius or two sets essentially the entire
 upstream answer while the far tail varies slowly, and that spacing keys to
 each cylinder's own radius rather than the disk's outer one.
 
-A ducted fan around a tail boom is an \emph{annulus}, not a disk. A
-uniformly loaded annulus carries no trailing vorticity between its radii,
-so it sheds only at the two edges --- the outer at $+\gamma_t$, the inner
-at $-\gamma_t$ --- and is therefore two superposed cylinders. On the axis
-the two cancel at the disk plane and asymptotically but not in between:
-downstream inside the bore the inner sheet dominates and the axial
-induction reverses, which is the centerbody wake and a real feature of
-annular jets.
+\begin{figure}[tb]
+  \centering
+  \includegraphics[width=0.85\linewidth]{figures/axis-induction.pdf}
+  \caption{Axial induction on the disk axis. The discretized sheet
+    (circles) against the closed form of Eq.~\eqnref{eq:integrate} (solid),
+    with the annulus (dashed) showing the reversal inside the bore that
+    Eq.~\eqnref{eq:annulus} predicts. Negative $s$ is upstream --- the half
+    of the field a wake-only model does not carry, and the half this paper
+    depends on.}
+  \label{fig:axis}
+\end{figure}
 
-Swirl is deliberately absent. The root vortex and the wake's axial
-vorticity lie downstream of the disk and contribute nothing ahead of it,
-which is the region this model exists to serve.
+\paragraph{The annulus.} A ducted fan around a tail boom is an annulus,
+not a disk, and the same argument gives it directly. Uniform loading
+between $R_h$ and $R$ sheds trailing vorticity only where the bound
+circulation changes, which is now at \emph{both} edges: $+\gamma_t$ at the
+outer radius and $-\gamma_t$ at the inner. The field is the superposition
+of two semi-infinite cylinders of opposite sign, so on the axis
+%
+\begin{equation}
+  \label{eq:annulus}
+  u_x(s) = \frac{\gamma_t}{2}\left[
+      \frac{s}{\sqrt{s^2 + R^2}} - \frac{s}{\sqrt{s^2 + R_h^2}}\right],
+\end{equation}
+%
+the constant terms of Eq.~\eqnref{eq:integrate} having cancelled. Three
+consequences are worth reading off, because they are physical rather than
+numerical. The induction vanishes on the axis \emph{at the disk plane} and
+at both infinities, since $R$ and $R_h$ enter symmetrically in those
+limits. Upstream it is positive but weaker than the equivalent solid
+disk's, the bore shielding the axis. And downstream inside the bore it is
+\emph{negative}: for $s > 0$ the inner term dominates because
+$R_h < R$, so the flow on the axis behind an annular disk is retarded.
+That is the centerbody wake, a real feature of annular jets, and the model
+produces it without being told.
+
+Swirl is deliberately absent from Eqs.~\eqnref{eq:integrate}
+and~\eqnref{eq:annulus}. The root vortex and the wake's axial vorticity
+lie downstream of the disk and contribute nothing ahead of it, which is
+the region this model exists to serve.
 
 \subsection{Verification}
 
-The discretized sheet is checked against Eq.~\eqnref{eq:axis} at stations
+The discretized sheet is checked against Eq.~\eqnref{eq:integrate} at stations
 from four radii upstream to ten downstream, holding to 2\% of $v_i$, with
 the transverse components vanishing on the axis by symmetry and the error
 falling under refinement. The annulus is checked against its own closed
@@ -206,8 +331,9 @@ correct.
 \label{sec:application}
 
 The induction is applied as an external perturbation field to the coupled
-wing--body--duct solve of the companion study, and the separation march is
-run with the fan on and off at otherwise identical conditions. The
+wing--body--duct solve of the companion study~\cite{aeolion2026}, and the
+separation march is run with the fan on and off at otherwise identical
+conditions. The
 coupling is presently \emph{one-way}: the airframe sees the fan, the fan
 does not see the airframe, so every result below is a lower bound on the
 interaction.
@@ -224,14 +350,39 @@ $5\%$ at $0.30$. It is a favourable gradient, and it is strongest at the
 trailing edge, which is where turbulent separation begins and from which
 it marches forward.
 
-Two features of the spanwise distribution deserve emphasis. It falls by a
-factor of four between $2y/b = 0.10$ and $0.30$, concentrating the benefit
-inboard --- over the stations that separate first. And beyond
-$2y/b \approx 0.4$ it \emph{reverses}: outside the vortex cylinder the
-induced axial velocity is a return flow, so the fan marginally penalizes
-the outer wing. The penalty is under $2\%$ and the sign change is real,
-not numerical, and it exists in the answer only because the upstream field
-is modelled at all.
+\begin{table}[tb]
+  \centering
+  \caption{Chordwise rise in axial velocity across the wing, as a
+    percentage of freestream, at four points along a transition. The
+    velocity ratio $\mu = V_\infty / v_h$ runs from near-hover to cruise.}
+  \label{tab:operating}
+  \input{figures/tables/operating.tex}
+\end{table}
+
+\begin{figure}[tb]
+  \centering
+  \includegraphics[width=0.85\linewidth]{figures/chordwise-gradient.pdf}
+  \caption{The chordwise rise across the span. The benefit is concentrated
+    inboard --- over the stations that separate first --- and reverses
+    beyond $2y/b \approx 0.4$, where the wing lies outside the fan's
+    streamtube and meets its return flow.}
+  \label{fig:gradient}
+\end{figure}
+
+Two features of the spanwise distribution deserve emphasis, and
+Fig.~\ref{fig:gradient} and Table~\ref{tab:operating} carry both. It falls
+by a factor of four between $2y/b = 0.10$ and $0.30$, concentrating the
+benefit inboard --- over the stations that separate first.
+
+And beyond $2y/b \approx 0.4$ it \emph{reverses}. That sign change is not
+numerical, and Eq.~\eqnref{eq:integrate} explains it: a semi-infinite
+vortex cylinder induces flow along its axis \emph{inside} the streamtube
+and against it outside, since the total flux through any plane must be
+conserved and the disk adds none. A wing spanning both regions is
+therefore helped inboard and penalized outboard. The penalty is under
+$2\%$ of freestream, an order of magnitude smaller than the inboard
+benefit, and it is a real property of the configuration that exists in the
+answer only because the upstream field is modelled at all.
 
 \subsection{How much incidence the fan buys}
 
@@ -247,16 +398,40 @@ within an interval without moving it across one, so the reported onset is
 quantized to the grid and any sub-degree shift is invisible by
 construction.
 
+\begin{figure}[tb]
+  \centering
+  \includegraphics[width=0.85\linewidth]{figures/separation-shift.pdf}
+  \caption{Separation station against incidence, fan off and on, at
+    $V_\infty = 12$~m/s. The deliverable is the \emph{horizontal} distance
+    between the curves, marked at one criterion level; measuring instead
+    where either curve crosses a fixed threshold, on a two-degree grid,
+    returns no effect at all.}
+  \label{fig:shift}
+\end{figure}
+
+\begin{table}[tb]
+  \centering
+  \caption{Incidence bought by the fan, as the horizontal shift of the
+    separation curve at several criterion levels. $V_\infty = 12$~m/s,
+    $T = 25$~N.}
+  \label{tab:shift}
+  \input{figures/tables/shift.tex}
+\end{table}
+
 The appropriate measurement is the horizontal shift of the separation
-curve $x_{\text{sep}}(\alpha)$, evaluated at several criterion levels.
-Measured that way on a $0.5^\circ$ grid, the fan buys
-$\Delta\alpha = +0.81^\circ$ averaged over criteria from
-$x_{\text{sep}} = 0.85$ to $0.55$, with individual values between
-$+0.73^\circ$ and $+0.86^\circ$. The consistency across criterion levels
-is what makes this a property of the flow rather than of the definition;
-the shift is smaller near onset, $+0.52^\circ$, where the separation point
-lies at the trailing edge and the layer is least sensitive to the
-gradient.
+curve $x_{\text{sep}}(\alpha)$, evaluated at several criterion levels ---
+Fig.~\ref{fig:shift} and Table~\ref{tab:shift}. Measured that way on a
+$0.5^\circ$ grid, the fan buys $\Delta\alpha = +0.81^\circ$ averaged over
+criteria from $x_{\text{sep}} = 0.85$ to $0.55$, with individual values
+between $+0.73^\circ$ and $+0.86^\circ$.
+
+The consistency across criterion levels is what makes this a property of
+the flow rather than of the definition: a spurious shift arising from the
+choice of threshold would vary with it. The shift is smaller near onset,
+$+0.52^\circ$ at $x_{\text{sep}} = 0.90$, and the reason is physical
+rather than numerical --- there the separation point still lies at the
+trailing edge, where the boundary layer is thinnest and least sensitive to
+a gradient, so the same induction moves it least.
 
 The benefit scales as expected with the velocity ratio: at cruise speed
 the same comparison returns roughly a third of the transition value,
@@ -271,7 +446,8 @@ intermediate radii would represent. The fuselage boundary layer that an
 aft fan genuinely ingests is not modelled, and it acts to reduce the
 benefit. The analysis is quasi-steady, while transition is a manoeuvre
 rather than a sequence of trim points. And the separation criterion
-inherits the companion study's caveat: bubble bursting is not modelled, so
+inherits the companion study's caveat: bubble bursting~\cite{gaster1967} is
+not modelled, so
 the separation boundary is an upper bound on usable incidence rather than
 a predicted stall.
 
