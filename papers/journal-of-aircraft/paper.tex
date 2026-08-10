@@ -974,14 +974,69 @@ the moments are unaffected, consistent with the lift-slope and
 roll-damping checks above --- and comparable with induced drag, which is a
 far smaller number.
 
-The far-field column removes both symptoms. A Trefftz-plane integration
-measures the crossflow kinetic energy the wake carries off, and a closed
-body sheds no wake: its source distribution has no trailing vorticity and
-puts nothing through a plane at downstream infinity. The far-field
-integral therefore never evaluates the body at all, and cannot inherit the
-near-field evaluation's error. The zero-lift intercept falls from
-$-0.0037$ to $-0.0003$, and $C_{D_i}$ is positive at every attitude in the
-matrix.
+The far-field column removes both symptoms, and it is worth setting out
+why it is \emph{structurally} immune rather than merely better conditioned.
+
+Take a control volume closed by a plane far downstream --- the Trefftz
+plane --- and let $\phi$ be the perturbation potential in it. All the
+disturbance the configuration leaves behind is the wake's crossflow
+kinetic energy, so the induced drag is
+%
+\begin{equation}
+  \label{eq:energy}
+  D_i = \frac{\rho}{2}\iint_{T}\left|\nabla_{\!2}\phi\right|^2
+        \mathrm{d}y\,\mathrm{d}z ,
+\end{equation}
+%
+with $\nabla_{\!2}$ the in-plane gradient. Far downstream the streamwise
+perturbation has decayed and $\phi$ satisfies the two-dimensional Laplace
+equation in the plane, so Green's first identity converts
+Eq.~\eqnref{eq:energy} into a contour integral around the wake trace $C$,
+%
+\begin{equation}
+  \label{eq:green}
+  D_i = -\frac{\rho}{2}\oint_{C}\Delta\phi\,
+        \frac{\partial\phi}{\partial n}\,\mathrm{d}\ell ,
+\end{equation}
+%
+the outer boundary contributing nothing because $\phi$ decays like a
+two-dimensional doublet. On a lifting surface's wake the potential jump is
+the bound circulation, $\Delta\phi = \Gamma(y)$, and the normal derivative
+is the downwash, giving
+%
+\begin{equation}
+  \label{eq:trefftz}
+  D_i = -\frac{\rho}{2}\int_{-b/2}^{b/2}\Gamma(y)\,w_T(y)\,\mathrm{d}y .
+\end{equation}
+%
+The factor of one half in Eq.~\eqnref{eq:trefftz} is often mistaken for a
+convention. It is not. $w_T$ is the downwash induced \emph{in the Trefftz
+plane}, where each trailing filament runs from $-\infty$ to $+\infty$ and
+acts as a full two-dimensional vortex; at the lifting line the same
+filament is semi-infinite and induces half as much. Substituting the
+lifting-line downwash into Eq.~\eqnref{eq:trefftz} therefore halves the
+drag while leaving every trend intact --- an error that survives a sign
+check and a convergence study alike.
+
+The structural point follows from Eq.~\eqnref{eq:green} directly. A closed
+non-lifting body carries a source distribution, not a vortex sheet. Its
+potential is single-valued, so $\Delta\phi = 0$ on any trace it leaves,
+and it contributes nothing to the contour integral \emph{regardless of how
+it is discretized}. That is why the far-field result cannot inherit the
+near-field evaluation's error: the body is not merely small in
+Eq.~\eqnref{eq:green}, it is absent from it.
+
+Two approximations remain and should be named. The plane is taken normal
+to the $x$ axis rather than to the freestream, which is consistent with
+this solver's frozen wake --- the vorticity the plane is meant to
+intercept runs along $x$ --- and carries the same $O(\alpha^2)$ error the
+frozen wake already does. And Eq.~\eqnref{eq:trefftz} presumes the sheet
+reaches the plane without rolling up. Roll-up redistributes $\Gamma(y)$
+but conserves the impulse that sets $D_i$, so the leading-order result is
+unaffected~\cite{katzPlotkin2001}.
+
+With this in place the zero-lift intercept falls from $-0.0037$ to
+$-0.0003$, and $C_{D_i}$ is positive at every attitude in the matrix.
 
 Span efficiency then requires one care in its formation, which is worth
 stating because getting it wrong looks exactly like a defect in the
