@@ -140,6 +140,27 @@ pressure at mid-chord? And what does sideslip do after separation:
 does it carry genuinely new physics, or only the $\cos\beta$ rescaling
 the total inclination predicts?
 
+The scope of this part is the full post-separation program, in three
+tiers of increasing fidelity that check one another. The first tier ---
+the anchored quasi-steady map reported in
+Sections~\ref{sec:method}--\ref{sec:map} --- carries the classical
+anchors (Viterna's aspect-ratio-aware drag ceiling, Hoerner's plate
+normal force, Kirchhoff's attenuation driven by the computed separation
+points, Rayleigh's centre of pressure through the section
+pitching-moment interface). Its completion criteria, stated in
+Section~\ref{sec:outlook}, are section-level validation against the
+Sheldahl--Klimas $360^\circ$ polars at the configuration's Reynolds
+number and the Ostowari--Naik aspect-ratio trends, and the static
+hysteresis band from up/down continuation. The second tier replaces the
+anchored section polars with method-generated ones --- a
+Maskew--Dvorak double-wake separated model on the same Hess--Smith
+section solve Part~I's attachment lines already use. The third tier is
+the unsteady referee: two-dimensional discrete-vortex sections with
+leading-edge-suction-parameter-modulated shedding, and a
+three-dimensional particle wake shed from the computed separation line
+at a handful of attitudes, to measure what the quasi-steady cycle means
+leave out.
+
 \section{Method}
 \label{sec:method}
 
@@ -314,6 +335,75 @@ the attenuation schedule built on them --- are an upper bound on
 attached flow. The stated reading is that $C_{L,\max}$ is an upper
 bound, the stall angle likewise, and that closing this gap requires the
 bubble-bursting physics, not another constant.
+
+\section{Validation and the remaining tiers}
+\label{sec:outlook}
+
+% The subsections below are the DECLARED completion criteria of this
+% part, written before their computations so the paper's claims cannot
+% drift to fit the results. Each carries a TODO marker until its data
+% lands; none of the numbers in Sections IV--V depend on them.
+
+\subsection{Section-level validation}
+
+% TODO(Phase 1): run the anchored section model against digitized
+% Sheldahl & Klimas NACA 0012 polars at Re = 3.6e5 (SAND80-2114) across
+% 0..90 deg, and against Ostowari & Naik's finite-AR post-stall
+% measurements for the AR trend of CdMax and the post-stall CL level.
+% Acceptance: CN within the data scatter band beyond 40 deg; the AR
+% trend of the 90-deg ceiling reproduced within 10%.
+The anchored model's constants come from published fits, but the
+composite --- computed separation points inside Kirchhoff's factor,
+Viterna beyond an emergent junction --- must still be shown against
+section data it was not built from: the Sheldahl--Klimas $360^\circ$
+polars at this configuration's Reynolds number ($3.6\times10^5$) and
+the Ostowari--Naik finite-aspect-ratio post-stall measurements. That
+comparison is the declared acceptance test of the quasi-steady tier and
+will appear in this section.
+
+\subsection{The static hysteresis band}
+
+% TODO(Phase 1): rerun the map descending in alpha with warm-started
+% continuation (ViscousCouplingOptions::InitialGamma) and report where
+% the ascending and descending branches disagree -- the bistable band
+% around stall. Nearly free with the existing driver.
+The map of Section~\ref{sec:map} is the ascending branch by
+construction. The section response past stall is multivalued, the
+coupling supports warm-started continuation in either direction, and
+the width of the resulting hysteresis band in $(\alpha, \beta)$ ---
+where the two branches disagree --- is a result the quasi-steady tier
+can produce at essentially no additional cost. It will be reported
+here.
+
+\subsection{Method-generated polars: the double-wake tier}
+
+% TODO(Phase 2): Maskew-Dvorak double-wake separated model on
+% SectionPanelMethod's Hess-Smith solve -- a second wake sheet from the
+% computed separation point enclosing a constant-pressure region.
+% Replaces the anchored polar with a method-generated one; cross-check
+% against the Phase-1 blend and the section data above.
+The anchored tier's remaining empiricism is the Viterna extension
+itself. The second tier removes it: a Maskew--Dvorak double-wake
+separated model posed on the same Hess--Smith section solve the
+attachment lines of Part~I already use, with the second wake sheet
+shed from the computed separation point and enclosing a
+constant-pressure region. Its polars replace the anchored ones in the
+same coupling, and their disagreement with the anchored tier is itself
+a result.
+
+\subsection{The unsteady referee}
+
+% TODO(Phase 3): (a) 2D discrete-vortex sections with LESP-modulated
+% leading-edge shedding (mean polars + shedding content); (b) 3D
+% particle wake shed from the TE and the computed separation line at
+% ~6 attitudes (e.g. alpha = 30/60/90 x beta = 0/15), mean and RMS
+% loads vs the quasi-steady cycle means.
+Quasi-steady strip theory cannot say what its cycle means leave out.
+The third tier measures it at a handful of attitudes: two-dimensional
+discrete-vortex sections with shedding modulated by the leading-edge
+suction parameter, and a three-dimensional particle wake shed from the
+trailing edge and the computed separation line, compared against the
+map's cycle means in mean and fluctuating load.
 
 \section{Limitations}
 
