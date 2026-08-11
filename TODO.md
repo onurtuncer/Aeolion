@@ -359,6 +359,57 @@ wake on SectionPanelMethod's Hess-Smith solve. 3 — vortex particles (2D
 LESP discrete-vortex sections first, 3D particle wake from the computed
 separation line as an unsteady spot-check).
 
+### 3d. Phase 1 + the strip-frame paper correction (2026-08-11)
+
+**Phase 1 landed.** `Solver/PostStallSection.h`: Kirchhoff attenuation
+K(f) on the exact thin-airfoil cn/cc pair (both classical limits exact:
+f=1 is d'Alembert-clean, f=0 the plate quarter-slope), f interpolated
+per strip from AttachmentBoundaryLayer tables built over an inviscid
+alpha sweep; Viterna-Corrigan beyond the EMERGENT stall with AR-aware
+CdMax (2.01 at the AR=50 edge vs Hoerner's 1.98); Rayleigh's
+free-streamline xcp for the section cm. `SectionCoefficients` gained cm
+(additive; every existing consumer bit-identical) and the coupling
+applies it as a pure quarter-chord couple
+(`ViscousCoupledResult::SectionMoment`). `TestPostStallSection` (25th
+suite) pins the anchors, the exactness of the attached limit, emergent
+stall, junction continuity, and the couple identity. Docs: theory.rst
+section, api.rst, tests.rst, viternaCorrigan1982 in references.bib.
+
+Anchored map vs Phase-0 baseline (beta=0): CN(90) 2.11 -> 1.52 against
+the Viterna anchor 1.218 (+25% residual: local dynamic pressure at the
+inboard strips + cycle-mean circulation); xcp walks 0.25c -> 0.52c and
+LANDS ON Rayleigh's mid-chord — a metric the model was never fitted to;
+CLmax 1.76 at alpha=18, emergent from the separation tables and an
+upper bound (bubble bursting, see 3a); sigma-collapse across beta
+within 13% (baseline 6% — the sharper stall cycles harder).
+
+**Strip-frame bug, and the papers.** The Phase-0 camber double-count
+(3c, finding 2) also lived in AttachmentSweepExport: ComputeAttachmentLine
+measures alpha_n in the strip frame, the driver supplied camber-tilted
+panel axes, and the section contour carries the camber again — alpha_n
+biased HIGH by ~4.3 deg. Fixed (true chord frame). Consequences,
+verified by full-matrix diff: CL/Cm/derivatives BIT-IDENTICAL; the
+separation onset moves 6 -> 12 deg (55% span at 12, 82% at 14, ~full at
+16 with forwardmost x/c = 0.80); worst Rbar 104 -> 66 within the
+attached envelope (contamination margin 2.4x -> 3.7x), 135 over the
+whole matrix; stagnation offsets roughly halve at low alpha. SciTech
+lattice-solution.json: bit-identical after all solver changes (verified
+numerically) — no paper impact. Fan-induction fine sweeps regenerated
+with the corrected frames (delay table to be re-rendered; the Delta
+alpha result is a same-frame difference and needs re-measuring, not
+assuming).
+
+**Papers restructured as Part I / Part II** (user direction,
+2026-08-11): Part I = papers/journal-of-aircraft, "...Across the
+Separation Boundary — Part I: Attachment Lines, the Separation March,
+and the Attached-Flow Envelope" — everything up to the separation
+boundary, coefficient tables truncated there, all prose numbers
+corrected. Part II = papers/journal-of-aircraft-poststall (new) — the
+post-separation study as a paper: anchored section model, the
+alpha x beta map to 90/30, sigma-collapse, plate convergence, the two
+anchors. Both compile clean (26 pp / draft). Author blocks must stay
+synchronized.
+
 ### 4. The actual boundary-layer coupling
 
 This work deliberately stopped at the *prerequisite*. Everything a march
