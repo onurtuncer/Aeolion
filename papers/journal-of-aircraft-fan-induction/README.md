@@ -30,8 +30,8 @@ from the one-way numbers would present a lower bound as a result.
 ```
 aeolion_fan_induction tests/Data/AeolionGeometryHandoff-1.8.0.json     papers/journal-of-aircraft-fan-induction/figures/fan-induction.json
 # the two sweeps the separation figure compares (V = 12 m/s):
-aeolion_attachment_sweep tests/Data/AeolionGeometryHandoff-1.8.0.json     papers/journal-of-aircraft-fan-induction/figures/fine-off.json 0.001 12.0 3.0 16.0 0.5
-aeolion_attachment_sweep tests/Data/AeolionGeometryHandoff-1.8.0.json     papers/journal-of-aircraft-fan-induction/figures/fine-on.json  25.0  12.0 3.0 16.0 0.5
+aeolion_attachment_sweep tests/Data/AeolionGeometryHandoff-1.8.0.json     papers/journal-of-aircraft-fan-induction/figures/fine-off.json 0.001 12.0 3.0 20.0 0.5
+aeolion_attachment_sweep tests/Data/AeolionGeometryHandoff-1.8.0.json     papers/journal-of-aircraft-fan-induction/figures/fine-on.json  25.0  12.0 3.0 20.0 0.5
 cd papers/journal-of-aircraft-fan-induction/figures && python render-fan-figures.py
 ```
 

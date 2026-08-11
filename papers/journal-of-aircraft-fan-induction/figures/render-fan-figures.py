@@ -304,21 +304,28 @@ def fig_shift(off, on):
 
 # ----------------------------------------------------------------- tables ---
 def table_shift(off, on):
+    # The mean runs over every criterion level BOTH curves cross within
+    # the sweep, and the label states that range from the data. (An
+    # earlier revision excluded the near-onset level as an outlier and
+    # hardcoded the label; with the corrected strip frames the near-onset
+    # shift is consistent with the rest, so nothing is excluded.)
     U, P = curve(off), curve(on)
-    rows, ds = [], []
+    rows, ds, used = [], [], []
     for lvl in LEVELS:
         ao, an = alpha_at(U, lvl), alpha_at(P, lvl)
         if ao is None or an is None:
             continue
         ds.append(an - ao)
+        used.append(lvl)
         rows.append(rf"  {lvl:.2f} & {ao:.2f} & {an:.2f} & {an - ao:+.2f} \\")
-    mean = np.mean(ds[1:])  # exclude the near-onset level, reported separately
+    mean = np.mean(ds)
     return "\n".join([
         r"\begin{tabular}{rrrr}", r"  \hline",
         r"  $x_{\mathrm{sep}}/c_n$ & $\alpha$ off [deg] & $\alpha$ on [deg]"
         r" & $\Delta\alpha$ [deg] \\",
         r"  \hline", *rows, r"  \hline",
-        rf"  \multicolumn{{3}}{{r}}{{mean, $0.85$ to $0.55$}} & {mean:+.2f} \\",
+        rf"  \multicolumn{{3}}{{r}}{{mean, ${used[0]:.2f}$ to ${used[-1]:.2f}$}}"
+        rf" & {mean:+.2f} \\",
         r"  \hline", r"\end{tabular}",
     ])
 
