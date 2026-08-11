@@ -56,6 +56,9 @@
 #include "Aeolion/Geometry/CstSurface.h"
 #include "Aeolion/Geometry/HandoffContract.h"
 #include "Aeolion/PanelBuilder/PanelBuilder.h"
+#include "Aeolion/Solver/AttachmentBoundaryLayer.h"
+#include "Aeolion/Solver/AttachmentLine.h"
+#include "Aeolion/Solver/PostStallSection.h"
 #include "Aeolion/Solver/Solver.h"
 #include "Aeolion/Solver/ViscousCoupling.h"
 
@@ -132,6 +135,82 @@ void WriteVec3(std::ofstream& out, const Math::Vec3& v) {
     out << '[' << v.x << ',' << v.y << ',' << v.z << ']';
 }
 
+// --- the anchored model's separation tables ---------------------------------
+// Phase 1: the Kirchhoff attenuation wants f(alpha) per strip -- the
+// suction-side separation point AttachmentBoundaryLayer computes. It is
+// built ONCE, from an inviscid alpha sweep at beta = 0 (the Phase-0 map
+// established that sideslip up to 30 degrees only rescales the loads
+// through cos(beta), which is what justifies a one-dimensional table), and
+// keyed by each strip's LOCAL incidence from its zero-lift line -- the same
+// variable the section model is posed in -- rather than by the aircraft
+// attitude the sweep happened to run at.
+struct StripSeparationTable {
+    std::vector<double> AlphaDeg; ///< Local incidence from zero lift, ascending.
+    std::vector<double> Psi;      ///< Suction-side separation point x/c at that incidence.
+};
+
+constexpr double SeparationTableMaxAlphaDeg = 32.0;
+constexpr double SeparationTableStepDeg = 2.0;
+
+std::vector<StripSeparationTable> BuildSeparationTables(
+    const S::PreparedSystem& prepared, const std::vector<S::Panel>& wing,
+    const std::vector<S::StripSection>& strips,
+    const std::vector<Geometry::AirfoilSection>& sections, S::FreestreamConditions fc,
+    const S::ReferenceGeometry& ref) {
+    std::vector<StripSeparationTable> tables(strips.size());
+    fc.betaDeg = 0.0;
+    for (double alpha = 0.0; alpha <= SeparationTableMaxAlphaDeg + 1e-9;
+         alpha += SeparationTableStepDeg) {
+        fc.alphaDeg = alpha;
+        const S::SolveResult solved = S::SolveWithSystem(prepared, fc, ref);
+        const S::FlowField field = S::MakeFlowField(prepared, fc, solved.gamma, solved.sigma);
+        const S::AttachmentLine line = S::ComputeAttachmentLine(field, wing, strips, sections);
+        const S::SeparationSurvey survey = S::SurveySeparation(line);
+        for (const S::StationSeparation& entry : survey.Stations) {
+            if (!entry.Resolved || entry.Strip < 0) continue;
+            const std::size_t i = static_cast<std::size_t>(entry.Strip);
+            if (i >= strips.size()) continue;
+            const S::Vec3 v = field.BoundMidpointVelocity(static_cast<int>(i));
+            const double localDeg =
+                Math::RadToDeg(std::atan2(Dot(v, strips[i].LiftDir), Dot(v, strips[i].ChordDir))) -
+                strips[i].Alpha0Deg;
+            tables[i].AlphaDeg.push_back(localDeg);
+            tables[i].Psi.push_back(entry.Upper.SeparationPsi);
+        }
+    }
+    return tables;
+}
+
+// Nearest strip by span fraction, linear interpolation in local incidence,
+// LINEAR EXTRAPOLATION beyond the table's last point (clamped to [0, 1]):
+// the computed separation point keeps walking forward past the table edge,
+// and holding it constant instead would freeze f above zero and deny the
+// model its plate limit.
+S::SeparationPointFunction MakeSeparationFunction(std::vector<StripSeparationTable> tables,
+                                                  std::vector<double> etas) {
+    return [tables = std::move(tables), etas = std::move(etas)](double eta, double aDeg) {
+        std::size_t best = 0;
+        double bestDist = 1e30;
+        for (std::size_t i = 0; i < etas.size(); ++i) {
+            const double d = std::fabs(etas[i] - eta);
+            if (d < bestDist) {
+                bestDist = d;
+                best = i;
+            }
+        }
+        const StripSeparationTable& t = tables[best];
+        const std::size_t n = t.AlphaDeg.size();
+        if (n == 0) return 1.0;
+        const double a = std::fabs(aDeg);
+        if (a <= t.AlphaDeg.front()) return std::clamp(t.Psi.front(), 0.0, 1.0);
+        std::size_t hi = 1;
+        while (hi + 1 < n && t.AlphaDeg[hi] < a) ++hi;
+        const double a0 = t.AlphaDeg[hi - 1], a1 = t.AlphaDeg[hi];
+        const double frac = (a1 - a0 > 1e-9) ? (a - a0) / (a1 - a0) : 0.0; // >1 extrapolates
+        return std::clamp(t.Psi[hi - 1] + frac * (t.Psi[hi] - t.Psi[hi - 1]), 0.0, 1.0);
+    };
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -150,8 +229,18 @@ int main(int argc, char** argv) {
     const double relaxation = (argc > 4) ? std::atof(argv[4]) : S::DefaultCouplingRelaxation;
     const int andersonDepth = (argc > 5) ? std::atoi(argv[5]) : 4;
     const int maxIterations = (argc > 6) ? std::atoi(argv[6]) : S::DefaultCouplingMaxIterations;
-    const bool betaFiltered = argc > 7;
-    const double betaOnly = betaFiltered ? std::atof(argv[7]) : 0.0;
+    // argv[7]: a single beta to run, or "all" (the default). argv[8]: the
+    // section model -- "analytic" (Phase-0 baseline, hand-tuned deep-stall
+    // blend) or "anchored" (Phase 1: Kirchhoff attenuation from the
+    // computed separation tables + Viterna deep stall + Rayleigh cm).
+    const std::string betaArg = (argc > 7) ? argv[7] : "all";
+    const bool betaFiltered = betaArg != "all";
+    const double betaOnly = betaFiltered ? std::atof(betaArg.c_str()) : 0.0;
+    const std::string modelName = (argc > 8) ? argv[8] : "analytic";
+    if (modelName != "analytic" && modelName != "anchored") {
+        std::cerr << "unknown model '" << modelName << "' (analytic | anchored)\n";
+        return 1;
+    }
 
     Geometry::HandoffContract contract;
     try {
@@ -206,7 +295,29 @@ int main(int argc, char** argv) {
     const double wingLeadingEdgeX = -contract.Placement.RootLeadingEdge.x;
     const double rootChord = contract.Stations.empty() ? ref.Chord : contract.Stations.front().Chord;
 
-    const S::AnalyticSectionModel model{}; // the baseline: current hand-tuned blend
+    // The Phase-0 baseline blend stays constructed either way: its
+    // DeepStallStartDeg doubles as the diagnostic threshold for counting
+    // deep-stall strips, independent of which model actually solves.
+    const S::AnalyticSectionModel analytic{};
+    S::SectionModel model = analytic;
+    S::PostStallSectionModel anchored;
+    if (modelName == "anchored") {
+        anchored.AspectRatio = aspectRatio;
+        auto tables =
+            BuildSeparationTables(preparedClean, wing, strips, contract.AirfoilSections, fc, ref);
+        std::size_t resolved = 0;
+        for (const StripSeparationTable& table : tables)
+            if (!table.AlphaDeg.empty()) ++resolved;
+        std::vector<double> etas;
+        etas.reserve(strips.size());
+        for (const S::StripSection& strip : strips) etas.push_back(strip.Eta);
+        anchored.SeparationPoint = MakeSeparationFunction(std::move(tables), std::move(etas));
+        model = anchored;
+        std::cout << "anchored model: separation tables on " << resolved << "/" << strips.size()
+                  << " strips; emergent stall (deg from zero lift) at eta 0.15/0.5/0.9 = "
+                  << anchored.StallAngleDeg(0.15) << "/" << anchored.StallAngleDeg(0.5) << "/"
+                  << anchored.StallAngleDeg(0.9) << "\n";
+    }
     const double q = 0.5 * Rho * flightSpeed * flightSpeed;
 
     std::ofstream out(outPath);
@@ -224,10 +335,11 @@ int main(int argc, char** argv) {
         << ",\"ductPanels\":" << duct.size() << ",\"wingLEx\":" << wingLeadingEdgeX
         << ",\"wingPlaneZ\":" << wingPlaneZ << ",\"rootChord\":" << rootChord << ",\"refPoint\":";
     WriteVec3(out, fc.RefPoint);
-    out << ",\"model\":{\"ClMax\":" << model.ClMax << ",\"Cd0\":" << model.Cd0
-        << ",\"KCd\":" << model.KCd << ",\"DeepStallStartDeg\":" << model.DeepStallStartDeg
-        << ",\"DeepStallEndDeg\":" << model.DeepStallEndDeg
-        << ",\"PlateNormal\":" << model.PlateNormal << "},\n \"alphas\":[";
+    out << ",\"sectionModel\":\"" << modelName << "\",\"model\":{\"ClMax\":" << analytic.ClMax
+        << ",\"Cd0\":" << analytic.Cd0 << ",\"KCd\":" << analytic.KCd
+        << ",\"DeepStallStartDeg\":" << analytic.DeepStallStartDeg
+        << ",\"DeepStallEndDeg\":" << analytic.DeepStallEndDeg
+        << ",\"PlateNormal\":" << analytic.PlateNormal << "},\n \"alphas\":[";
     const std::vector<double> alphas = BuildAlphaGrid();
     for (std::size_t i = 0; i < alphas.size(); ++i) out << (i ? "," : "") << alphas[i];
     out << "],\"betas\":[";
@@ -267,7 +379,7 @@ int main(int argc, char** argv) {
             // Trefftz work already caught inventing drag on a coupled
             // configuration (TODO.md 3a), so the plate-convergence metrics
             // must be computable without it.
-            const S::Vec3 momentWing = res.InducedMoment + res.ProfileMoment;
+            const S::Vec3 momentWing = res.InducedMoment + res.ProfileMoment + res.SectionMoment;
             const S::Vec3 moment = momentWing + res.SourceMoment;
 
             const double qS = q * ref.Area;
@@ -311,7 +423,7 @@ int main(int argc, char** argv) {
                 if (std::fabs(res.Strips[i].alphaEffDeg) > options.ResidualIncidenceLimitDeg)
                     ++reversedStrips;
                 if (std::fabs(res.Strips[i].alphaEffDeg - strips[i].Alpha0Deg) >
-                    model.DeepStallStartDeg)
+                    analytic.DeepStallStartDeg)
                     ++deepStallStrips;
             }
 
@@ -357,7 +469,7 @@ int main(int argc, char** argv) {
                 if (i) out << ',';
                 out << '[' << signedEta << ',' << res.Strips[i].alphaEffDeg << ','
                     << res.Strips[i].cl << ',' << res.Strips[i].cd << ','
-                    << res.Strips[i].Residual << ']';
+                    << res.Strips[i].Residual << ',' << res.Strips[i].cm << ']';
             }
             out << "]}";
         }

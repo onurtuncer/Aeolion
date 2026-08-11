@@ -1718,6 +1718,81 @@ does not see the airframe. Closing it needs the partitioned outer fixed
 point ``SolveRotorVaneCoupled`` already establishes, because a static
 airframe and a rotating rotor cannot share one ``FreestreamConditions``.
 
+Anchored post-stall section model (Solver/PostStallSection.h)
+-------------------------------------------------------------
+
+Phase 1 of the post-separation study: a section model for the Level-2
+coupling whose post-stall content is either classical theory with
+published validation or the solver's own computed separation state --
+never a tuned constant. It replaces ``AnalyticSectionModel``'s deep-stall
+blend for post-stall work, and it is what makes a post-stall polar
+quotable at all: the earlier decision (recorded in TODO.md) to keep
+post-stall coefficients out of the papers was precisely that the answer
+would otherwise be set by four hand-tuned constants.
+
+**Partially separated flow -- Kirchhoff attenuation.** Free-streamline
+theory attenuates the lift of a section whose suction-side flow separates
+at chord fraction :math:`f` (1 = trailing edge, 0 = leading edge) by
+:math:`K(f) = ((1+\sqrt{f})/2)^2` -- the factor the Beddoes--Leishman
+family's static backbone is built on :cite:`leishman2006rotor`. Aeolion
+applies it to the exact thin-airfoil normal/chordwise pair,
+
+.. math::
+
+   c_n = c_{l\alpha}\,\sin\alpha\cos\alpha\;K(f), \qquad
+   c_c = c_{l\alpha}\,\sin^2\!\alpha\;\sqrt{f},
+
+chosen so both classical limits are exact: at :math:`f=1` the wind-axis
+rotation returns :math:`c_l = c_{l\alpha}\sin\alpha` with identically zero
+pressure drag (d'Alembert), and at :math:`f=0` the chordwise suction is
+gone and the force is perpendicular to the chord with the classical
+quarter-slope :math:`K(0) = 1/4`.
+
+The separation point is **not modelled here**: it is supplied per strip
+from ``AttachmentBoundaryLayer``'s march from the real attachment point,
+tabulated over an inviscid :math:`\alpha` sweep and keyed by the strip's
+local incidence from its zero-lift line. Stall is therefore an *output* --
+the incidence where :math:`\sin\alpha\,K(f(\alpha))` peaks -- not a
+``ClMax`` constant.
+
+**Deep stall -- Viterna--Corrigan.** Past the emergent stall angle the
+Viterna extension :cite:`viternaCorrigan1982` carries the polar to
+90 degrees anchored on the finite-wing bluff-plate ceiling
+:math:`C_{d,\max} = 1.11 + 0.018\,AR` (held constant beyond the fit's
+:math:`AR = 50` edge), matched for continuity at the junction. Hoerner's
+2-D post-stall normal force :math:`c_n = 1/(0.222 + 0.283/\sin\alpha)`
+:cite:`hoerner1965fluiddynamicdrag` rides along as the infinite-AR
+cross-check: the :math:`AR \to 50` ceiling (2.01) meets Hoerner's plate
+(1.98) at 90 degrees. Kirchhoff theory's own :math:`C_d(90^\circ) = 0.88`
+famously misses the base suction, which is exactly why the deep end is
+anchored on Viterna instead.
+
+**Centre of pressure -- Rayleigh.** Kirchhoff flow past an inclined plate
+has the closed-form centre of pressure
+
+.. math::
+
+   \frac{x_{cp}}{c} = \frac{1}{2}
+     - \frac{3}{4}\,\frac{\cos\alpha}{4 + \pi\sin\alpha},
+
+5/16 at small incidence and exactly mid-chord at 90 degrees. The section
+:math:`c_m` about the quarter chord interpolates between the attached
+quarter-chord (:math:`c_m = 0`) and the Rayleigh point with the separated
+fraction :math:`(1-f)`. This required the ``SectionCoefficients``
+interface to carry :math:`c_m` at all -- the Phase-0 map measured the
+centre of pressure structurally pinned at :math:`c/4` without it, since
+strip forces act at the bound (quarter-chord) line. The coupling applies
+each strip's :math:`c_m` as a pure couple
+:math:`q\,c^2 w\,c_m` about :math:`\hat{L}\times\hat{c}` (the pitch axis),
+reported in ``ViscousCoupledResult::SectionMoment``.
+
+Stated limitations: the :math:`f`-table is queried at
+:math:`|\alpha - \alpha_0|`, so upper/lower separation asymmetry from
+camber is not represented; the attached camber moment :math:`c_{m0}` is
+not carried; and the Level-2 coupling itself remains quasi-steady strip
+theory, whose deep-stall states are limit-cycle means (see
+"stabilization" above).
+
 Viscous drag buildup (Aeolion::DragEstimate)
 -------------------------------------------------
 

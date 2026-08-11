@@ -65,6 +65,14 @@ Stagnation and attachment lines (see :doc:`theory`):
 * :cpp:class:`Aeolion::Solver::TrefftzResult` — far-field induced drag and
   span efficiency, from the wake trace rather than the near-field forces;
   the trustworthy ``CDi`` on a coupled configuration.
+* :cpp:class:`Aeolion::Solver::PostStallSectionModel` — the anchored
+  post-stall section model: Kirchhoff attenuation from the computed
+  separation point, Viterna-Corrigan deep stall with AR-aware
+  :math:`C_{d,\max}`, Rayleigh centre of pressure for the section
+  :math:`c_m` (see :doc:`theory`).
+* :cpp:class:`Aeolion::Solver::ViternaConstants` — the Viterna
+  extension's matching constants, fixed by continuity at the emergent
+  stall junction.
 * :cpp:class:`Aeolion::Solver::ActuatorDisk` — a uniformly loaded rotor
   disk, stated by geometry and disk-plane induced velocity.
 * :cpp:class:`Aeolion::Solver::VortexCylinderMesh` — its semi-infinite

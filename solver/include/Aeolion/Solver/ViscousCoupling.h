@@ -108,6 +108,17 @@ struct StripSection {
 struct SectionCoefficients {
     double cl = 0.0;
     double cd = 0.0;
+    /**
+     * Pitching moment about the QUARTER CHORD, positive nose-up. Zero for a
+     * model that does not know its chordwise pressure distribution (the
+     * attached thin-airfoil default) -- but the whole post-stall story of
+     * the centre of pressure walking from the quarter chord toward
+     * mid-chord lives in this number, so a post-stall model must supply it
+     * (see Solver/PostStallSection.h). The strip's bound vortex IS the
+     * quarter-chord line, so the coupling applies it as a pure couple about
+     * the force application point, no arm bookkeeping.
+     */
+    double cm = 0.0;
 };
 
 /**
@@ -217,6 +228,7 @@ struct StripState {
     double alphaEffDeg = 0.0; ///< From the chord line, induced flow included.
     double cl = 0.0;          ///< The section model's converged lift coefficient.
     double cd = 0.0;
+    double cm = 0.0;          ///< Section pitching moment about the quarter chord.
     double Re = 0.0;
     double Ma = 0.0;
     double Vrel = 0.0;        ///< Local relative speed [m/s].
@@ -237,6 +249,7 @@ struct ViscousCoupledResult {
     std::vector<StripState> Strips;
     Vec3 InducedMoment{0, 0, 0}; ///< From the circulation forces, about RefPoint [N*m].
     Vec3 ProfileMoment{0, 0, 0}; ///< From the section-drag forces, about RefPoint [N*m].
+    Vec3 SectionMoment{0, 0, 0}; ///< The sections' own quarter-chord couples (cm) [N*m].
     Vec3 SourceForce{0, 0, 0};   ///< Pressure force on the source panels (e.g. a duct shroud) [N].
     Vec3 SourceMoment{0, 0, 0};  ///< Its moment about RefPoint [N*m].
     std::vector<double> sigma;   ///< Converged source strengths, aligned with `sources`.
@@ -435,6 +448,7 @@ struct ViscousCoupledResult {
             state.alphaEffDeg = alphaEffDeg;
             state.cl = sect.cl;
             state.cd = sect.cd;
+            state.cm = sect.cm;
             state.Re = Re;
             state.Ma = Ma;
             state.Vrel = vrel;
@@ -594,6 +608,13 @@ struct ViscousCoupledResult {
         totalForce = totalForce + circulatory + profile;
         res.InducedMoment = res.InducedMoment + Cross(mid - fc.RefPoint, circulatory);
         res.ProfileMoment = res.ProfileMoment + Cross(mid - fc.RefPoint, profile);
+        // The section's quarter-chord couple. Nose-up rotates the leading
+        // edge (at -ChordDir) toward LiftDir, so the axis is
+        // LiftDir x ChordDir (for a wing at x-aft/z-up: z x x = +y, the
+        // standard pitch axis). A couple is position-independent, so no arm.
+        res.SectionMoment =
+            res.SectionMoment + Cross(strip.LiftDir, strip.ChordDir) *
+                                    (q * strip.Chord * strip.Chord * strip.Width * state.cm);
 
         StationResult sr;
         sr.y = mid.y;
@@ -638,7 +659,8 @@ struct ViscousCoupledResult {
     }
     totalForce = totalForce + res.SourceForce;
 
-    const Vec3 totalMoment = res.InducedMoment + res.ProfileMoment + res.SourceMoment;
+    const Vec3 totalMoment =
+        res.InducedMoment + res.ProfileMoment + res.SectionMoment + res.SourceMoment;
     res.Base.L = Dot(totalForce, liftDir);
     res.Base.Di = Dot(totalForce, dragDir);
     res.Base.Y = Dot(totalForce, sideDir);
