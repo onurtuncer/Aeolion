@@ -1,19 +1,30 @@
-# Journal of Aircraft submission
+# Journal of Aircraft submission — Part I
 
 **Venue:** AIAA Journal of Aircraft
-**Type:** full research article
-**Status:** drafting — `paper.tex` complete through Section VI; author
-block, acknowledgments and external validation remain
+**Type:** full research article, Part I of a two-part series
+**Status:** drafting — split 2026-08-11: this part carries the method
+(skin-flow topology, attachment lines) through its verification and the
+attachment/sideslip application; the separation march, the separation
+boundary, and the coefficient/derivative tables moved to Part II
+(`papers/journal-of-aircraft-separation/`). Author block,
+acknowledgments and external validation remain open in both parts.
 
-**Figures/data pipeline.** Every number and figure in Section VI comes
-from the solver's own output — no screenshots, and no hand-typed tables:
+**Corrected strip frames (2026-08-11).** The sweep originally measured
+the section incidence in a camber-tilted panel frame, double-counting
+the camber the section contour already carries and biasing α_n high by
+~4.3° (the slope of the camber surface at the control point). The
+driver now uses the true chord frame; offsets, α_n and every R̄ in the
+prose changed accordingly, and CL/Cm were verified bit-identical.
+
+**Figures/data pipeline.** Every number and figure in the application
+section comes from the solver's own output — no screenshots, and no
+hand-typed tables:
 
 ```
 aeolion_attachment_sweep tests/Data/AeolionGeometryHandoff-1.8.0.json \
     papers/journal-of-aircraft/figures/attachment-sweep.json
 cd papers/journal-of-aircraft/figures
 python render-attachment-figures.py     # the four physics figures
-python render-coefficient-tables.py     # tables/*.tex + separation-boundary
 cd .. && pdflatex paper && bibtex paper && pdflatex paper && pdflatex paper
 ```
 

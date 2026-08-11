@@ -1,0 +1,70 @@
+\begin{thebibliography}{10}
+\newcommand{\enquote}[1]{``#1''}
+
+\bibitem{cebeciCousteix2005}
+Cebeci, T. and Cousteix, J., {\em Modeling and Computation of Boundary-Layer
+  Flows\/}, Horizons Publishing, Long Beach, CA, 2nd ed., 2005.
+
+\bibitem{drela1989}
+Drela, M., \enquote{{XFOIL}: An Analysis and Design System for Low Reynolds
+  Number Airfoils,} {\em Low Reynolds Number Aerodynamics\/}, Vol.~54 of {\em
+  Lecture Notes in Engineering\/}, Springer, 1989, pp. 1--12.
+
+\bibitem{lighthill1963}
+Lighthill, M.~J., \enquote{Attachment and Separation in Three-Dimensional
+  Flow,} {\em Laminar Boundary Layers\/}, edited by L.~Rosenhead, Oxford
+  University Press, 1963, pp. 72--82.
+
+\bibitem{tobakPeake1982}
+Tobak, M. and Peake, D.~J., \enquote{Topology of Three-Dimensional Separated
+  Flows,} {\em Annual Review of Fluid Mechanics\/}, Vol.~14, 1982, pp.~61--85.
+
+\bibitem{aeolion2026}
+Tuncer, O., \enquote{Aeolion: A Coupled Wing--Body--Propeller Panel Method,}
+  \url{https://github.com/onurtuncer/Aeolion}, 2026.
+
+\bibitem{munk1924}
+Munk, M.~M., {\em The Aerodynamic Forces on Airship Hulls\/}, NACA Report 184,
+  1924.
+
+\bibitem{hessSmith1962}
+Hess, J.~L. and Smith, A. M.~O., \enquote{Calculation of Non-Lifting Potential
+  Flow About Arbitrary Three-Dimensional Bodies,} Tech. Rep. E.S. 40622,
+  Douglas Aircraft Company, 1962.
+
+\bibitem{katzPlotkin2001}
+Katz, J. and Plotkin, A., {\em Low-Speed Aerodynamics\/}, Cambridge University
+  Press, Cambridge, UK, 2nd ed., 2001.
+
+\bibitem{vanOosteromStrackee1983}
+van Oosterom, A. and Strackee, J., \enquote{The Solid Angle of a Plane
+  Triangle,} {\em IEEE Transactions on Biomedical Engineering\/}, Vol.~BME-30,
+  No.~2, 1983, pp.~125--126.
+
+\bibitem{kulfan2007}
+Kulfan, B.~M., \enquote{A Universal Parametric Geometry Representation Method
+  --- {CST},} Tech. Rep. AIAA 2007-62, AIAA, 2007.
+
+\bibitem{moran1984}
+Moran, J., {\em An Introduction to Theoretical and Computational
+  Aerodynamics\/}, Wiley, New York, 1984.
+
+\bibitem{thwaites1949}
+Thwaites, B., \enquote{Approximate Calculation of the Laminar Boundary Layer,}
+  {\em Aeronautical Quarterly\/}, Vol.~1, No.~3, 1949, pp.~245--280.
+
+\bibitem{poll1979}
+Poll, D. I.~A., \enquote{Transition in the Infinite Swept Attachment Line
+  Boundary Layer,} {\em Aeronautical Quarterly\/}, Vol.~30, No.~4, 1979,
+  pp.~607--629.
+
+\bibitem{pfenninger1965}
+Pfenninger, W., \enquote{Flow Phenomena at the Leading Edge of Swept Wings,}
+  {\em AGARDograph 97, Recent Developments in Boundary Layer Research, Part
+  IV\/}, 1965.
+
+\bibitem{gaster1967}
+Gaster, M., \enquote{On the Flow Along Swept Leading Edges,} {\em Aeronautical
+  Quarterly\/}, Vol.~18, No.~2, 1967, pp.~165--184.
+
+\end{thebibliography}
