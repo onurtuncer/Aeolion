@@ -1793,6 +1793,44 @@ not carried; and the Level-2 coupling itself remains quasi-steady strip
 theory, whose deep-stall states are limit-cycle means (see
 "stabilization" above).
 
+The unsteady discrete-vortex referee (Solver/DiscreteVortexSection.h)
+---------------------------------------------------------------------
+
+The post-separation study's third tier, two-dimensional half: an
+LESP-modulated discrete-vortex section after Ramesh et
+al. :cite:`ramesh2014lesp`, run at fixed incidence to measure what the
+quasi-steady coupling's limit-cycle means leave out. It does not feed
+the coupling; it referees it.
+
+Per step, the plate's bound vorticity is the Glauert series with
+time-varying coefficients projected from the downwash of the freestream
+and every free vortex (no influence matrix); one trailing-edge vortex is
+shed with its strength closing Kelvin's theorem, and while the
+leading-edge suction parameter :math:`A_0` exceeds its critical value a
+leading-edge vortex is shed too, the pair satisfying Kelvin and
+:math:`|A_0| = \mathrm{LESP}_{crit}` as a linear :math:`2\times2` system
+-- no inner iteration, and the circulation ledger holds to machine
+precision by construction. Free vortices are Vatistas-core regularized
+and convect with the full local velocity.
+
+Loads come from the impulse theorem,
+:math:`F = \rho\, d/dt\,[\sum_k \Gamma_k (z_k, -x_k) + (0, -B_x)]` with
+:math:`B_x` the bound sheet's first moment (closed-form in the series
+coefficients), rather than from the linearized force formulas -- those
+were measured collapsing at deep incidence, while the impulse form is
+exact for tracked vorticity at any angle and recovers Wagner's growth
+and the attached :math:`2\pi\sin\alpha` through the same expression.
+Vortices retired past the far cutoff are removed from the impulse
+baseline at the moment of retirement (or their disappearance reads as a
+force spike) and contribute their impulse rate analytically afterwards,
+as circulation drifting with the freestream.
+
+One bias is inherent to the dimension: a two-dimensional street has no
+spanwise breakup, and overpredicts the normal plate's mean drag by the
+classical :math:`\sim 65\%`. The referee is therefore read for its
+break location and fluctuation content; its mean-level overshoot is the
+quantified argument for the three-dimensional particle tier.
+
 Viscous drag buildup (Aeolion::DragEstimate)
 -------------------------------------------------
 

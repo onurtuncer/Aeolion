@@ -33,4 +33,10 @@ Sheldahl, R.~E. and Klimas, P.~C., \enquote{Aerodynamic Characteristics of
   in Aerodynamic Analysis of Vertical Axis Wind Turbines,} Tech. Rep.
   SAND80-2114, Sandia National Laboratories, 1981.
 
+\bibitem{ramesh2014lesp}
+Ramesh, K., Gopalarathnam, A., Granlund, K., Ol, M.~V., and Edwards, J.~R.,
+  \enquote{Discrete-vortex method with novel shedding criterion for unsteady
+  aerofoil flows with intermittent leading-edge vortex shedding,} {\em Journal
+  of Fluid Mechanics\/}, Vol.~751, 2014, pp.~500--538.
+
 \end{thebibliography}

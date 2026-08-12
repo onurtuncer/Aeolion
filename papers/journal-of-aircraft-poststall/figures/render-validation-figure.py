@@ -28,8 +28,9 @@ SECONDARY = "#52514e"
 MUTED = "#898781"
 GRID = "#e1e0d9"
 BASELINE = "#c3c2b7"
-BLUE = "#2a78d6"    # model
-ORANGE = "#eb6834"  # data
+BLUE = "#2a78d6"    # anchored model
+ORANGE = "#eb6834"  # Sheldahl-Klimas table
+AQUA = "#1baf7a"    # 2-D discrete-vortex referee (mean +- RMS)
 
 plt.rcParams.update({
     "font.family": "sans-serif", "font.sans-serif": ["Segoe UI", "DejaVu Sans"],
@@ -58,18 +59,28 @@ assert data is not None, f"Re block {RE_BLOCK} not found"
 mask = (data[:, 0] >= 0.0) & (data[:, 0] <= 90.0)
 sk = data[mask]
 
+dvm = np.array(model.get("dvm", []))  # alpha, meanCl, meanCd, rmsCl, rmsCd, levs
+
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(6.6, 2.9), dpi=300)
 
 ax1.plot(polar[:, 0], polar[:, 2], color=BLUE, lw=1.6)
 ax1.plot(sk[:, 0], sk[:, 1], "o", ms=3.2, mfc="none", mec=ORANGE, mew=1.0)
+if dvm.size:
+    ax1.errorbar(dvm[:, 0], dvm[:, 1], yerr=dvm[:, 3], fmt="s", ms=3.0, color=AQUA,
+                 elinewidth=1.0, capsize=2.0)
 ax1.set_xlabel(r"$\alpha$ [deg]")
 ax1.set_ylabel(r"$c_l$")
 ax1.set_xlim(0, 90)
-ax1.text(30, 1.28, "anchored model", color=BLUE, fontsize=8)
-ax1.text(38, 0.62, "Sheldahl--Klimas", color=ORANGE, fontsize=8)
+ax1.text(2, 1.42, "anchored model", color=BLUE, fontsize=8)
+ax1.text(38, 0.55, "Sheldahl--Klimas", color=ORANGE, fontsize=8)
+if dvm.size:
+    ax1.text(30, 2.35, "2-D vortex referee (mean $\\pm$ RMS)", color=AQUA, fontsize=8)
 
 ax2.plot(polar[:, 0], polar[:, 3], color=BLUE, lw=1.6)
 ax2.plot(sk[:, 0], sk[:, 2], "o", ms=3.2, mfc="none", mec=ORANGE, mew=1.0)
+if dvm.size:
+    ax2.errorbar(dvm[:, 0], dvm[:, 2], yerr=dvm[:, 4], fmt="s", ms=3.0, color=AQUA,
+                 elinewidth=1.0, capsize=2.0)
 ax2.set_xlabel(r"$\alpha$ [deg]")
 ax2.set_ylabel(r"$c_d$")
 ax2.set_xlim(0, 90)

@@ -33,6 +33,7 @@
 #include "Aeolion/Geometry/AirfoilSection.h"
 #include "Aeolion/Geometry/SectionContour.h"
 #include "Aeolion/Solver/AttachmentBoundaryLayer.h"
+#include "Aeolion/Solver/DiscreteVortexSection.h"
 #include "Aeolion/Solver/PostStallSection.h"
 #include "Aeolion/Solver/SectionPanelMethod.h"
 
@@ -198,6 +199,25 @@ int main(int argc, char** argv) {
         if (!first) out << ",\n";
         first = false;
         out << " [" << aDeg << ',' << f << ',' << c.cl << ',' << c.cd << ',' << c.cm << ']';
+    }
+    out << "\n],\n";
+
+    // --- the 2-D unsteady referee at the same attitudes ---------------------
+    // Mean and RMS loads of the LESP-modulated discrete-vortex section
+    // (tier 3's two-dimensional half) every ten degrees. Flat plate: the
+    // referee's question is posed at deep incidence, where camber is
+    // secondary and its 2-D coherence bias is the stated caveat.
+    out << "\"dvm\":[\n";
+    bool firstDvm = true;
+    for (double aDeg = 10.0; aDeg <= 90.0 + 1e-9; aDeg += 10.0) {
+        const S::DiscreteVortexResult run = S::SolveDiscreteVortexSection(aDeg);
+        if (!run.Valid) continue;
+        if (!firstDvm) out << ",\n";
+        firstDvm = false;
+        out << " [" << aDeg << ',' << run.MeanCl << ',' << run.MeanCd << ',' << run.RmsCl << ','
+            << run.RmsCd << ',' << run.LevShed << ']';
+        std::cout << "dvm alpha=" << aDeg << ": mean cl " << run.MeanCl << " cd " << run.MeanCd
+                  << "  rms cl " << run.RmsCl << " cd " << run.RmsCd << "\n";
     }
     out << "\n]\n}\n";
     std::cout << "wrote " << outPath << " (" << tabAlpha.size() << " separation-table points)\n";

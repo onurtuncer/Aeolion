@@ -296,6 +296,33 @@ returning nothing but a fixed :math:`c_m`: the coupled solve's
 axis exactly, carry no roll/yaw component, and arrive in the total
 pitching moment.
 
+TestDiscreteVortexSection
+-------------------------
+
+The unsteady discrete-vortex referee
+(``Solver::SolveDiscreteVortexSection``), pinned to the classical
+results that bound an unsteady thin-airfoil wake model.
+
+An attached run (LESP threshold set unreachably high) must shed no
+leading-edge vortex, follow **Wagner's growth** from the impulsive
+start -- half the steady lift at the first instants, inside Wagner's
+band at one chord of travel -- and its mean over the averaging window
+must match the WINDOW MEAN of Wagner's function within 4%, not the
+steady value: pinning against the steady value would pass a
+formulation that quietly rides above the growth. **Kelvin's theorem**
+must hold to machine precision at every step, attached or shedding --
+the shed strengths are solved from it, so a violation means the linear
+closure is wrong, not inaccurate. At a realistic threshold the **LESP
+criterion** must switch: leading-edge vortices shed at
+:math:`\alpha = 25^\circ`, :math:`|A_0|` capped at the critical value
+while they do, and the loads must fluctuate. The **normal plate** must
+land in the two-dimensional street's band (:math:`c_d \sim 2.2..4`) --
+deliberately NOT the measured plate's :math:`\sim 2`, since a
+two-dimensional street's over-coherence is documented physics and a
+mean near the measured value would be suspicious here. Mean lift must
+carry the sign of :math:`\alpha` and mirror to the scatter of a short
+chaotic average.
+
 TestTrefftzPlane
 ----------------
 

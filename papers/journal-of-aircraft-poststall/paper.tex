@@ -362,7 +362,10 @@ bubble-bursting physics, not another constant.
     same Hess--Smith~$+$~attachment-march pipeline the airframe solve
     uses, on a CST fit of the section whose residual
     ($1.3\times10^{-4}c$) and recovered nose radius are reported with
-    the export.}
+    the export. Squares with bars: the two-dimensional discrete-vortex
+    referee of Section~\ref{sec:referee}, mean $\pm$ RMS --- read for
+    its break location and fluctuation content, its mean levels
+    carrying the two-dimensional street's documented over-coherence.}
   \label{fig:validation}
 \end{figure}
 
@@ -445,18 +448,48 @@ same coupling, and their disagreement with the anchored tier is itself
 a result.
 
 \subsection{The unsteady referee}
+\label{sec:referee}
 
-% TODO(Phase 3): (a) 2D discrete-vortex sections with LESP-modulated
-% leading-edge shedding (mean polars + shedding content); (b) 3D
-% particle wake shed from the TE and the computed separation line at
-% ~6 attitudes (e.g. alpha = 30/60/90 x beta = 0/15), mean and RMS
-% loads vs the quasi-steady cycle means.
+% Status: the 2-D half is IMPLEMENTED and reported below
+% (Solver/DiscreteVortexSection.h, TestDiscreteVortexSection). The 3-D
+% particle tier remains TODO: particle wake shed from the TE and the
+% computed separation line at ~6 attitudes (alpha = 30/60/90 x beta =
+% 0/15), mean and RMS loads vs the quasi-steady cycle means.
 Quasi-steady strip theory cannot say what its cycle means leave out.
-The third tier measures it at a handful of attitudes: two-dimensional
-discrete-vortex sections with shedding modulated by the leading-edge
-suction parameter, and a three-dimensional particle wake shed from the
-trailing edge and the computed separation line, compared against the
-map's cycle means in mean and fluctuating load.
+The third tier's two-dimensional half measures it: a discrete-vortex
+section in the manner of Ramesh et al.~\cite{ramesh2014lesp} --
+trailing-edge shedding every step, leading-edge shedding switched by
+the leading-edge suction parameter exceeding its critical value, both
+strengths closing Kelvin's theorem and the LESP cap as a linear system
+each step -- with loads taken from the impulse of the tracked
+vorticity, exact at any incidence where the linearized force formulas
+are not. Its own calibration is pinned in the test suite: the
+impulsive start follows Wagner's function, the attached mean recovers
+$2\pi\sin\alpha$ to a fraction of a percent, and Kelvin's ledger holds
+to machine precision with both edges shedding.
+
+Its referee products appear as the mean-$\pm$-RMS band in
+Fig.~\ref{fig:validation}. Three readings matter. First, the
+\emph{break}: the referee leaves the attached line between $10^\circ$
+and $20^\circ$ with the fluctuation switching on at once ---
+RMS~$c_l$ jumps from $0.005$ at $10^\circ$ to $0.57$ at $20^\circ$,
+its maximum over the sweep. The cycle means the quasi-steady map
+reports through the stall shoulder average over $\pm 0.5$-level lift
+fluctuations, and that number is now measured rather than presumed.
+Second, the fluctuation decays but never vanishes toward $90^\circ$
+(RMS~$c_l$ $0.10$, RMS~$c_d$ $0.47$ at the normal plate): the deep map
+is a mean over a permanently shedding street. Third, the referee's own
+MEAN levels carry the dimension's documented bias --- a
+two-dimensional street has no spanwise breakup, and its normal-plate
+drag (3.29 here) sits the classical $\sim\!65\%$ above the measured
+plate, with the mid-range lift inflated correspondingly. The
+two-dimensional referee is therefore read for its break location and
+its fluctuation content, not its mean levels --- and its overshoot is
+the standing, now-quantified argument for the tier that remains: a
+three-dimensional particle wake shed from the trailing edge and the
+computed separation line at a handful of attitudes, compared against
+the map's cycle means in mean and fluctuating load. That comparison
+will appear here.
 
 \section{Limitations}
 
