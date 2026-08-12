@@ -44,6 +44,23 @@ python render-poststall-figures.py
 cd .. && pdflatex paper && bibtex paper && pdflatex paper && pdflatex paper
 ```
 
+The section-level validation figure has its own one-liner:
+
+```
+aeolion_section_validation \
+    papers/journal-of-aircraft-poststall/figures/section-validation.json
+cd papers/journal-of-aircraft-poststall/figures
+python render-validation-figure.py   # prints the prose numbers
+```
+
+`NACA_0015_SheldahlKlimas.dat` is the Sandia-distributed 360-degree
+table (SAND80-2114 data, taken verbatim from
+github.com/sandialabs/CACTUS `test/Airfoil_Section_Data/NACA_0015.dat`)
+and IS tracked — it is the validation's frozen reference. The model
+polar `section-validation.json` is tracked too, as the data of record
+behind Fig. "section-validation" (it is small and the paper quotes its
+numbers).
+
 The JSONs are not tracked (`.gitignore` excludes `*.json`); regenerate
 with the commands above (~15 min each). The coupling knobs in the
 command line matter: plain damped iteration (relaxation 0.05, Anderson

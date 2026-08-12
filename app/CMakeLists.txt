@@ -32,3 +32,10 @@ target_link_libraries(aeolion_fan_induction PRIVATE aeolion aeolion_panelbuilder
 # deep-stall blend, exporting the flat-plate convergence metrics as JSON.
 add_executable(aeolion_poststall_sweep PostStallSweepExport.cpp)
 target_link_libraries(aeolion_poststall_sweep PRIVATE aeolion aeolion_panelbuilder)
+
+# Section-level validation of the anchored post-stall model against the
+# Sheldahl-Klimas NACA 0015 table (Part II's declared acceptance test):
+# CST-fits the section, computes f(alpha) through the same Hess-Smith +
+# attachment-march pipeline as the airframe, exports the model polar.
+add_executable(aeolion_section_validation SectionValidationExport.cpp)
+target_link_libraries(aeolion_section_validation PRIVATE aeolion)
