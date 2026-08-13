@@ -1,0 +1,81 @@
+\begin{thebibliography}{10}
+\newcommand{\enquote}[1]{``#1''}
+
+\bibitem{stone2008}
+Stone, R.~H., Anderson, P., Hutchison, C., Tsai, A., Gibbens, P., and Wong,
+  K.~C., \enquote{Flight Testing of the T-Wing Tail-Sitter Unmanned Air
+  Vehicle,} {\em Journal of Aircraft\/}, Vol.~45, No.~2, 2008, pp.~673--685.
+
+\bibitem{ozdemir2014}
+\"Ozdemir, U., Aktas, Y.~O., Vuruskan, A., Dereli, Y., Tarhan, A.~F., Demirbag,
+  K., Erdem, A., Kalaycioglu, G.~D., Ozkol, I., and Inalhan, G.,
+  \enquote{Design of a Commercial Hybrid VTOL UAV System,} {\em Journal of
+  Intelligent \& Robotic Systems\/}, Vol.~74, 2014, pp.~371--393.
+
+\bibitem{aeolion2026}
+Tuncer, O., \enquote{Aeolion: A Coupled Wing--Body--Propeller Panel Method,}
+  2026, \url{https://github.com/onurtuncer/Aeolion}.
+
+\bibitem{thwaites1949}
+Thwaites, B., \enquote{Approximate Calculation of the Laminar Boundary Layer,}
+  {\em Aeronautical Quarterly\/}, Vol.~1, No.~3, 1949, pp.~245--280.
+
+\bibitem{cebeciCousteix2005}
+Cebeci, T. and Cousteix, J., {\em Modeling and Computation of Boundary-Layer
+  Flows\/}, Horizons Publishing, Long Beach, CA, 2nd ed., 2005.
+
+\bibitem{veldhuis2005}
+Veldhuis, L. L.~M., \enquote{Propeller Wing Aerodynamic Interference,} {\em
+  Ph.D. Dissertation, Delft University of Technology\/}, 2005, Kept on merit:
+  the standard reference for propeller--wing interference, tractor
+  configuration.
+
+\bibitem{sinnigeEtAl2019}
+Sinnige, T., van Arnhem, N., Stokkermans, T. C.~A., Eitelberg, G., and
+  Veldhuis, L. L.~M., \enquote{Wingtip-Mounted Propellers: Aerodynamic Analysis
+  of Interaction Effects and Comparison with Conventional Layout,} {\em Journal
+  of Aircraft\/}, Vol.~56, No.~1, 2019, pp.~295--312.
+
+\bibitem{kruger1949}
+Kr\"uger, W., \enquote{On Wind Tunnel Tests and Computations Concerning the
+  Problem of Shrouded Propellers,} Tech. Rep. TM 1202, NACA, 1949.
+
+\bibitem{blackReddy1968}
+Black, D.~M., Wainauski, H.~S., and Rohrbach, C., \enquote{Shrouded Propellers
+  --- A Comprehensive Performance Study,} {\em AIAA Paper 68-994\/}, 1968, Kept
+  on merit: the standard comprehensive ducted-propeller performance dataset,
+  still the reference for lip-suction thrust split.
+
+\bibitem{pereira2008}
+Pereira, J.~L. and Chopra, I., \enquote{Hover Tests of Micro Aerial
+  Vehicle-Scale Shrouded Rotors, Part I: Performance Characteristics,} {\em
+  Journal of the American Helicopter Society\/}, Vol.~54, No.~1, 2009,
+  pp.~012001.
+
+\bibitem{froude1889}
+Froude, R.~E., \enquote{On the Part Played in Propulsion by Differences of
+  Fluid Pressure,} Tech. rep., Transactions of the Institution of Naval
+  Architects, 1889.
+
+\bibitem{glauert1935}
+Glauert, H., {\em Airplane Propellers\/}, Springer, Berlin, 1935, In:
+  Aerodynamic Theory, Vol. IV, edited by W. F. Durand.
+
+\bibitem{smith1993}
+Smith, A. M.~O., \enquote{High-Lift Aerodynamics,} {\em Journal of Aircraft\/},
+  Vol.~12, No.~6, 1975, pp.~501--530.
+
+\bibitem{branlardMeyerForsting2020}
+Branlard, E. and Meyer~Forsting, A.~R., \enquote{Assessing the Blockage Effect
+  of Wind Turbines and Wind Farms Using an Analytical Vortex Model,} {\em Wind
+  Energy\/}, Vol.~23, No.~11, 2020, pp.~2068--2086.
+
+\bibitem{branlardGaunaa2015}
+Branlard, E. and Gaunaa, M., \enquote{Cylindrical Vortex Wake Model: Right
+  Cylinder,} {\em Wind Energy\/}, Vol.~18, No.~11, 2015, pp.~1973--1987.
+
+\bibitem{gaster1967}
+Gaster, M., \enquote{The Structure and Behaviour of Laminar Separation
+  Bubbles,} {\em Aeronautical Research Council R\&M 3595\/}, 1967.
+
+\end{thebibliography}

@@ -73,6 +73,22 @@ inline constexpr double DefaultCouplingTolerance = 1e-4;  // on max |cl residual
 // affecting converged states (see theory.rst).
 inline constexpr double MaxTargetSectionCl = 2.0;
 
+// Strips beyond the cl-matching contract decay their circulation toward
+// zero rather than inverting k for a target. Near |alpha_eff| = 90 deg the
+// circulatory force rho Gamma (v x dl) is PERPENDICULAR to the lift
+// direction, so the projection k passes through zero: the raw cl/k slams
+// the target between +-gammaCap with the sign of k's numerical noise
+// (measured on a planar wing at alpha = 90: CN ~ 5, pure artifact), and
+// the |k| ~ 0 branch used to FREEZE the stale circulation of the previous
+// continuation step, which is no better. The decay ramps in smoothly from
+// the residual's own contract edge (ResidualIncidenceLimitDeg) over this
+// many degrees, so a strip hovering at the edge sees no switching
+// nonlinearity. Inside the contract the inversion is exactly the one the
+// propeller consumers converge on -- a Tikhonov-damped inversion was
+// tried first and rejected: its 0.25% bias floors the residual above the
+// coupling tolerance on every converged solve.
+inline constexpr double TargetDecayRampDeg = 10.0;
+
 /**
  * The section-plane frame and section data of one spanwise strip -- what a
  * 2-D section model needs to know about the geometry it is a section OF.
@@ -92,6 +108,17 @@ struct StripSection {
 struct SectionCoefficients {
     double cl = 0.0;
     double cd = 0.0;
+    /**
+     * Pitching moment about the QUARTER CHORD, positive nose-up. Zero for a
+     * model that does not know its chordwise pressure distribution (the
+     * attached thin-airfoil default) -- but the whole post-stall story of
+     * the centre of pressure walking from the quarter chord toward
+     * mid-chord lives in this number, so a post-stall model must supply it
+     * (see Solver/PostStallSection.h). The strip's bound vortex IS the
+     * quarter-chord line, so the coupling applies it as a pure couple about
+     * the force application point, no arm bookkeeping.
+     */
+    double cm = 0.0;
 };
 
 /**
@@ -201,6 +228,7 @@ struct StripState {
     double alphaEffDeg = 0.0; ///< From the chord line, induced flow included.
     double cl = 0.0;          ///< The section model's converged lift coefficient.
     double cd = 0.0;
+    double cm = 0.0;          ///< Section pitching moment about the quarter chord.
     double Re = 0.0;
     double Ma = 0.0;
     double Vrel = 0.0;        ///< Local relative speed [m/s].
@@ -221,6 +249,7 @@ struct ViscousCoupledResult {
     std::vector<StripState> Strips;
     Vec3 InducedMoment{0, 0, 0}; ///< From the circulation forces, about RefPoint [N*m].
     Vec3 ProfileMoment{0, 0, 0}; ///< From the section-drag forces, about RefPoint [N*m].
+    Vec3 SectionMoment{0, 0, 0}; ///< The sections' own quarter-chord couples (cm) [N*m].
     Vec3 SourceForce{0, 0, 0};   ///< Pressure force on the source panels (e.g. a duct shroud) [N].
     Vec3 SourceMoment{0, 0, 0};  ///< Its moment about RefPoint [N*m].
     std::vector<double> sigma;   ///< Converged source strengths, aligned with `sources`.
@@ -405,14 +434,21 @@ struct ViscousCoupledResult {
             const double residual = clVlm - sect.cl;
             rawResidual[i] = residual;
             vrelMaxSq = std::max(vrelMaxSq, vrel * vrel);
-            target[i] = (std::fabs(k) > Math::Tiny)
-                            ? std::clamp(sect.cl / k, -gammaCap[i], gammaCap[i])
-                            : gamma[i];
+            const double rawTarget = (std::fabs(k) > Math::Tiny)
+                                         ? std::clamp(sect.cl / k, -gammaCap[i], gammaCap[i])
+                                         : 0.0;
+            const double contractWeight =
+                std::clamp((options.ResidualIncidenceLimitDeg + TargetDecayRampDeg -
+                            std::fabs(alphaEffDeg)) /
+                               TargetDecayRampDeg,
+                           0.0, 1.0);
+            target[i] = contractWeight * rawTarget;
 
             StripState& state = res.Strips[i];
             state.alphaEffDeg = alphaEffDeg;
             state.cl = sect.cl;
             state.cd = sect.cd;
+            state.cm = sect.cm;
             state.Re = Re;
             state.Ma = Ma;
             state.Vrel = vrel;
@@ -572,6 +608,13 @@ struct ViscousCoupledResult {
         totalForce = totalForce + circulatory + profile;
         res.InducedMoment = res.InducedMoment + Cross(mid - fc.RefPoint, circulatory);
         res.ProfileMoment = res.ProfileMoment + Cross(mid - fc.RefPoint, profile);
+        // The section's quarter-chord couple. Nose-up rotates the leading
+        // edge (at -ChordDir) toward LiftDir, so the axis is
+        // LiftDir x ChordDir (for a wing at x-aft/z-up: z x x = +y, the
+        // standard pitch axis). A couple is position-independent, so no arm.
+        res.SectionMoment =
+            res.SectionMoment + Cross(strip.LiftDir, strip.ChordDir) *
+                                    (q * strip.Chord * strip.Chord * strip.Width * state.cm);
 
         StationResult sr;
         sr.y = mid.y;
@@ -616,7 +659,8 @@ struct ViscousCoupledResult {
     }
     totalForce = totalForce + res.SourceForce;
 
-    const Vec3 totalMoment = res.InducedMoment + res.ProfileMoment + res.SourceMoment;
+    const Vec3 totalMoment =
+        res.InducedMoment + res.ProfileMoment + res.SectionMoment + res.SourceMoment;
     res.Base.L = Dot(totalForce, liftDir);
     res.Base.Di = Dot(totalForce, dragDir);
     res.Base.Y = Dot(totalForce, sideDir);

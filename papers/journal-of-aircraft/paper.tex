@@ -27,9 +27,9 @@
 \usepackage{graphicx}
 \usepackage{url}
 
-\title{Stagnation Points and Attachment Lines on a Coupled
-       Wing--Body Panel Method for Angle-of-Attack and
-       Sideslip Sweeps}
+\title{Aerodynamic Coefficients of a Coupled Wing--Body Configuration
+       Across the Separation Boundary --- Part~I: Attachment Lines, the
+       Separation March, and the Attached-Flow Envelope}
 
 % Name diacritics confirmed. Still TODO before submission: the second
 % author's department, the third author's faculty and email, and AIAA
@@ -181,7 +181,11 @@ body skin-flow analysis. Section~\ref{sec:wing} develops the wing
 attachment line, posed in leading-edge-normal coordinates, and argues that
 this choice is forced --- not merely preferable --- once sideslip is
 admitted. Section~\ref{sec:verification} verifies both against closed-form
-results.
+results. This part carries the aerodynamics \emph{up to} the separation
+boundary: the coefficient and derivative tables it produces are
+truncated where the march says separation takes over. What lies beyond
+that boundary --- the post-separation coefficients toward the
+flat-plate limit --- is the subject of Part~II of this series.
 
 The motivating application is an attitude sweep. Angle of attack and
 sideslip are the two parameters a stability and control analysis varies
@@ -703,13 +707,13 @@ introduces is quantified below rather than assumed away.
 
 Figure~\ref{fig:offset} shows the attachment line at $\beta = 0$.
 Every exposed station resolves a stagnation point at every condition,
-and the mean offset grows from $0.021\,c_n$ through $0.032\,c_n$ to
-$0.046\,c_n$ across the $\alpha$ sweep, tapering toward the tips as
+and the mean offset grows from $0.009\,c_n$ through $0.018\,c_n$ to
+$0.027\,c_n$ across the $\alpha$ sweep, tapering toward the tips as
 induced downwash relieves the local incidence (the normal-plane
-incidence falls from $10.6^\circ$ near the root to $7.6^\circ$ at the
+incidence falls from $6.4^\circ$ near the root to $3.3^\circ$ at the
 tip at $\alpha = 8^\circ$). The nonzero offset at $\alpha = 0$ is not
 noise: a cambered section at zero incidence stagnates below its
-leading edge, at $0.021\,c_n$ here --- which is precisely the initial
+leading edge, at $0.009\,c_n$ here --- which is precisely the initial
 condition a boundary-layer march loses when it starts from the camber
 line's leading edge with $\theta = 0$, the approximation
 Section~\ref{sec:wing} exists to remove. Lift coefficients for the
@@ -735,10 +739,10 @@ The first concerns the outboard wing. Infinite-swept-wing reasoning
 Section~\ref{sec:verification} --- says an unswept wing at sideslip is
 left/right symmetric, with $\Lambda_{\text{eff}} = |\beta|$ on both
 sides. The coupled airframe disagrees: at $\beta = +10^\circ$ the
-outboard plateau reads $10.6^\circ$ on the windward wing against
-$8.8^\circ$ on the leeward at $\alpha = 8^\circ$, and the split
-shrinks with lift ($10.2$ against $9.1$ at $4^\circ$, $9.8$ against
-$9.5$ at $0^\circ$) while reversing exactly under $\beta \to -\beta$.
+outboard plateau reads $10.3^\circ$ on the windward wing against
+$9.4^\circ$ on the leeward at $\alpha = 8^\circ$, and the split
+shrinks with lift ($10.1$ against $9.6$ at $4^\circ$, $9.9$ against
+$9.7$ at $0^\circ$) while reversing exactly under $\beta \to -\beta$.
 On a planform with identically zero sweep, that asymmetry is supplied
 entirely by the induced field --- the trailing-vortex system and the
 body's sidewash, neither of which an isolated-section treatment sees.
@@ -746,30 +750,30 @@ body's sidewash, neither of which an isolated-section treatment sees.
 The second result is the root junction. At $\beta = 0$ the effective
 sweep climbs from under $1^\circ$ over the outer wing to $30^\circ$ at
 the station beside the fuselage, and $\Rbar$ climbs with it, from
-below 2 to 86 at $\alpha = 8^\circ$: the body's crossflow at incidence
+below 2 to 63 at $\alpha = 8^\circ$: the body's crossflow at incidence
 must pass around the wing root, and the spanwise flow it acquires in
 doing so is what a swept leading edge would otherwise have to supply.
 The attachment-line boundary layer of an unswept wing--body junction
 is, in this specific sense, all junction and no wing. Sideslip then
 splits the junction: the windward root sharpens to $32^\circ$ and
-$\Rbar = 104$, while one station out on the leeward side the
+$\Rbar = 66$, while one station out on the leeward side the
 spanwise flow passes through a null ($\Lambda_{\text{eff}} =
-0.9^\circ$, $\Rbar \approx 2$) where the body's sidewash cancels the
+0.9^\circ$, $\Rbar < 2$) where the body's sidewash cancels the
 sideslip component, before recovering to the outboard plateau. Since
 leading-edge contamination is seeded at exactly this junction --- it
 is Poll's root disturbance~\cite{poll1979} --- the coupled solve's
 verdict is that the two roots are not equally exposed --- and its
 engineering summary for this airframe is unambiguous: the worst
-$\Rbar$ anywhere in the sweep is 104, a factor 2.4 below the
-contamination threshold, so the attachment line stays laminar with
-margin at every station and attitude examined.
+$\Rbar$ anywhere in the attitude matrix is 135, a factor 1.8 below
+the contamination threshold, so the attachment line stays laminar
+with margin at every station and attitude examined.
 
 The junction numbers carry a stated modelling sensitivity. Repeating
 the sweep with the carry-through vortex enabled moves the outboard
-stations almost nowhere --- offsets by less than $0.003\,c_n$,
-$\Rbar$ by under 10\% of each line's maximum --- but moves the two
-stations flanking the fuselage by up to $13^\circ$ of effective sweep
-and roughly a third of their $\Rbar$. The root spike and its sideslip
+stations almost nowhere --- offsets by less than $0.002\,c_n$ --- but
+moves the two stations flanking the fuselage by up to $13^\circ$ of
+effective sweep and by up to the full magnitude of their
+$\Rbar$. The root spike and its sideslip
 split are robust; their third significant figure is not, and the
 figures should be read accordingly. A practical meshing note belongs
 with this: the trimmed wing's inner trailing legs run along the body
@@ -819,21 +823,20 @@ $\theta_0$ there just as the section strain rate does on the wing.
   \includegraphics[width=0.85\linewidth]{figures/separation-boundary.pdf}
   \caption{Upper-surface separation from the march of
     Section~\ref{sec:separation}. Top: separation station across the span
-    at $\beta = 0$, shaded light to dark with increasing $\alpha$;
+    at $\beta = 0$ for increasing incidence;
     separation is most advanced just outboard of the wing root and
     recovers toward the tips. Bottom: fraction of the span separated
-    forward of $x/c_n = 0.90$. The five $\beta$ curves are all plotted and
-    \emph{collapse} --- on this unswept planform the separation boundary
-    is insensitive to sideslip, in contrast to the attachment line of
-    Fig.~\ref{fig:sideslip}.}
+    forward of $x/c_n = 0.90$ against $\alpha$, for all five sideslip
+    angles --- the curves \emph{collapse} --- on this unswept planform
+    the separation boundary is insensitive to sideslip.}
   \label{fig:separation}
 \end{figure}
 
 \begin{table}[tb]
   \centering
-  \caption{Chordwise station $x/c_n$ of the most forward upper-surface
+  \caption{The separation boundary: forwardmost upper-surface
     separation, with the percentage of span separated forward of
-    $x/c_n = 0.90$ in parentheses. A dash denotes an attitude at which no
+    $x/c_n = 0.90$ in parentheses. A dash means no
     station separates forward of that limit.}
   \label{tab:separation}
   \input{figures/tables/separation.tex}
@@ -841,19 +844,19 @@ $\theta_0$ there just as the section strain rate does on the wing.
 
 The march of Section~\ref{sec:separation} is run at every attitude, and
 Fig.~\ref{fig:separation} and Table~\ref{tab:separation} report it. Below
-$\alpha = 6^\circ$ the turbulent layer holds to within a few percent of
-the trailing edge at every station: separation exists, as it always does,
-but sits at $x/c_n > 0.95$ where it is a trailing-edge detail rather than
-a limit. At $\alpha = 6^\circ$ it moves forward of $x/c_n = 0.90$ over
-about a third of the span, at $8^\circ$ it covers essentially the whole
-span, and by $16^\circ$ it stands at $x/c_n \approx 0.58$ --- most of the
-upper surface. The boundary this draws is $\alpha \approx 6^\circ$, and it
-is the same at every sideslip angle tested.
+$\alpha = 10^\circ$ the turbulent layer holds close to the trailing edge
+at every station: separation exists, as it always does, but sits aft of
+$x/c_n = 0.90$ where it is a trailing-edge detail rather than a limit.
+At $\alpha = 12^\circ$ it moves forward of $x/c_n = 0.90$ over half the
+span (55\%), at $14^\circ$ over 82\%, and by $16^\circ$ it covers
+essentially the whole span with the forwardmost station at $x/c_n
+\approx 0.80$. The boundary this draws is $\alpha \approx 12^\circ$, and
+it is the same at every sideslip angle tested.
 
 The spanwise pattern is worth reading rather than summarizing. Separation
 is consistently most advanced just \emph{outboard of the wing root}, near
 $2y/b \approx 0.2$, and recovers monotonically toward the tips --- at
-$\alpha = 16^\circ$, from $x/c_n \approx 0.58$ inboard to $0.78$ at the
+$\alpha = 16^\circ$, from $x/c_n \approx 0.80$ inboard to $0.88$ at the
 tip. That ordering follows from the same induced field that flattens the
 attachment line's offset outboard: downwash relieves the local incidence
 toward the tips, so the outer sections run a milder pressure recovery than
@@ -876,15 +879,14 @@ not share, and vice versa. Both are needed to say which one an attitude
 limit should be drawn from --- here, separation.
 
 Transition is by laminar separation --- a bubble --- rather than by
-Michel's criterion at 2404 of the 2420 station-attitudes in the matrix
-(99.3\%; the exceptions are four stations at $\alpha = 4^\circ$ where
-Michel trips first). That is the expected behaviour at $Re_n \approx
-3\times10^5$, and it is the reason the verdict is drawn from turbulent
-separation rather than from $\lambda = -0.09$
-(Section~\ref{sec:separation}). The caveat stated there applies to the
-whole of this subsection: bursting is not modelled, so $\alpha \approx
-6^\circ$ is an upper bound on the attitude at which the potential-flow
-coefficients can be trusted, not a predicted stall.
+Michel's criterion at 2386 of the 2420 station-attitudes in the matrix
+(98.6\%; the 34 exceptions cluster at $\alpha = 8$--$12^\circ$). That is
+the expected behaviour at $Re_n \approx 3\times10^5$, and it is the
+reason the verdict is drawn from turbulent separation rather than from
+$\lambda = -0.09$ (Section~\ref{sec:separation}). The caveat stated
+there applies to the whole of this subsection: bursting is not modelled,
+so $\alpha \approx 12^\circ$ is an upper bound on the attitude at which
+the potential-flow coefficients can be trusted, not a predicted stall.
 
 \subsection{Coefficients and stability derivatives}
 \label{sec:coefficients}
@@ -892,13 +894,15 @@ coefficients can be trusted, not a predicted stall.
 \begin{table}[tb]
   \centering
   \caption{Force and moment coefficients over the attached portion of the
-    attitude matrix. Rows at $\alpha \geq 6^\circ$ are omitted: the
+    attitude matrix. Rows at $\alpha \geq 12^\circ$ are omitted: the
     separation march of Section~\ref{sec:separation-results} places
     separation forward of $x/c_n = 0.90$ there, and a potential-flow
     coefficient past that point is an extrapolation rather than a
     prediction. $C_{D_i}$ comes from a near-field integration and carries a
     spurious body contribution --- it is negative at zero lift and is
-    discussed, rather than relied on, in the text.}
+    discussed, rather than relied on, in the text. The aerodynamics
+    \emph{beyond} this table's edge --- the post-separation coefficients
+    toward the flat-plate limit --- is the subject of Part~II.}
   \label{tab:coefficients}
   \input{figures/tables/coefficients.tex}
 \end{table}
@@ -921,7 +925,7 @@ Section~\ref{sec:separation-results} says the potential-flow answer is
 still meaningful. Restricting them is the point. A panel method will
 return a lift coefficient at any incidence it is asked for, and the
 returned number at $\alpha = 16^\circ$ ($C_L = 1.62$) is arithmetically
-sound and physically meaningless with more than half the upper surface
+sound and physically meaningless with most of the upper surface
 separated. Having the separation march in the same solve is what lets the
 table be truncated on evidence instead of on a rule of thumb.
 
@@ -1150,6 +1154,13 @@ respond to different components of the same flow: the attachment line to
 the spanwise component, separation to the chordwise pressure recovery.
 Neither quantity alone would have revealed that, and a configuration limit
 drawn from the wrong one would be wrong in a way that looks reasonable.
+
+Everything here ends at the separation boundary, deliberately: the
+coefficient tables stop where the march says the potential-flow answer
+stops being a prediction. Part~II of this series takes up what lies
+beyond --- the post-separation coefficients, anchored on the computed
+separation points and on the classical flat-plate limits, out to
+$90^\circ$ of incidence.
 
 \section*{Acknowledgments}
 

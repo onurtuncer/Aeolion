@@ -1718,6 +1718,232 @@ does not see the airframe. Closing it needs the partitioned outer fixed
 point ``SolveRotorVaneCoupled`` already establishes, because a static
 airframe and a rotating rotor cannot share one ``FreestreamConditions``.
 
+Anchored post-stall section model (Solver/PostStallSection.h)
+-------------------------------------------------------------
+
+Phase 1 of the post-separation study: a section model for the Level-2
+coupling whose post-stall content is either classical theory with
+published validation or the solver's own computed separation state --
+never a tuned constant. It replaces ``AnalyticSectionModel``'s deep-stall
+blend for post-stall work, and it is what makes a post-stall polar
+quotable at all: the earlier decision (recorded in TODO.md) to keep
+post-stall coefficients out of the papers was precisely that the answer
+would otherwise be set by four hand-tuned constants.
+
+**Partially separated flow -- Kirchhoff attenuation.** Free-streamline
+theory attenuates the lift of a section whose suction-side flow separates
+at chord fraction :math:`f` (1 = trailing edge, 0 = leading edge) by
+:math:`K(f) = ((1+\sqrt{f})/2)^2` -- the factor the Beddoes--Leishman
+family's static backbone is built on :cite:`leishman2006rotor`. Aeolion
+applies it to the exact thin-airfoil normal/chordwise pair,
+
+.. math::
+
+   c_n = c_{l\alpha}\,\sin\alpha\cos\alpha\;K(f), \qquad
+   c_c = c_{l\alpha}\,\sin^2\!\alpha\;\sqrt{f},
+
+chosen so both classical limits are exact: at :math:`f=1` the wind-axis
+rotation returns :math:`c_l = c_{l\alpha}\sin\alpha` with identically zero
+pressure drag (d'Alembert), and at :math:`f=0` the chordwise suction is
+gone and the force is perpendicular to the chord with the classical
+quarter-slope :math:`K(0) = 1/4`.
+
+The separation point is **not modelled here**: it is supplied per strip
+from ``AttachmentBoundaryLayer``'s march from the real attachment point,
+tabulated over an inviscid :math:`\alpha` sweep and keyed by the strip's
+local incidence from its zero-lift line. Stall is therefore an *output* --
+the incidence where :math:`\sin\alpha\,K(f(\alpha))` peaks -- not a
+``ClMax`` constant.
+
+**Deep stall -- Viterna--Corrigan.** Past the emergent stall angle the
+Viterna extension :cite:`viternaCorrigan1982` carries the polar to
+90 degrees anchored on the finite-wing bluff-plate ceiling
+:math:`C_{d,\max} = 1.11 + 0.018\,AR` (held constant beyond the fit's
+:math:`AR = 50` edge), matched for continuity at the junction. Hoerner's
+2-D post-stall normal force :math:`c_n = 1/(0.222 + 0.283/\sin\alpha)`
+:cite:`hoerner1965fluiddynamicdrag` rides along as the infinite-AR
+cross-check: the :math:`AR \to 50` ceiling (2.01) meets Hoerner's plate
+(1.98) at 90 degrees. Kirchhoff theory's own :math:`C_d(90^\circ) = 0.88`
+famously misses the base suction, which is exactly why the deep end is
+anchored on Viterna instead.
+
+**Centre of pressure -- Rayleigh.** Kirchhoff flow past an inclined plate
+has the closed-form centre of pressure
+
+.. math::
+
+   \frac{x_{cp}}{c} = \frac{1}{2}
+     - \frac{3}{4}\,\frac{\cos\alpha}{4 + \pi\sin\alpha},
+
+5/16 at small incidence and exactly mid-chord at 90 degrees. The section
+:math:`c_m` about the quarter chord interpolates between the attached
+quarter-chord (:math:`c_m = 0`) and the Rayleigh point with the separated
+fraction :math:`(1-f)`. This required the ``SectionCoefficients``
+interface to carry :math:`c_m` at all -- the Phase-0 map measured the
+centre of pressure structurally pinned at :math:`c/4` without it, since
+strip forces act at the bound (quarter-chord) line. The coupling applies
+each strip's :math:`c_m` as a pure couple
+:math:`q\,c^2 w\,c_m` about :math:`\hat{L}\times\hat{c}` (the pitch axis),
+reported in ``ViscousCoupledResult::SectionMoment``.
+
+Stated limitations: the :math:`f`-table is queried at
+:math:`|\alpha - \alpha_0|`, so upper/lower separation asymmetry from
+camber is not represented; the attached camber moment :math:`c_{m0}` is
+not carried; and the Level-2 coupling itself remains quasi-steady strip
+theory, whose deep-stall states are limit-cycle means (see
+"stabilization" above).
+
+The unsteady discrete-vortex cross-check (Solver/DiscreteVortexSection.h)
+---------------------------------------------------------------------
+
+The post-separation study's third tier, two-dimensional half: an
+LESP-modulated discrete-vortex section after Ramesh et
+al. :cite:`ramesh2014lesp`, run at fixed incidence to measure what the
+quasi-steady coupling's limit-cycle means leave out. It does not feed
+the coupling; it cross-checks it.
+
+Per step, the plate's bound vorticity is the Glauert series with
+time-varying coefficients projected from the downwash of the freestream
+and every free vortex (no influence matrix); one trailing-edge vortex is
+shed with its strength closing Kelvin's theorem, and while the
+leading-edge suction parameter :math:`A_0` exceeds its critical value a
+leading-edge vortex is shed too, the pair satisfying Kelvin and
+:math:`|A_0| = \mathrm{LESP}_{crit}` as a linear :math:`2\times2` system
+-- no inner iteration, and the circulation ledger holds to machine
+precision by construction. Free vortices are Vatistas-core regularized
+and convect with the full local velocity.
+
+Loads come from the impulse theorem,
+:math:`F = \rho\, d/dt\,[\sum_k \Gamma_k (z_k, -x_k) + (0, -B_x)]` with
+:math:`B_x` the bound sheet's first moment (closed-form in the series
+coefficients), rather than from the linearized force formulas -- those
+were measured collapsing at deep incidence, while the impulse form is
+exact for tracked vorticity at any angle and recovers Wagner's growth
+and the attached :math:`2\pi\sin\alpha` through the same expression.
+Vortices retired past the far cutoff are removed from the impulse
+baseline at the moment of retirement (or their disappearance reads as a
+force spike) and contribute their impulse rate analytically afterwards,
+as circulation drifting with the freestream.
+
+One bias is inherent to the dimension: a two-dimensional street has no
+spanwise breakup, and overpredicts the normal plate's mean drag by the
+classical :math:`\sim 65\%`. The cross-check is therefore read for its
+break location and fluctuation content; its mean-level overshoot is the
+quantified argument for the three-dimensional particle tier.
+
+The particle-wake cross-check (Solver/ParticleWake.h)
+-----------------------------------------------------
+
+The third tier's three-dimensional half: an unsteady single-row ring
+lattice whose wake is carried by vector vortex particles, shed from the
+trailing edge everywhere and from the leading edge of separated strips.
+Run at a fixed attitude it reports the mean and fluctuating loads of the
+three-dimensional shedding flow -- what the quasi-steady map's cycle
+means average away, and what the two-dimensional tier overpredicts for
+want of spanwise breakup.
+
+**Bound system.** Strip :math:`i` carries a vortex ring of circulation
+:math:`\Gamma_i(t)`: leading segment on the bound quarter-chord line,
+chordwise side legs, closing segment at the trailing edge. Flow tangency
+at the three-quarter-chord control points,
+
+.. math::
+
+   \sum_j A_{ij}\,\Gamma_j(t)
+     = -\left[\mathbf{V}_\infty + \mathbf{u}_{wake}(\mathbf{x}_{cp,i})\right]
+       \cdot \hat{\mathbf{n}}_i ,
+
+with :math:`A` geometry-only and factored once. The wake leaves through a
+one-step BUFFER ring per strip -- a filament quad from the trailing edge
+to one convection step downstream carrying :math:`\Gamma_i(t{-}1)` --
+whose near segment cancels the bound ring's closing segment. Without
+that cancellation a full :math:`\Gamma` of spurious spanwise vorticity
+sits on the trailing edge; the bound solve was measured converging to
+42% of the steady VLM's circulation before this was understood.
+
+**Conversion to particles.** Each step the old buffer's vorticity enters
+the particle field in MERGED form: one transient near-particle
+:math:`+\Gamma_i(t{-}1)\,w_i\,\hat{\mathbf{s}}_i` at the trailing edge,
+into which the next step's far-emission is absorbed -- by then it has
+convected one step downstream -- leaving a particle that carries exactly
+the shed vorticity :math:`(\Gamma_i(t{-}1)-\Gamma_i(t))\,w_i`; and one
+trailing particle per SEGMENT EDGE,
+:math:`(\Gamma_{i-1}-\Gamma_i)\,\mathbf{V}_\infty\Delta t`, where the
+neighbour relation comes from the geometry, not the strip index -- a
+trimmed wing's row stops at the body flank, and every boundary without a
+true neighbour closes on zero like a tip. (Differencing across that gap
+was measured injecting mid-span vorticity strong enough to diverge the
+normal-plate run on the real geometry.) The naive alternative --
+converting each buffer loop to four segment particles -- is conservative
+by construction but fills the wake with :math:`\pm` full-strength pairs
+whose impulse-difference noise buried the loads.
+
+**Particles.** Position :math:`\mathbf{x}_p` and vector strength
+:math:`\boldsymbol{\alpha}_p` (circulation times length), with the
+algebraic-core regularized velocity
+
+.. math::
+
+   \mathbf{u}(\mathbf{x}) = \sum_p
+     \frac{\boldsymbol{\alpha}_p \times (\mathbf{x}-\mathbf{x}_p)}
+          {4\pi\left(|\mathbf{x}-\mathbf{x}_p|^2 + \sigma^2\right)^{3/2}},
+   \qquad \sigma = 1.3\,V_\infty\,\Delta t,
+
+plus the ring and buffer filaments. Convection is forward Euler;
+stretching uses the TRANSPOSE scheme,
+
+.. math::
+
+   \frac{d\boldsymbol{\alpha}_p}{dt}
+     = (\nabla\mathbf{u})^{T}\,\boldsymbol{\alpha}_p ,
+
+with the kernel gradient in closed form and the magnitude capped at four
+times the birth strength. The transpose scheme's property of conserving
+the TOTAL vector strength is load-bearing, not cosmetic: the classical
+:math:`(\boldsymbol{\alpha}\cdot\nabla)\mathbf{u}` scheme's
+:math:`\sum d\boldsymbol{\alpha}` drift, levered by particle positions,
+was measured burying the impulse loads (RMS several times the mean at
+the normal plate); with the transpose form the attached impulse and
+circulation lift readings agree to 0.2%.
+
+**Separated strips.** A strip past its separation boundary -- the same
+:math:`f(\eta, \alpha)` tables the anchored model consumes, or a plain
+incidence threshold without them -- sheds from the leading edge as well:
+a counter-rotating pair carrying the classical shear-layer flux
+:math:`d\Gamma/dt = \tfrac{1}{2}V_{loc}^2` per unit span, one sign at
+the leading edge and its exact negative folded into the trailing-edge
+shed, so the total circulation is untouched.
+
+**Loads.** The impulse theorem, exact for tracked vorticity at any
+incidence:
+
+.. math::
+
+   \mathbf{F} = -\rho\,\frac{d}{dt}\left[
+     \sum_i \Gamma_i \mathbf{S}_i + \sum_i \Gamma_i^{buf} \mathbf{S}_i^{buf}
+     + \tfrac{1}{2}\sum_p \mathbf{x}_p \times \boldsymbol{\alpha}_p
+   \right],
+
+with :math:`\mathbf{S}` the filament loops' vector areas
+(:math:`\tfrac{1}{2}\oint \mathbf{x}\times d\mathbf{l}`,
+origin-independent). Particles retired past the far cutoff leave the
+impulse baseline at the moment of retirement -- otherwise each
+retirement reads as a force spike of :math:`\Gamma x/\Delta t` -- and
+drift analytically with the freestream thereafter,
+:math:`\mathbf{F} \mathrel{+}= -\tfrac{\rho}{2}\,\mathbf{V}_\infty
+\times \sum_{ret}\boldsymbol{\alpha}`. A local unsteady Kutta-Joukowski
+evaluation was tried and rejected for this tier: it is smooth, but a
+line force perpendicular to the local velocity averages to zero at
+:math:`90^\circ`, and bluff-plate drag lives in the chordwise pressure
+content the impulse form retains.
+
+Stated limitations: single-row lattice, Euler convection, no viscous
+core spreading, no body or duct sources (the comparison target is the
+map's wing-only forces), direct :math:`N^2` summation, and deep-stall
+MEANS that converge only with averaging windows several times the
+test suite's -- the long-averaging runs behind the paper's numbers are
+the driver's job, not the tests'.
+
 Viscous drag buildup (Aeolion::DragEstimate)
 -------------------------------------------------
 

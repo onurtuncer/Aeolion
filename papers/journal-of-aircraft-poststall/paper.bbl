@@ -1,0 +1,42 @@
+\begin{thebibliography}{1}
+\newcommand{\enquote}[1]{``#1''}
+
+\bibitem{leishman2006rotor}
+Leishman, J.~G., {\em Principles of Helicopter Aerodynamics\/}, Cambridge
+  University Press, 2nd ed., 2006.
+
+\bibitem{viternaCorrigan1982}
+Viterna, L.~A. and Corrigan, R.~D., \enquote{Fixed Pitch Rotor Performance of
+  Large Horizontal Axis Wind Turbines,} Tech. rep., NASA Lewis Research Center,
+  1982, DOE/NASA Workshop on Large Horizontal Axis Wind Turbines.
+
+\bibitem{hoerner1965fluiddynamicdrag}
+Hoerner, S.~F., {\em Fluid-Dynamic Drag: Practical Information on Aerodynamic
+  Drag and Hydrodynamic Resistance\/}, Hoerner Fluid Dynamics, 1965.
+
+\bibitem{rayleigh1876}
+{Lord Rayleigh}, \enquote{On the Resistance of Fluids,} {\em Philosophical
+  Magazine\/}, Vol.~2, No.~13, 1876, pp.~430--441.
+
+\bibitem{aeolion2026}
+Tuncer, O., \enquote{Aeolion: A Coupled Wing--Body--Propeller Panel Method,}
+  \url{https://github.com/onurtuncer/Aeolion}, 2026.
+
+\bibitem{anderson1980spoiler}
+Anderson, J.~D., Corda, S., and Van~Wie, D.~M., \enquote{Numerical Lifting Line
+  Theory Applied to Drooped Leading-Edge Wings Below and Above Stall,} {\em
+  Journal of Aircraft\/}, Vol.~17, No.~12, 1980, pp.~898--904.
+
+\bibitem{sheldahlKlimas1981}
+Sheldahl, R.~E. and Klimas, P.~C., \enquote{Aerodynamic Characteristics of
+  Seven Symmetrical Airfoil Sections Through 180-Degree Angle of Attack for Use
+  in Aerodynamic Analysis of Vertical Axis Wind Turbines,} Tech. Rep.
+  SAND80-2114, Sandia National Laboratories, 1981.
+
+\bibitem{ramesh2014lesp}
+Ramesh, K., Gopalarathnam, A., Granlund, K., Ol, M.~V., and Edwards, J.~R.,
+  \enquote{Discrete-vortex method with novel shedding criterion for unsteady
+  aerofoil flows with intermittent leading-edge vortex shedding,} {\em Journal
+  of Fluid Mechanics\/}, Vol.~751, 2014, pp.~500--538.
+
+\end{thebibliography}

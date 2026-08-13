@@ -147,17 +147,29 @@ void RefineNoseStations(Geometry::BodyGeometry& body) {
     body.Stations = std::move(refined);
 }
 
-// One StripSection per single-row panel, reconstructed the same way the
-// viewer and LatticeFigureExport rebuild panel geometry: the bound segment
-// midpoint is the quarter chord, the control point the three-quarter chord.
+// One StripSection per single-row panel. The frame is the TRUE CHORD
+// frame -- StripSection's own contract ("ChordDir: leading edge ->
+// trailing edge") -- NOT the panel's: the quarter-to-three-quarter-chord
+// direction follows the camber line and the panel Normal carries the
+// camber slope at the control point, so a frame built from them is
+// pitched by roughly that slope (~4 deg on this section). The incidence
+// ComputeAttachmentLine resolves in that frame feeds SolveSectionContour,
+// whose contour ALREADY carries the camber -- the tilt double-counts it,
+// biasing alpha_n high by ~4 deg and with it the separation table and the
+// attachment-line Reynolds margins. (Found via the post-stall driver,
+// where the same tilted reconstruction shifted the coupled zero-lift to
+// the sum of the lattice's and the thin-airfoil camber angles.) The
+// handoff wing is rectangular, unswept and untwisted, so its true chord
+// frame is the solver frame itself; a swept or twisted wing needs a
+// PanelBuilder-side strip builder that carries the section plane.
 std::vector<S::StripSection> StripsFromPanels(const std::vector<S::Panel>& panels, double halfSpan) {
     std::vector<S::StripSection> strips;
     strips.reserve(panels.size());
     for (const S::Panel& panel : panels) {
         const S::Vec3 mid = (panel.A + panel.B) * 0.5;
         S::StripSection strip;
-        strip.ChordDir = (panel.ControlPoint - mid).Normalized();
-        strip.LiftDir = panel.Normal;
+        strip.ChordDir = S::Vec3(1.0, 0.0, 0.0);
+        strip.LiftDir = S::Vec3(0.0, 0.0, 1.0);
         strip.Chord = (panel.SpanwiseWidth > 0.0) ? panel.PlanformArea / panel.SpanwiseWidth : 0.0;
         strip.Width = panel.SpanwiseWidth;
         strip.Eta = std::fabs(mid.y) / halfSpan;

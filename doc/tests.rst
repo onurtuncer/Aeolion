@@ -263,6 +263,66 @@ test would also be passed by code that reports separation eagerly. Empty
 runs, runs below ``MinMarchStations``, and a zero Reynolds number are all
 declined rather than answered.
 
+TestPostStallSection
+--------------------
+
+The anchored post-stall section model (``Solver::PostStallSectionModel``)
+and the section-:math:`c_m` plumbing, pinned to the classical anchors the
+Phase-1 construction exists to be anchored on, not to its own outputs.
+
+Viterna's fit must give :math:`C_{d,\max}(AR{=}6) = 1.218`, hold at the
+:math:`AR = 50` edge rather than extrapolate, meet Hoerner's 2-D plate
+(1.98) there within 0.05, pass exactly through the supplied junction, and
+end at :math:`c_l = 0`, :math:`c_d = C_{d,\max}` at 90 degrees. Kirchhoff's
+attenuation must be 1 attached and exactly 1/4 fully separated (the
+classical :math:`\pi\alpha/2` plate slope), and Rayleigh's centre of
+pressure must give 5/16 at zero incidence, exactly mid-chord at 90, and
+walk monotonically between.
+
+With no separation function the model must reproduce
+:math:`c_l = 2\pi\sin\alpha` with **no pressure drag at all** (d'Alembert
+is exact in this construction, not approximate), zero :math:`c_m` about
+the quarter chord, odd/even symmetry in :math:`\alpha`, and a vanishing
+:math:`c_l` at the zero-lift angle. Under a prescribed separation ramp,
+stall must EMERGE inside the ramp as an interior lift peak at the reported
+stall angle, both polar branches must be continuous across the junction,
+:math:`c_d` must grow monotonically through deep stall to the AR-aware
+ceiling, and the separated :math:`c_m` must be nose-down, reaching the
+mid-chord couple of :math:`c_n = c_d` at 90 degrees.
+
+The plumbing check drives a four-strip flat wing with a section model
+returning nothing but a fixed :math:`c_m`: the coupled solve's
+``SectionMoment`` must equal :math:`\sum q\,c^2 w\,c_m` about the pitch
+axis exactly, carry no roll/yaw component, and arrive in the total
+pitching moment.
+
+TestDiscreteVortexSection
+-------------------------
+
+The unsteady discrete-vortex cross-check
+(``Solver::SolveDiscreteVortexSection``), pinned to the classical
+results that bound an unsteady thin-airfoil wake model.
+
+An attached run (LESP threshold set unreachably high) must shed no
+leading-edge vortex, follow **Wagner's growth** from the impulsive
+start -- half the steady lift at the first instants, inside Wagner's
+band at one chord of travel -- and its mean over the averaging window
+must match the WINDOW MEAN of Wagner's function within 4%, not the
+steady value: pinning against the steady value would pass a
+formulation that quietly rides above the growth. **Kelvin's theorem**
+must hold to machine precision at every step, attached or shedding --
+the shed strengths are solved from it, so a violation means the linear
+closure is wrong, not inaccurate. At a realistic threshold the **LESP
+criterion** must switch: leading-edge vortices shed at
+:math:`\alpha = 25^\circ`, :math:`|A_0|` capped at the critical value
+while they do, and the loads must fluctuate. The **normal plate** must
+land in the two-dimensional street's band (:math:`c_d \sim 2.2..4`) --
+deliberately NOT the measured plate's :math:`\sim 2`, since a
+two-dimensional street's over-coherence is documented physics and a
+mean near the measured value would be suspicious here. Mean lift must
+carry the sign of :math:`\alpha` and mirror to the scatter of a short
+chaotic average.
+
 TestTrefftzPlane
 ----------------
 
