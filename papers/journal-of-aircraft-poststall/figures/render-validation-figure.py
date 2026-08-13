@@ -30,7 +30,7 @@ GRID = "#e1e0d9"
 BASELINE = "#c3c2b7"
 BLUE = "#2a78d6"    # anchored model
 ORANGE = "#eb6834"  # Sheldahl-Klimas table
-AQUA = "#1baf7a"    # 2-D discrete-vortex referee (mean +- RMS)
+AQUA = "#1baf7a"    # 2-D discrete-vortex cross-check (mean +- RMS)
 
 plt.rcParams.update({
     "font.family": "sans-serif", "font.sans-serif": ["Segoe UI", "DejaVu Sans"],
@@ -74,7 +74,7 @@ ax1.set_xlim(0, 90)
 ax1.text(2, 1.42, "anchored model", color=BLUE, fontsize=8)
 ax1.text(38, 0.55, "Sheldahl--Klimas", color=ORANGE, fontsize=8)
 if dvm.size:
-    ax1.text(30, 2.35, "2-D vortex referee (mean $\\pm$ RMS)", color=AQUA, fontsize=8)
+    ax1.text(30, 2.35, "2-D vortex cross-check (mean $\\pm$ RMS)", color=AQUA, fontsize=8)
 
 ax2.plot(polar[:, 0], polar[:, 3], color=BLUE, lw=1.6)
 ax2.plot(sk[:, 0], sk[:, 2], "o", ms=3.2, mfc="none", mec=ORANGE, mew=1.0)

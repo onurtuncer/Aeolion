@@ -74,8 +74,12 @@ Stagnation and attachment lines (see :doc:`theory`):
   extension's matching constants, fixed by continuity at the emergent
   stall junction.
 * :cpp:class:`Aeolion::Solver::DiscreteVortexResult` — the unsteady
-  discrete-vortex referee's converged mean/RMS loads and shedding
+  discrete-vortex cross-check's converged mean/RMS loads and shedding
   counts (see :doc:`theory`).
+* :cpp:class:`Aeolion::Solver::ParticleWakeResult` — the
+  three-dimensional particle-wake cross-check's mean/RMS loads, with
+  the circulation-lift diagnostic that separates bound-solve defects
+  from impulse-accounting ones (see :doc:`theory`).
 * :cpp:class:`Aeolion::Solver::ActuatorDisk` — a uniformly loaded rotor
   disk, stated by geometry and disk-plane induced velocity.
 * :cpp:class:`Aeolion::Solver::VortexCylinderMesh` — its semi-infinite

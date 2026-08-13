@@ -299,7 +299,7 @@ pitching moment.
 TestDiscreteVortexSection
 -------------------------
 
-The unsteady discrete-vortex referee
+The unsteady discrete-vortex cross-check
 (``Solver::SolveDiscreteVortexSection``), pinned to the classical
 results that bound an unsteady thin-airfoil wake model.
 

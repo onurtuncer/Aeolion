@@ -202,10 +202,10 @@ int main(int argc, char** argv) {
     }
     out << "\n],\n";
 
-    // --- the 2-D unsteady referee at the same attitudes ---------------------
+    // --- the 2-D unsteady cross-check at the same attitudes ---------------------
     // Mean and RMS loads of the LESP-modulated discrete-vortex section
     // (tier 3's two-dimensional half) every ten degrees. Flat plate: the
-    // referee's question is posed at deep incidence, where camber is
+    // cross-check's question is posed at deep incidence, where camber is
     // secondary and its 2-D coherence bias is the stated caveat.
     out << "\"dvm\":[\n";
     bool firstDvm = true;

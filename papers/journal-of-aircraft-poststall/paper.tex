@@ -155,7 +155,7 @@ hysteresis band from up/down continuation. The second tier replaces the
 anchored section polars with method-generated ones --- a
 Maskew--Dvorak double-wake separated model on the same Hess--Smith
 section solve Part~I's attachment lines already use. The third tier is
-the unsteady referee: two-dimensional discrete-vortex sections with
+the unsteady cross-check: two-dimensional discrete-vortex sections with
 leading-edge-suction-parameter-modulated shedding, and a
 three-dimensional particle wake shed from the computed separation line
 at a handful of attitudes, to measure what the quasi-steady cycle means
@@ -363,7 +363,7 @@ bubble-bursting physics, not another constant.
     uses, on a CST fit of the section whose residual
     ($1.3\times10^{-4}c$) and recovered nose radius are reported with
     the export. Squares with bars: the two-dimensional discrete-vortex
-    referee of Section~\ref{sec:referee}, mean $\pm$ RMS --- read for
+    cross-check of Section~\ref{sec:cross-check}, mean $\pm$ RMS --- read for
     its break location and fluctuation content, its mean levels
     carrying the two-dimensional street's documented over-coherence.}
   \label{fig:validation}
@@ -447,8 +447,24 @@ constant-pressure region. Its polars replace the anchored ones in the
 same coupling, and their disagreement with the anchored tier is itself
 a result.
 
-\subsection{The unsteady referee}
-\label{sec:referee}
+\subsection{The unsteady cross-check}
+\label{sec:cross-check}
+
+\begin{figure}[tb]
+  \centering
+  \includegraphics[width=\linewidth]{figures/crosscheck-sketch.pdf}
+  \caption{The unsteady cross-check, schematically. Left, the
+    two-dimensional tier: a Glauert bound sheet on the chord,
+    trailing-edge vortices shed every step with Kelvin's theorem closing
+    their strengths, leading-edge vortices while the leading-edge
+    suction parameter exceeds its critical value. Right, the
+    three-dimensional tier: one ring per strip, the one-step buffer ring
+    whose near segment cancels the ring's trailing-edge closer, the
+    wake carried by vector particles (merged conversion, transpose-scheme
+    stretching, direct $N^2$ induction), and the counter-rotating
+    leading-edge flux pair on separated strips.}
+  \label{fig:crosscheck-sketch}
+\end{figure}
 
 % Status: the 2-D half is IMPLEMENTED and reported below
 % (Solver/DiscreteVortexSection.h, TestDiscreteVortexSection). The 3-D
@@ -457,20 +473,72 @@ a result.
 % 0/15), mean and RMS loads vs the quasi-steady cycle means.
 Quasi-steady strip theory cannot say what its cycle means leave out.
 The third tier's two-dimensional half measures it: a discrete-vortex
-section in the manner of Ramesh et al.~\cite{ramesh2014lesp} --
-trailing-edge shedding every step, leading-edge shedding switched by
-the leading-edge suction parameter exceeding its critical value, both
-strengths closing Kelvin's theorem and the LESP cap as a linear system
-each step -- with loads taken from the impulse of the tracked
-vorticity, exact at any incidence where the linearized force formulas
-are not. Its own calibration is pinned in the test suite: the
-impulsive start follows Wagner's function, the attached mean recovers
+section in the manner of Ramesh et al.~\cite{ramesh2014lesp}. The
+plate's bound vorticity is the Glauert series
+\begin{equation}
+  \gamma(\theta,t) = 2U\!\left[A_0(t)\,\frac{1+\cos\theta}{\sin\theta}
+    + \sum_{n\ge 1} A_n(t)\sin n\theta\right],
+\end{equation}
+whose coefficients are projected each step from the downwash $w$ of
+everything that is not the bound sheet (freestream and every free
+vortex): $A_0 = \tfrac{1}{\pi}\int_0^\pi (w/U)\,d\theta$,
+$A_n = -\tfrac{2}{\pi}\int_0^\pi (w/U)\cos n\theta\,d\theta$. One
+trailing-edge vortex is shed per step with its strength closing
+Kelvin's theorem,
+$\Gamma_b + \sum_{wake}\Gamma = 0$ with
+$\Gamma_b = \pi c U (A_0 + A_1/2)$; while $|A_0|$ -- the leading-edge
+suction parameter -- exceeds its critical value, a leading-edge vortex
+is shed as well, the pair solving Kelvin and $|A_0| = \mathrm{LESP}_{cr}$
+as a $2\times2$ linear system. Loads come from the impulse of the
+tracked vorticity,
+\begin{equation}
+  \mathbf{F} = \rho\,\frac{d}{dt}\sum_k \Gamma_k\,(z_k,\,-x_k),
+  \label{eq:impulse2d}
+\end{equation}
+exact at any incidence where the linearized force formulas are not.
+The tier's own calibration is pinned in the test suite: the impulsive
+start follows Wagner's function, the attached mean recovers
 $2\pi\sin\alpha$ to a fraction of a percent, and Kelvin's ledger holds
 to machine precision with both edges shedding.
 
-Its referee products appear as the mean-$\pm$-RMS band in
+The three-dimensional half poses the same architecture on the wing: one
+vortex ring per strip with flow tangency at the three-quarter-chord
+points, a one-step buffer ring carrying $\Gamma_i(t{-}1)$ whose near
+segment cancels the bound ring's trailing-edge closer, and a wake of
+vector particles $(\mathbf{x}_p, \boldsymbol{\alpha}_p)$ with the
+regularized induction
+\begin{equation}
+  \mathbf{u}(\mathbf{x}) = \sum_p
+    \frac{\boldsymbol{\alpha}_p \times (\mathbf{x}-\mathbf{x}_p)}
+         {4\pi\left(|\mathbf{x}-\mathbf{x}_p|^2+\sigma^2\right)^{3/2}},
+  \qquad \sigma = 1.3\,V_\infty\Delta t .
+\end{equation}
+Particles convect with the full local velocity and stretch in the
+transpose scheme,
+$d\boldsymbol{\alpha}_p/dt = (\nabla\mathbf{u})^{T}\boldsymbol{\alpha}_p$,
+whose exact conservation of total vector strength is what keeps the
+three-dimensional impulse ledger,
+\begin{equation}
+  \mathbf{F} = -\rho\,\frac{d}{dt}\Bigl[
+    \sum_i \Gamma_i \mathbf{S}_i
+    + \sum_i \Gamma_i^{buf}\mathbf{S}_i^{buf}
+    + \tfrac{1}{2}\sum_p \mathbf{x}_p\times\boldsymbol{\alpha}_p
+  \Bigr],
+  \label{eq:impulse3d}
+\end{equation}
+readable over a chaotically shedding wake ($\mathbf{S}$: the loops'
+vector areas). Strips past their separation boundary -- the same
+$f(\eta,\alpha)$ the anchored model consumes -- shed the classical
+shear-layer flux $d\Gamma/dt = \tfrac{1}{2}V_{loc}^2$ per unit span
+from the leading edge, as a counter-rotating pair that leaves the
+total circulation untouched. The full formulation, including the
+merged wake-conversion that makes Eq.~\eqref{eq:impulse3d} usable and
+the measured failure modes of its alternatives, is documented with the
+implementation.
+
+Its cross-check products appear as the mean-$\pm$-RMS band in
 Fig.~\ref{fig:validation}. Three readings matter. First, the
-\emph{break}: the referee leaves the attached line between $10^\circ$
+\emph{break}: the cross-check leaves the attached line between $10^\circ$
 and $20^\circ$ with the fluctuation switching on at once ---
 RMS~$c_l$ jumps from $0.005$ at $10^\circ$ to $0.57$ at $20^\circ$,
 its maximum over the sweep. The cycle means the quasi-steady map
@@ -478,18 +546,34 @@ reports through the stall shoulder average over $\pm 0.5$-level lift
 fluctuations, and that number is now measured rather than presumed.
 Second, the fluctuation decays but never vanishes toward $90^\circ$
 (RMS~$c_l$ $0.10$, RMS~$c_d$ $0.47$ at the normal plate): the deep map
-is a mean over a permanently shedding street. Third, the referee's own
+is a mean over a permanently shedding street. Third, the cross-check's own
 MEAN levels carry the dimension's documented bias --- a
 two-dimensional street has no spanwise breakup, and its normal-plate
 drag (3.29 here) sits the classical $\sim\!65\%$ above the measured
 plate, with the mid-range lift inflated correspondingly. The
-two-dimensional referee is therefore read for its break location and
+two-dimensional cross-check is therefore read for its break location and
 its fluctuation content, not its mean levels --- and its overshoot is
-the standing, now-quantified argument for the tier that remains: a
-three-dimensional particle wake shed from the trailing edge and the
-computed separation line at a handful of attitudes, compared against
-the map's cycle means in mean and fluctuating load. That comparison
-will appear here.
+the standing, now-quantified argument for the three-dimensional tier.
+
+That tier is implemented and pinned by its own suite: attached, the
+impulse and circulation readings of the lift agree to $0.2\%$ and
+follow Wagner's growth; Kelvin-consistent shedding holds strip by strip
+including across planform gaps; and on an $AR = 6$ plate normal to the
+stream the three-dimensional street --- stretching enabled --- carries
+a mean $C_N$ of $0.4$--$0.9$ across leading-edge flux-model variants at
+test-budget averaging, where its two-dimensional sibling carries $3.3$:
+spanwise breakup collapses the street toward the scale of the
+finite-plate ceiling (1.22), which is the tier's reason to exist,
+demonstrated --- though the mean's precise level is not yet a converged
+number. What remains is statistical and parametric rather than
+structural: at the declared attitudes ($\alpha = 30/60/90^\circ$,
+$\beta = 0/15^\circ$) the shedding means converge only over averaging
+windows several times longer than a test budget, and the level is
+sensitive to the leading-edge flux model at short averages. Those
+long-averaging runs, with a time-step, core-size, and flux-ceiling
+sensitivity statement, are the declared remaining computation of this
+subsection; their comparison against the map's wing-only cycle means,
+in mean and fluctuating load, will appear here.
 
 \section{Limitations}
 

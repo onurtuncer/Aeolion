@@ -39,3 +39,9 @@ target_link_libraries(aeolion_poststall_sweep PRIVATE aeolion aeolion_panelbuild
 # attachment-march pipeline as the airframe, exports the model polar.
 add_executable(aeolion_section_validation SectionValidationExport.cpp)
 target_link_libraries(aeolion_section_validation PRIVATE aeolion)
+
+# The 3-D unsteady cross-check: the particle-wake solve at the declared
+# attitudes (alpha 30/60/90 x beta 0/15) on the handoff wing, coarsened --
+# mean and RMS loads against the quasi-steady map's cycle means.
+add_executable(aeolion_particle_crosscheck ParticleCrosscheckExport.cpp)
+target_link_libraries(aeolion_particle_crosscheck PRIVATE aeolion aeolion_panelbuilder)

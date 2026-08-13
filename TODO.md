@@ -410,6 +410,64 @@ alpha x beta map to 90/30, sigma-collapse, plate convergence, the two
 anchors. Both compile clean (26 pp / draft). Author blocks must stay
 synchronized.
 
+### 3e. Tier 3 — the unsteady cross-check (2026-08-12/13)
+
+("Cross-check", not "referee" — renamed by user direction; the tier
+judges the quasi-steady tiers at a handful of attitudes, it does not
+enter the production loop.)
+
+**2-D half — DONE, committed.** `Solver/DiscreteVortexSection.h`: the
+LDVM of Ramesh et al. at fixed incidence — Glauert coefficients from
+the wake downwash (no matrix), TEV every step, LEV while |A0| >
+LESP_crit, both strengths a LINEAR Kelvin/LESP system per step, loads
+from the 2-D impulse theorem. Pinned to Wagner (window mean, not the
+steady value), machine-zero Kelvin, the LESP switch, mirror symmetry,
+and the 2-D street band at 90 deg (~3.3 — the documented 2-D
+over-coherence, deliberately NOT the measured ~2). Part II carries the
+results: break between 10 and 20 deg with RMS cl jumping 0.005 → 0.57,
+fluctuation persisting to the plate.
+
+**3-D half — implemented, fixture-verified; configuration numbers
+pending long averaging.** `Solver/ParticleWake.h`: single-row ring
+lattice + one-step buffer ring + vector-particle wake with
+transpose-scheme stretching and impulse loads. The debugging arc is
+recorded in the header where each lesson lives; the short version of
+what was MEASURED, so nobody re-litigates it:
+
+- No buffer ring → the bound solve converges to 42% of the steady
+  VLM's circulation (uncancelled TE closer).
+- Naive 4-segment buffer conversion → impulse noise 30x the mean
+  (+/- full-strength pairs); merged conversion fixes it.
+- Local unsteady K-J loads → smooth but mean-zero at 90 deg (a line
+  force cannot carry bluff-plate drag); impulse restored.
+- Classical stretching → sum(d alpha) drift buries the loads;
+  TRANSPOSE scheme (conserves total strength) brings attached
+  impulse-vs-circulation agreement to 0.2%.
+- Index-based strip adjacency → the trim gap injects spurious
+  mid-span trailing vorticity, diverging the real-wing runs; adjacency
+  is now geometric, gap edges close like tips.
+- LE flux ~ V_loc^2 with V_loc fed by its own particles → quadratic
+  runaway at deep incidence on the real wing; PwLeFluxSpeedCap = 2.5
+  states the plate edge's potential-flow speedup rather than tuning.
+
+Headline (fixture, AR = 6): plate CN(90) = 0.4–0.9 across LE-flux
+variants at test-budget averaging vs the 2-D tier's 3.3 — spanwise
+breakup collapses the street toward the finite-plate ceiling's scale
+(1.22); the precise level is flux-model-sensitive at short averages
+and belongs to the declared long-averaging + sensitivity computation.
+TestParticleWake is the 28th suite; it pins the structural claim
+(positive bluff drag, far below 2-D), not a narrow band.
+
+**Pending — declared in Part II:** the six-attitude configuration runs
+(alpha 30/60/90 x beta 0/15) need averaging windows several times the
+test budget (~1 h per attitude at duration 18 on this machine; the
+long-averaging runs are overnight compute), plus a dt/core sensitivity
+statement. `aeolion_particle_crosscheck <handoff> <out.json>
+[duration]` is instrumented for it (unbuffered per-attitude progress,
+per-row JSON flush). Theory for both halves is in doc/theory.rst and
+as an equations block in Part II; method sketch
+figures/crosscheck-sketch.pdf.
+
 ### 4. The actual boundary-layer coupling
 
 This work deliberately stopped at the *prerequisite*. Everything a march

@@ -4,7 +4,7 @@
 // discrete-vortex section with leading-edge shedding modulated by the
 // leading-edge suction parameter (LESP) -- the LDVM of Ramesh et al.
 // (J. Fluid Mech. 751, 2014) in its fixed-incidence form. This is the
-// UNSTEADY REFEREE of the quasi-steady tiers: it does not replace the
+// UNSTEADY CROSS-CHECK of the quasi-steady tiers: it does not replace the
 // anchored section model in the coupling, it measures what the coupling's
 // limit-cycle means leave out -- the mean and fluctuating loads of the
 // actual shedding flow at a given deep incidence.
@@ -49,17 +49,17 @@
 // omitted, which biases the INSTANTANEOUS cm during strong shedding but
 // not the converged means this tier exists to report.
 //
-// Stated limitations: flat plate (no camber -- the referee question is
+// Stated limitations: flat plate (no camber -- the cross-check question is
 // posed at deep incidence where camber is secondary); fixed incidence
 // (no pitching terms, U constant); Euler convection; no viscous decay of
 // the free vortices. The LESP_crit default (0.2) is the literature's
-// Re ~ 1e5-1e6 range, and it is a PARAMETER of the referee, not a fitted
+// Re ~ 1e5-1e6 range, and it is a PARAMETER of the cross-check, not a fitted
 // constant of the model under test. And one bias is inherent to the
 // dimension, not the implementation: near 90 degrees a two-dimensional
 // vortex street stays perfectly coherent -- no spanwise breakup -- and
 // overpredicts the mean drag of a normal plate by roughly 60-70% (the
 // classical 2-D-simulation result, ~3.3 against the measured ~2). The
-// referee is therefore trusted for the stall break and mid post-stall
+// cross-check is therefore trusted for the stall break and mid post-stall
 // range and for FLUCTUATION content; its own 90-degree overshoot is the
 // standing argument for the three-dimensional particle tier.
 
