@@ -41,7 +41,13 @@ add_executable(aeolion_section_validation SectionValidationExport.cpp)
 target_link_libraries(aeolion_section_validation PRIVATE aeolion)
 
 # The 3-D unsteady cross-check: the particle-wake solve at the declared
-# attitudes (alpha 30/60/90 x beta 0/15) on the handoff wing, coarsened --
-# mean and RMS loads against the quasi-steady map's cycle means.
+# attitudes (alpha 30/60/90 x beta 0/15) on the handoff wing -- full-span
+# and coarse, built from the contract's planform law (see the driver's
+# header for the measured reasons) -- mean and RMS loads against the
+# quasi-steady map's cycle means.
 add_executable(aeolion_particle_crosscheck ParticleCrosscheckExport.cpp)
-target_link_libraries(aeolion_particle_crosscheck PRIVATE aeolion aeolion_panelbuilder)
+target_link_libraries(aeolion_particle_crosscheck PRIVATE aeolion)
+find_package(OpenMP QUIET)
+if(OpenMP_CXX_FOUND)
+  target_link_libraries(aeolion_particle_crosscheck PRIVATE OpenMP::OpenMP_CXX)
+endif()

@@ -458,11 +458,49 @@ and belongs to the declared long-averaging + sensitivity computation.
 TestParticleWake is the 28th suite; it pins the structural claim
 (positive bluff drag, far below 2-D), not a narrow band.
 
-**Pending — declared in Part II:** the six-attitude configuration runs
-(alpha 30/60/90 x beta 0/15) need averaging windows several times the
-test budget (~1 h per attitude at duration 18 on this machine; the
-long-averaging runs are overnight compute), plus a dt/core sensitivity
-statement. `aeolion_particle_crosscheck <handoff> <out.json>
+**RESOLVED as a measured negative (2026-08-14), stated in Part II:**
+the six-attitude configuration runs do not yield converged means at
+this tier's fidelity, and the paper now says so instead of promising
+them. Two measurements on the way there:
+
+1. The TRIMMED wing cannot be the cross-check geometry — its two inner
+   tip-vortex streams face each other across the body gap with no body
+   occupying it, and their close-range dynamics dominate (RMS 13.5 on
+   an O(1) mean at alpha = 30, GROWING with the window). The driver now
+   builds a full-span contiguous wing from the contract's planform law;
+   absent the body, span continuity is the physical statement (it is
+   also what the carry-through solve asserts).
+2. Even full-span, the inviscid street's fluctuation-to-mean ratio runs
+   3–40 across the attitudes (duration-18 rows: alpha 30: RMS 3.6-3.8
+   on means ~0.1; alpha 60: RMS 8.6-46) and grows with incidence and
+   window. Converging configuration means to ~10% needs hundreds of
+   independent shedding periods + viscous core spreading + real
+   spanwise resolution — a production VPM, outside the cross-check's
+   charter. The tier's deliverables stand at the fixture-level
+   structural results and the fluctuation content; a mean-capable
+   comparison is identified, quantified future work.
+
+**Phase A (mean-capable upgrades) — built, piloted, verdict recorded
+(2026-08-14, commit 09f5c76 + follow-ups):** eddy-viscosity core
+spreading (coeff x Vinf x chord, 0 = inviscid), RK2 convection,
+Pedrizzetti relaxation (self-curl INCLUDED — excluding it injects
+energy), like-signed far-wake merging, batch-mean CIs, OpenMP (~5-6x).
+Fixture: plate RMS 247 -> ~6, sideslip mirrors to 0.02%/3%, attached
+untouched. Configuration pilots at alpha=60, duration 60, C=0/1e-3/3e-3:
+the nu=0 control is statistically useless as predicted (CN 1.2 +- 4.7);
+the viscous runs stay fluctuation-dominated (RMS 300-640, CI > mean) —
+coarse-lattice co-rotating consolidation outruns the model dissipation
+(quasi-2-D inverse cascade; each merge raises its own cap ceiling).
+VERDICT: regularization alone cannot converge configuration means at
+12-strip resolution; Phase B = resolution (treecode + finer shedding +
+smaller cores). TWO REJECTED SHORTCUTS, do not reintroduce: (a) merging
+without the alignment check annihilates counter-rotating pairs (=
+momentum parcels) and produced tightly converged means wrong by 10x
+(CL ~ 25-27 at alpha 60, CI shrinking around the bias); (b) hiding
+systematic strength-edit impulses without making the edits rare turns
+the ledger into a bias channel. Transient near-particles must never
+stretch, relax, or merge (filament stand-ins; rotating them injects
+full-strength residue at the TE). `aeolion_particle_crosscheck <handoff> <out.json>
 [duration]` is instrumented for it (unbuffered per-attitude progress,
 per-row JSON flush). Theory for both halves is in doc/theory.rst and
 as an equations block in Part II; method sketch
