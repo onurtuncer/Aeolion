@@ -62,6 +62,14 @@ int main(int argc, char** argv) {
     // Averaging duration [convective times]: the paper's long-averaging
     // runs pass a larger value here; the default matches the solver's.
     const double duration = (argc > 3) ? std::atof(argv[3]) : S::PwDefaultDuration;
+    // Pilot mode: argv[4]/argv[5] restrict the matrix to one attitude, and
+    // argv[6] overrides the eddy-viscosity coefficient -- the Phase-A
+    // convergence pilots sweep it (0 recovers the inviscid tier).
+    const bool pilot = argc > 5;
+    const double alphaOnly = pilot ? std::atof(argv[4]) : 0.0;
+    const double betaOnly = pilot ? std::atof(argv[5]) : 0.0;
+    const double nuCoeff =
+        (argc > 6) ? std::atof(argv[6]) : S::PwTurbulentViscosityCoeff;
 
     Geometry::HandoffContract contract;
     try {
@@ -142,16 +150,20 @@ int main(int argc, char** argv) {
     bool first = true;
     for (const double alphaDeg : Alphas) {
         for (const double betaDeg : Betas) {
+            if (pilot && (alphaDeg != alphaOnly || betaDeg != betaOnly)) continue;
             fc.alphaDeg = alphaDeg;
             fc.betaDeg = betaDeg;
             S::ParticleWakeOptions wakeOptions;
             wakeOptions.Duration = duration;
+            wakeOptions.TurbulentViscosityCoeff = nuCoeff;
             const S::ParticleWakeResult run =
                 S::SolveParticleWake(wing, strips, fc, ref, wakeOptions);
-            std::cerr << "alpha=" << alphaDeg << " beta=" << betaDeg << ": mean CL "
-                      << run.MeanCL << " CD " << run.MeanCD << " CN " << run.MeanCN
-                      << "  rms CL " << run.RmsCL << " CN " << run.RmsCN << "  particles "
-                      << run.MaxParticles << (run.Valid ? "" : "  [INVALID]") << std::endl;
+            std::cerr << "alpha=" << alphaDeg << " beta=" << betaDeg << " nu=" << nuCoeff
+                      << ": mean CL " << run.MeanCL << " CD " << run.MeanCD << " CN "
+                      << run.MeanCN << " +-" << run.MeanCN_CI << " (" << run.Batches
+                      << " batches)  rms CL " << run.RmsCL << " CN " << run.RmsCN
+                      << "  particles " << run.MaxParticles << " merged " << run.Merged
+                      << (run.Valid ? "" : "  [INVALID]") << std::endl;
             if (!run.Valid) continue;
             if (!first) out << ",\n";
             first = false;

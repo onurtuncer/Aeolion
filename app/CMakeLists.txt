@@ -47,3 +47,7 @@ target_link_libraries(aeolion_section_validation PRIVATE aeolion)
 # quasi-steady map's cycle means.
 add_executable(aeolion_particle_crosscheck ParticleCrosscheckExport.cpp)
 target_link_libraries(aeolion_particle_crosscheck PRIVATE aeolion)
+find_package(OpenMP QUIET)
+if(OpenMP_CXX_FOUND)
+  target_link_libraries(aeolion_particle_crosscheck PRIVATE OpenMP::OpenMP_CXX)
+endif()

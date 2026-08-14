@@ -62,11 +62,14 @@
 //     impulse baseline as they leave the sum (the 2-D lesson) and drift
 //     analytically with the freestream after.
 //
-// Stated limitations: single-row lattice (the map's own resolution), Euler
-// convection, no viscous core spreading, no body/duct sources (the
-// comparison target is the map's WING-ONLY forces), and a particle count
-// that a fixed-attitude cross-check tolerates but a full simulation would not
-// (direct N^2 summation).
+// Stated limitations: single-row lattice (the map's own resolution), no
+// body/duct sources (the comparison target is the map's WING-ONLY forces),
+// direct N^2 summation (OpenMP-parallel, no treecode), and an eddy
+// viscosity that is a stated model parameter rather than resolved physics.
+// Convection is second-order midpoint; diffusion is core spreading with
+// far-wake merging; long-run consistency is kept by Pedrizzetti
+// relaxation; convergence is a claim the batch-mean confidence interval
+// makes, not the run length.
 
 #pragma once
 
@@ -105,6 +108,23 @@ inline constexpr double PwStretchCap = 4.0;         ///< |alpha| growth limit, m
 inline constexpr double PwLeFluxSpeedCap = 2.5;
 inline constexpr std::size_t PwMaxParticles = 30000;///< Runaway guard; exceeding it invalidates the run.
 
+// --- Phase A: the mean-capable upgrades -------------------------------------
+// An INVISCID particle street at this resolution has no dissipation: the
+// enstrophy piles up at the core scale and the fluctuation-to-mean ratio
+// GROWS with the averaging window (measured 3-40 across the configuration
+// attitudes). Core spreading with an eddy viscosity is the physical
+// regularizer; its coefficient is THE dissipation parameter of this tier,
+// dimensionally nu_t = coeff * Vinf * ref-chord, its sensitivity reported
+// with the runs rather than hidden. Zero disables diffusion (and with it
+// merging), recovering the inviscid tier exactly.
+inline constexpr double PwTurbulentViscosityCoeff = 1e-3;
+inline constexpr int    PwRelaxEvery = 5;      ///< Pedrizzetti realignment cadence [steps].
+inline constexpr double PwRelaxFraction = 0.3; ///< Blend toward the local vorticity direction.
+inline constexpr int    PwMergeEvery = 10;     ///< Far-wake merge cadence [steps].
+inline constexpr double PwMergeDistanceFactor = 0.5; ///< Merge when closer than this x core.
+inline constexpr double PwMergeZoneChords = 1.5;     ///< Merging only this far behind the TE.
+inline constexpr double PwBatchConvectiveTimes = 5.0;///< Statistics batch length ~ a shedding period.
+
 struct ParticleWakeOptions {
     double TimeStep = PwDefaultTimeStep;
     double Duration = PwDefaultDuration;
@@ -113,6 +133,8 @@ struct ParticleWakeOptions {
      *  falls back to the plain incidence threshold. */
     SeparationPointFunction SeparationPoint;
     bool KeepHistory = false;
+    /** nu_t = this x Vinf x ref chord; zero = inviscid (no spreading, no merge). */
+    double TurbulentViscosityCoeff = PwTurbulentViscosityCoeff;
 };
 
 struct ParticleWakeSample {
@@ -133,6 +155,14 @@ struct ParticleWakeResult {
      * diagnostic that shaped this header.
      */
     double MeanCirculationCL = 0.0;
+    /**
+     * Batch-mean 95% half-width on MeanCN (batches of PwBatchConvectiveTimes;
+     * ~2 sigma / sqrt(batches)). "Converged" is a claim THIS number makes,
+     * not the run length.
+     */
+    double MeanCN_CI = 0.0;
+    int Batches = 0;
+    int Merged = 0; ///< Particles absorbed by far-wake merging.
     int MaxParticles = 0;
     int SheddingStrips = 0; ///< Strips that shed from the leading edge at the last step.
     std::vector<ParticleWakeSample> History;
@@ -144,6 +174,7 @@ struct WakeParticle {
     Vec3 X{0, 0, 0};
     Vec3 Alpha{0, 0, 0};   ///< Vector strength, circulation x length.
     double Birth = 0.0;    ///< |Alpha| at creation, for the stretch cap.
+    double Core2 = 0.0;    ///< Squared core radius; grows by core spreading.
 };
 
 /** Regularized particle-induced velocity, v = (alpha x r) / (4 pi rho^3). */
@@ -284,14 +315,20 @@ inline Vec3 SegmentVelocityUnit(const Vec3& at, const Vec3& p1, const Vec3& p2, 
     const auto particleVelocityAt = [&](const Vec3& at) {
         Vec3 v(0, 0, 0);
         for (const Detail::WakeParticle& p : particles)
-            v = v + Detail::ParticleVelocity(at, p, core2);
+            v = v + Detail::ParticleVelocity(at, p, p.Core2);
         for (std::size_t j = 0; j < n; ++j)
             if (std::fabs(bufGamma[j]) > Math::Tiny)
                 v = v + bufferVelocityUnit(at, buffers[j]) * bufGamma[j];
         return v;
     };
+    const double nuEff = options.TurbulentViscosityCoeff * fc.Vinf * ref.Chord;
 
     const double avgStart = options.Duration * (1.0 - options.AverageFraction);
+    const int batchSteps =
+        std::max(1, static_cast<int>(PwBatchConvectiveTimes / options.TimeStep));
+    std::vector<double> batchMeans;
+    double batchSum = 0.0;
+    int batchFill = 0;
     const double qS = 0.5 * fc.rho * fc.Vinf * fc.Vinf *
                       ((ref.Area > 0.0) ? ref.Area : 1.0);
     const Vec3 dragDir = Vinf.Normalized();
@@ -327,6 +364,7 @@ inline Vec3 SegmentVelocityUnit(const Vec3& at, const Vec3& p1, const Vec3& p2, 
             p.X = at;
             p.Alpha = alpha;
             p.Birth = alpha.Norm();
+            p.Core2 = core2;
             if (p.Birth > Math::Tiny) {
                 particles.push_back(p);
                 return static_cast<int>(particles.size()) - 1;
@@ -415,29 +453,87 @@ inline Vec3 SegmentVelocityUnit(const Vec3& at, const Vec3& p1, const Vec3& p2, 
                 for (std::size_t i = 0; i < n; ++i) circ += gamma[i] * strips[i].Width;
                 sCircCL += 2.0 * circ / (fc.Vinf * ((ref.Area > 0.0) ? ref.Area : 1.0));
                 ++avgCount;
+                batchSum += CN;
+                if (++batchFill >= batchSteps) {
+                    batchMeans.push_back(batchSum / batchFill);
+                    batchSum = 0.0;
+                    batchFill = 0;
+                }
             }
         }
         pPrev = impulse;
         havePrev = true;
 
-        // --- convect + stretch --------------------------------------------------
-        std::vector<Detail::WakeParticle> next = particles;
-        for (std::size_t ip = 0; ip < particles.size(); ++ip) {
-            Vec3 u = Vinf;
-            Vec3 grad[3] = {Vec3(0, 0, 0), Vec3(0, 0, 0), Vec3(0, 0, 0)};
-            for (std::size_t kq = 0; kq < particles.size(); ++kq) {
+        // --- convect + stretch + diffuse ---------------------------------------
+        // Second-order (midpoint) convection: the velocity is evaluated at
+        // the current positions, the particles take a half step, and the
+        // full step uses the midpoint field. The gradient for stretching
+        // and relaxation is taken at the midpoint. Pair cores are
+        // symmetrized, (core_i^2 + core_j^2)/2, so momentum exchange stays
+        // pairwise consistent as cores spread.
+        const std::size_t np = particles.size();
+        std::vector<Vec3> u1(np), xm(np), um(np);
+        std::vector<Vec3> gm(3 * np);
+        const auto filamentVelocity = [&](const Vec3& at) {
+            Vec3 v(0, 0, 0);
+            for (std::size_t j = 0; j < n; ++j) {
+                v = v + ringVelocityUnit(at, rings[j]) * gamma[j];
+                if (std::fabs(bufGamma[j]) > Math::Tiny)
+                    v = v + bufferVelocityUnit(at, buffers[j]) * bufGamma[j];
+            }
+            return v;
+        };
+#if defined(_OPENMP)
+#pragma omp parallel for schedule(static)
+#endif
+        for (long long ips = 0; ips < static_cast<long long>(np); ++ips) {
+            const std::size_t ip = static_cast<std::size_t>(ips);
+            Vec3 u = Vinf + filamentVelocity(particles[ip].X);
+            for (std::size_t kq = 0; kq < np; ++kq) {
                 if (kq == ip) continue;
-                u = u + Detail::ParticleVelocity(particles[ip].X, particles[kq], core2);
+                const double pair2 = 0.5 * (particles[ip].Core2 + particles[kq].Core2);
+                u = u + Detail::ParticleVelocity(particles[ip].X, particles[kq], pair2);
+            }
+            u1[ip] = u;
+            xm[ip] = particles[ip].X + u * (0.5 * dtPhys);
+        }
+#if defined(_OPENMP)
+#pragma omp parallel for schedule(static)
+#endif
+        for (long long ips = 0; ips < static_cast<long long>(np); ++ips) {
+            const std::size_t ip = static_cast<std::size_t>(ips);
+            Vec3 u = Vinf + filamentVelocity(xm[ip]);
+            Vec3 grad[3] = {Vec3(0, 0, 0), Vec3(0, 0, 0), Vec3(0, 0, 0)};
+            for (std::size_t kq = 0; kq < np; ++kq) {
+                if (kq == ip) continue;
+                const double pair2 = 0.5 * (particles[ip].Core2 + particles[kq].Core2);
+                u = u + Detail::ParticleVelocity(xm[ip], particles[kq], pair2);
                 Vec3 g[3];
-                Detail::ParticleVelocityGradient(particles[ip].X, particles[kq], core2, g);
+                Detail::ParticleVelocityGradient(xm[ip], particles[kq], pair2, g);
                 for (int l = 0; l < 3; ++l) grad[l] = grad[l] + g[l];
             }
-            for (std::size_t j = 0; j < n; ++j) {
-                u = u + ringVelocityUnit(particles[ip].X, rings[j]) * gamma[j];
-                if (std::fabs(bufGamma[j]) > Math::Tiny)
-                    u = u + bufferVelocityUnit(particles[ip].X, buffers[j]) * bufGamma[j];
+            um[ip] = u;
+            for (int l = 0; l < 3; ++l) gm[3 * ip + l] = grad[l];
+        }
+        const bool relaxNow = (step % PwRelaxEvery) == PwRelaxEvery - 1;
+        // The transient near-particles are one-step FILAMENT STAND-INS whose
+        // strength the next absorb cancels by subtracting an exactly
+        // spanwise vector. Stretching or relaxing them rotates that vector,
+        // and the absorb then leaves a full-strength misaligned residue
+        // injected at the trailing edge every event -- measured as the
+        // deep-incidence blow-up that survived the relaxation fixes (quiet
+        // flows barely rotate them, which is why the attached case stayed
+        // clean). They convect and spread, nothing else.
+        std::vector<char> isTransient(np, 0);
+        for (std::size_t i = 0; i < n; ++i)
+            if (nearIdx[i] >= 0) isTransient[static_cast<std::size_t>(nearIdx[i])] = 1;
+        std::vector<Detail::WakeParticle> next = particles;
+        for (std::size_t ip = 0; ip < np; ++ip) {
+            next[ip].X = particles[ip].X + um[ip] * dtPhys;
+            if (isTransient[ip]) {
+                next[ip].Core2 = particles[ip].Core2 + 4.0 * nuEff * dtPhys;
+                continue;
             }
-            next[ip].X = particles[ip].X + u * dtPhys;
             // Stretching in the TRANSPOSE scheme, d(alpha)/dt = (grad u)^T
             // alpha: unlike the classical (alpha . grad) u it conserves the
             // TOTAL vector strength exactly, and that is not a nicety here
@@ -445,12 +541,42 @@ inline Vec3 SegmentVelocityUnit(const Vec3& at, const Vec3& p1, const Vec3& p2, 
             // particles' positions, was measured burying the impulse loads
             // (RMS 3.8 on an O(1) mean at the normal plate). Capped.
             const Vec3& al = particles[ip].Alpha;
+            const Vec3* grad = &gm[3 * ip];
             const Vec3 stretch(Dot(grad[0], al), Dot(grad[1], al), Dot(grad[2], al));
-            Vec3 newAlpha = al + stretch * dtPhys;
+            const Vec3 physAlpha = al + stretch * dtPhys;
+            Vec3 newAlpha = physAlpha;
+            // Pedrizzetti relaxation: periodically blend the strength
+            // toward the LOCAL vorticity direction. The local vorticity
+            // MUST include the particle's own contribution,
+            // omega_self = alpha / (2 pi sigma^3) for this kernel -- it
+            // dominates at the particle and is parallel to alpha, so the
+            // blend gently confirms a consistent particle and corrects an
+            // inconsistent one. Excluding it (the first attempt) relaxed
+            // every particle toward its neighbours' noise and was measured
+            // INJECTING energy: plate CN 6.8 with RMS 277.
+            if (relaxNow) {
+                const double sigma2 = std::max(particles[ip].Core2, Math::Tiny);
+                const double selfFactor =
+                    1.0 / (2.0 * std::numbers::pi * sigma2 * std::sqrt(sigma2));
+                const Vec3 curl(grad[1].z - grad[2].y + selfFactor * physAlpha.x,
+                                grad[2].x - grad[0].z + selfFactor * physAlpha.y,
+                                grad[0].y - grad[1].x + selfFactor * physAlpha.z);
+                const double cn2 = curl.Norm();
+                const double an = physAlpha.Norm();
+                if (cn2 > Math::Tiny && an > Math::Tiny)
+                    newAlpha = physAlpha * (1.0 - PwRelaxFraction) +
+                               curl * (PwRelaxFraction * an / cn2);
+            }
             const double cap = PwStretchCap * particles[ip].Birth;
             const double mag = newAlpha.Norm();
             if (mag > cap && mag > Math::Tiny) newAlpha = newAlpha * (cap / mag);
             next[ip].Alpha = newAlpha;
+            next[ip].Core2 = particles[ip].Core2 + 4.0 * nuEff * dtPhys; // core spreading
+            // Relaxation and the cap are bookkeeping edits, not physics:
+            // their strength change must leave the impulse baseline with
+            // them, or the differencer reads each edit as a force spike
+            // (the retirement/merging lesson, applied to strengths).
+            pPrev = pPrev + Cross(next[ip].X, newAlpha - physAlpha) * 0.5;
         }
         particles = std::move(next);
 
@@ -471,6 +597,55 @@ inline Vec3 SegmentVelocityUnit(const Vec3& at, const Vec3& p1, const Vec3& p2, 
         particles = std::move(kept);
         for (std::size_t i = 0; i < n; ++i)
             if (nearIdx[i] >= 0) nearIdx[i] = remap[static_cast<std::size_t>(nearIdx[i])];
+
+        // --- far-wake merging (diffusion's bookkeeping half) --------------------
+        // Spreading cores overlap; overlapping same-scale particles are one
+        // particle's worth of information. Greedy pairwise merge in the far
+        // zone, conserving total strength, the strength-weighted centroid,
+        // and the second moment (into the core). The merged pair's impulse
+        // change is removed from the baseline -- the retirement lesson
+        // applies to every event that edits the sum being differenced.
+        if (nuEff > 0.0 && (step % PwMergeEvery) == PwMergeEvery - 1 && particles.size() > 1) {
+            const double zone = PwMergeZoneChords * ref.Chord;
+            for (std::size_t ia = 0; ia < particles.size(); ++ia) {
+                Detail::WakeParticle& pa = particles[ia];
+                if (pa.Birth < 0.0 || Dot(pa.X - rings[0].Te, dragDir) < zone) continue;
+                for (std::size_t ib = ia + 1; ib < particles.size(); ++ib) {
+                    Detail::WakeParticle& pb = particles[ib];
+                    if (pb.Birth < 0.0 || Dot(pb.X - rings[0].Te, dragDir) < zone) continue;
+                    const double pair2 = 0.5 * (pa.Core2 + pb.Core2);
+                    const double d2 = Dot(pa.X - pb.X, pa.X - pb.X);
+                    if (d2 > PwMergeDistanceFactor * PwMergeDistanceFactor * pair2) continue;
+                    const double wa = pa.Alpha.Norm(), wb = pb.Alpha.Norm();
+                    if (!(wa + wb > Math::Tiny)) continue;
+                    const Vec3 oldImpulse =
+                        Cross(pa.X, pa.Alpha) * 0.5 + Cross(pb.X, pb.Alpha) * 0.5;
+                    const Vec3 xNew = (pa.X * wa + pb.X * wb) * (1.0 / (wa + wb));
+                    const double spread =
+                        (wa * Dot(pa.X - xNew, pa.X - xNew) + wb * Dot(pb.X - xNew, pb.X - xNew)) /
+                        (wa + wb);
+                    pa.Core2 = (wa * pa.Core2 + wb * pb.Core2) / (wa + wb) + spread;
+                    pa.Alpha = pa.Alpha + pb.Alpha;
+                    pa.X = xNew;
+                    pa.Birth = std::max(pa.Birth, pb.Birth);
+                    pPrev = pPrev + Cross(pa.X, pa.Alpha) * 0.5 - oldImpulse;
+                    pb.Birth = -1.0; // absorbed
+                    ++res.Merged;
+                    break;
+                }
+            }
+            std::vector<Detail::WakeParticle> alive;
+            alive.reserve(particles.size());
+            std::vector<int> remap2(particles.size(), -1);
+            for (std::size_t ip = 0; ip < particles.size(); ++ip) {
+                if (particles[ip].Birth < 0.0) continue;
+                remap2[ip] = static_cast<int>(alive.size());
+                alive.push_back(particles[ip]);
+            }
+            particles = std::move(alive);
+            for (std::size_t i = 0; i < n; ++i)
+                if (nearIdx[i] >= 0) nearIdx[i] = remap2[static_cast<std::size_t>(nearIdx[i])];
+        }
     }
 
     if (avgCount == 0) return res;
@@ -482,6 +657,16 @@ inline Vec3 SegmentVelocityUnit(const Vec3& at, const Vec3& p1, const Vec3& p2, 
     res.RmsCL = std::sqrt(std::max(sCL2 / avgCount - res.MeanCL * res.MeanCL, 0.0));
     res.RmsCN = std::sqrt(std::max(sCN2 / avgCount - res.MeanCN * res.MeanCN, 0.0));
     res.MeanCirculationCL = sCircCL / avgCount;
+    res.Batches = static_cast<int>(batchMeans.size());
+    if (batchMeans.size() >= 2) {
+        double bm = 0.0;
+        for (double b : batchMeans) bm += b;
+        bm /= batchMeans.size();
+        double bv = 0.0;
+        for (double b : batchMeans) bv += (b - bm) * (b - bm);
+        bv /= (batchMeans.size() - 1);
+        res.MeanCN_CI = 2.0 * std::sqrt(bv / batchMeans.size());
+    }
     return res;
 }
 
