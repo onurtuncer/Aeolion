@@ -512,7 +512,15 @@ dissipation, FMM/GPU -- a standalone project, not an increment of this
 tier. The cross-check's charter (attached exactness, fluctuation
 content, structural deep-stall results, and now the measured limits)
 is complete; the treecode stays as verified infrastructure for
-whatever comes next. TWO REJECTED SHORTCUTS, do not reintroduce: (a) merging
+whatever comes next. **The overlap-resolved VPM now lives in its own
+repository, [onurtuncer/VPM](https://github.com/onurtuncer/VPM)**
+(private; the BEMT precedent — plain `VPM::` namespace, no dependency
+either way): GPU-first architecture (SoA, one host/device kernel
+definition, CUDA stub compiled on hosted CI, execution tests on a
+self-hosted runner when the NVIDIA machine joins), the physics core
+ported with all five recorded rules — and a sixth earned on its first
+day (N-body RK2 must advance sources to the midpoint; frozen sources
+demote it to first order, measured on the vortex-ring anchor test). TWO REJECTED SHORTCUTS, do not reintroduce: (a) merging
 without the alignment check annihilates counter-rotating pairs (=
 momentum parcels) and produced tightly converged means wrong by 10x
 (CL ~ 25-27 at alpha 60, CI shrinking around the bias); (b) hiding
