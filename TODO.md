@@ -478,7 +478,29 @@ them. Two measurements on the way there:
    spanwise resolution — a production VPM, outside the cross-check's
    charter. The tier's deliverables stand at the fixture-level
    structural results and the fluctuation content; a mean-capable
-   comparison is identified, quantified future work. `aeolion_particle_crosscheck <handoff> <out.json>
+   comparison is identified, quantified future work.
+
+**Phase A (mean-capable upgrades) — built, piloted, verdict recorded
+(2026-08-14, commit 09f5c76 + follow-ups):** eddy-viscosity core
+spreading (coeff x Vinf x chord, 0 = inviscid), RK2 convection,
+Pedrizzetti relaxation (self-curl INCLUDED — excluding it injects
+energy), like-signed far-wake merging, batch-mean CIs, OpenMP (~5-6x).
+Fixture: plate RMS 247 -> ~6, sideslip mirrors to 0.02%/3%, attached
+untouched. Configuration pilots at alpha=60, duration 60, C=0/1e-3/3e-3:
+the nu=0 control is statistically useless as predicted (CN 1.2 +- 4.7);
+the viscous runs stay fluctuation-dominated (RMS 300-640, CI > mean) —
+coarse-lattice co-rotating consolidation outruns the model dissipation
+(quasi-2-D inverse cascade; each merge raises its own cap ceiling).
+VERDICT: regularization alone cannot converge configuration means at
+12-strip resolution; Phase B = resolution (treecode + finer shedding +
+smaller cores). TWO REJECTED SHORTCUTS, do not reintroduce: (a) merging
+without the alignment check annihilates counter-rotating pairs (=
+momentum parcels) and produced tightly converged means wrong by 10x
+(CL ~ 25-27 at alpha 60, CI shrinking around the bias); (b) hiding
+systematic strength-edit impulses without making the edits rare turns
+the ledger into a bias channel. Transient near-particles must never
+stretch, relax, or merge (filament stand-ins; rotating them injects
+full-strength residue at the TE). `aeolion_particle_crosscheck <handoff> <out.json>
 [duration]` is instrumented for it (unbuffered per-attitude progress,
 per-row JSON flush). Theory for both halves is in doc/theory.rst and
 as an equations block in Part II; method sketch

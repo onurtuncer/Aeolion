@@ -120,7 +120,12 @@ void TestNormalPlateBreaksTheStreet() {
     // this budget the averaging window holds about one shedding cycle,
     // so the MEAN's sign and level are not resolvable here -- they are
     // the pilot runs' job, which report batch-mean confidence intervals.
-    CHECK(run.RmsCN < 3.0, "the diffused street is bounded");
+    // Bounded means ORDERS below the inviscid tier's measured 247, not
+    // absolutely small: the honest (like-signed-merge) street fluctuates
+    // at RMS ~ 6 here -- the earlier 1.3 was an artifact of merges that
+    // annihilated the street's dipoles, and a band tuned to it would
+    // demand the artifact back.
+    CHECK(run.RmsCN < 15.0, "the diffused street is bounded (orders below inviscid)");
     CHECK(std::fabs(run.MeanCN) < 2.8, "the street's scale sits below the 2-D level");
     CHECK(run.RmsCN > 0.02, "the plate wake sheds");
     std::cout << "plate alpha=90: mean CN " << run.MeanCN << " rms " << run.RmsCN

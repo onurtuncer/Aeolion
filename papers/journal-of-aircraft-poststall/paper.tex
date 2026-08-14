@@ -581,7 +581,22 @@ quasi-steady map cannot see (which needs no converged mean), and the
 structural deep-stall result that spanwise breakup collapses the
 street from the two-dimensional level toward the finite-plate scale.
 A mean-capable unsteady comparison is identified, quantified work ---
-not pending work disguised as a formality.
+not pending work disguised as a formality. A regularized variant was
+built and piloted to sharpen that quantification: eddy-viscosity core
+spreading with like-signed far-wake merging, second-order convection,
+and vorticity-consistent relaxation bounds the short-window street
+(the normal plate's force RMS falls two orders) and leaves the
+attached checks untouched, but at $\alpha = 60^\circ$ over sixty
+convective times the configuration street remains
+fluctuation-dominated: the coarse lattice's co-rotating consolidation
+feeds structures faster than the model dissipates them, and the
+batch-mean confidence intervals stay wider than the means. The missing
+ingredient is RESOLUTION --- finer shedding with fast summation ---
+not further regularization; two rejected shortcuts (a merge rule that
+annihilated counter-rotating pairs, and impulse bookkeeping that hid
+systematic strength edits) each produced tightly converged means that
+were wrong by an order of magnitude, and are recorded as warnings
+where they were found.
 
 \section{Limitations}
 

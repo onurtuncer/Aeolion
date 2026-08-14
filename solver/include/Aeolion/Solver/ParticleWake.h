@@ -616,6 +616,15 @@ inline Vec3 SegmentVelocityUnit(const Vec3& at, const Vec3& p1, const Vec3& p2, 
                     const double pair2 = 0.5 * (pa.Core2 + pb.Core2);
                     const double d2 = Dot(pa.X - pb.X, pa.X - pb.X);
                     if (d2 > PwMergeDistanceFactor * PwMergeDistanceFactor * pair2) continue;
+                    // LIKE-SIGNED only: a counter-rotating pair is a parcel
+                    // of momentum, and merging one annihilates it. With the
+                    // alignment check absent, the spread cores eventually
+                    // span the shed dipole spacing and merging deleted tens
+                    // of thousands of dipoles per run -- measured as a
+                    // converged-but-absurd mean (CL ~ 25 at alpha = 60)
+                    // whose bias GREW with run length while the confidence
+                    // interval shrank around it.
+                    if (!(Dot(pa.Alpha, pb.Alpha) > 0.0)) continue;
                     const double wa = pa.Alpha.Norm(), wb = pb.Alpha.Norm();
                     if (!(wa + wb > Math::Tiny)) continue;
                     const Vec3 oldImpulse =
@@ -627,7 +636,11 @@ inline Vec3 SegmentVelocityUnit(const Vec3& at, const Vec3& p1, const Vec3& p2, 
                     pa.Core2 = (wa * pa.Core2 + wb * pb.Core2) / (wa + wb) + spread;
                     pa.Alpha = pa.Alpha + pb.Alpha;
                     pa.X = xNew;
-                    pa.Birth = std::max(pa.Birth, pb.Birth);
+                    // The merged blob's natural strength scale is the sum,
+                    // not the larger part: Birth feeds the stretch cap, and
+                    // max() made every co-rotating merge creep toward the
+                    // cap, turning the cap into a systematic edit.
+                    pa.Birth = wa + wb;
                     pPrev = pPrev + Cross(pa.X, pa.Alpha) * 0.5 - oldImpulse;
                     pb.Birth = -1.0; // absorbed
                     ++res.Merged;
