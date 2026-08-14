@@ -590,13 +590,21 @@ attached checks untouched, but at $\alpha = 60^\circ$ over sixty
 convective times the configuration street remains
 fluctuation-dominated: the coarse lattice's co-rotating consolidation
 feeds structures faster than the model dissipates them, and the
-batch-mean confidence intervals stay wider than the means. The missing
-ingredient is RESOLUTION --- finer shedding with fast summation ---
-not further regularization; two rejected shortcuts (a merge rule that
-annihilated counter-rotating pairs, and impulse bookkeeping that hid
-systematic strength edits) each produced tightly converged means that
-were wrong by an order of magnitude, and are recorded as warnings
-where they were found.
+batch-mean confidence intervals stay wider than the means. Nor is modest resolution the missing ingredient: with an
+octree-accelerated evaluation (pinned exactly equivalent to direct
+summation when fully opened) buying a doubling of spanwise and
+temporal resolution, the same attitude grew categorically worse ---
+smaller cores sharpen the close-range consolidation faster than the
+added resolution resolves the cascade. Converged configuration means
+at these attitudes belong to the overlap-resolved vortex-particle
+regime --- several particles per shed structure, million-particle
+wakes, subgrid dissipation, and fast-multipole or GPU summation --- a
+solver project in its own right, delimited here by measurement rather
+than promised. Two rejected shortcuts (a merge rule that annihilated
+counter-rotating pairs, and impulse bookkeeping that hid systematic
+strength edits) each produced tightly converged means that were wrong
+by an order of magnitude, and are recorded as warnings where they
+were found.
 
 \section{Limitations}
 

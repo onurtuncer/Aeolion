@@ -493,7 +493,26 @@ coarse-lattice co-rotating consolidation outruns the model dissipation
 (quasi-2-D inverse cascade; each merge raises its own cap ceiling).
 VERDICT: regularization alone cannot converge configuration means at
 12-strip resolution; Phase B = resolution (treecode + finer shedding +
-smaller cores). TWO REJECTED SHORTCUTS, do not reintroduce: (a) merging
+smaller cores).
+
+**Phase B (2026-08-14): treecode DONE and kept; the resolution
+hypothesis MEASURED FALSE at feasible scale.** Solver/ParticleTree.h
+(Barnes-Hut, monopole + gradient, core-clearance acceptance) is pinned
+by TestParticleTree: machine-exact at theta=0, 0.45%/0.008% u/grad
+error at theta=0.5, 2.3x over direct at N=6000 single-thread; wired
+into ParticleWake above 2000 particles. The alpha=60 pilot at DOUBLED
+resolution (24 strips, dt 0.05, duration 60, C=1e-3) is categorically
+WORSE (CN -1315 +- 1511, RMS ~15000, 85k merges): refinement shrinks
+the cores and sharpens the close-range consolidation faster than it
+resolves the cascade. Three independent setups (coarse, honest-merge
+coarse, refined) now land in the same class. CONCLUSION: converged
+mid-alpha configuration means need the overlap-resolved VPM regime --
+several particles per shed structure per step, N ~ 1e6, subgrid
+dissipation, FMM/GPU -- a standalone project, not an increment of this
+tier. The cross-check's charter (attached exactness, fluctuation
+content, structural deep-stall results, and now the measured limits)
+is complete; the treecode stays as verified infrastructure for
+whatever comes next. TWO REJECTED SHORTCUTS, do not reintroduce: (a) merging
 without the alignment check annihilates counter-rotating pairs (=
 momentum parcels) and produced tightly converged means wrong by 10x
 (CL ~ 25-27 at alpha 60, CI shrinking around the bias); (b) hiding

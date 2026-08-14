@@ -75,6 +75,7 @@
 
 #include "Aeolion/Math/Constants.h"
 #include "Aeolion/Math/Vec3.h"
+#include "Aeolion/Solver/ParticleTree.h"
 #include "Aeolion/Solver/PostStallSection.h"
 #include "Aeolion/Solver/Solver.h"
 #include "Aeolion/Solver/ViscousCoupling.h"
@@ -106,7 +107,8 @@ inline constexpr double PwStretchCap = 4.0;         ///< |alpha| growth limit, m
  * ceiling states known physics rather than tuning the answer.
  */
 inline constexpr double PwLeFluxSpeedCap = 2.5;
-inline constexpr std::size_t PwMaxParticles = 30000;///< Runaway guard; exceeding it invalidates the run.
+inline constexpr std::size_t PwMaxParticles = 150000; ///< Runaway guard; the treecode affords it.
+inline constexpr std::size_t PwTreeThreshold = 2000;  ///< Direct summation below, Barnes-Hut above.
 
 // --- Phase A: the mean-capable upgrades -------------------------------------
 // An INVISCID particle street at this resolution has no dissipation: the
@@ -322,6 +324,7 @@ inline Vec3 SegmentVelocityUnit(const Vec3& at, const Vec3& p1, const Vec3& p2, 
         return v;
     };
     const double nuEff = options.TurbulentViscosityCoeff * fc.Vinf * ref.Chord;
+    ParticleTree stepTree; // rebuilt per step once the wake outgrows direct summation
 
     const double avgStart = options.Duration * (1.0 - options.AverageFraction);
     const int batchSteps =
@@ -470,8 +473,13 @@ inline Vec3 SegmentVelocityUnit(const Vec3& at, const Vec3& p1, const Vec3& p2, 
         // full step uses the midpoint field. The gradient for stretching
         // and relaxation is taken at the midpoint. Pair cores are
         // symmetrized, (core_i^2 + core_j^2)/2, so momentum exchange stays
-        // pairwise consistent as cores spread.
+        // pairwise consistent as cores spread. Above the tree threshold
+        // the pairwise sums go through the Barnes-Hut tree, built once per
+        // step (both RK2 stages sample the same source state) and pinned
+        // exactly equivalent at theta = 0 by its own suite.
         const std::size_t np = particles.size();
+        const bool useTree = np > PwTreeThreshold;
+        if (useTree) stepTree.Build(particles);
         std::vector<Vec3> u1(np), xm(np), um(np);
         std::vector<Vec3> gm(3 * np);
         const auto filamentVelocity = [&](const Vec3& at) {
@@ -489,10 +497,15 @@ inline Vec3 SegmentVelocityUnit(const Vec3& at, const Vec3& p1, const Vec3& p2, 
         for (long long ips = 0; ips < static_cast<long long>(np); ++ips) {
             const std::size_t ip = static_cast<std::size_t>(ips);
             Vec3 u = Vinf + filamentVelocity(particles[ip].X);
-            for (std::size_t kq = 0; kq < np; ++kq) {
-                if (kq == ip) continue;
-                const double pair2 = 0.5 * (particles[ip].Core2 + particles[kq].Core2);
-                u = u + Detail::ParticleVelocity(particles[ip].X, particles[kq], pair2);
+            if (useTree) {
+                stepTree.Evaluate(particles[ip].X, particles[ip].Core2, static_cast<int>(ip), u,
+                                  nullptr);
+            } else {
+                for (std::size_t kq = 0; kq < np; ++kq) {
+                    if (kq == ip) continue;
+                    const double pair2 = 0.5 * (particles[ip].Core2 + particles[kq].Core2);
+                    u = u + Detail::ParticleVelocity(particles[ip].X, particles[kq], pair2);
+                }
             }
             u1[ip] = u;
             xm[ip] = particles[ip].X + u * (0.5 * dtPhys);
@@ -504,13 +517,17 @@ inline Vec3 SegmentVelocityUnit(const Vec3& at, const Vec3& p1, const Vec3& p2, 
             const std::size_t ip = static_cast<std::size_t>(ips);
             Vec3 u = Vinf + filamentVelocity(xm[ip]);
             Vec3 grad[3] = {Vec3(0, 0, 0), Vec3(0, 0, 0), Vec3(0, 0, 0)};
-            for (std::size_t kq = 0; kq < np; ++kq) {
-                if (kq == ip) continue;
-                const double pair2 = 0.5 * (particles[ip].Core2 + particles[kq].Core2);
-                u = u + Detail::ParticleVelocity(xm[ip], particles[kq], pair2);
-                Vec3 g[3];
-                Detail::ParticleVelocityGradient(xm[ip], particles[kq], pair2, g);
-                for (int l = 0; l < 3; ++l) grad[l] = grad[l] + g[l];
+            if (useTree) {
+                stepTree.Evaluate(xm[ip], particles[ip].Core2, static_cast<int>(ip), u, grad);
+            } else {
+                for (std::size_t kq = 0; kq < np; ++kq) {
+                    if (kq == ip) continue;
+                    const double pair2 = 0.5 * (particles[ip].Core2 + particles[kq].Core2);
+                    u = u + Detail::ParticleVelocity(xm[ip], particles[kq], pair2);
+                    Vec3 g[3];
+                    Detail::ParticleVelocityGradient(xm[ip], particles[kq], pair2, g);
+                    for (int l = 0; l < 3; ++l) grad[l] = grad[l] + g[l];
+                }
             }
             um[ip] = u;
             for (int l = 0; l < 3; ++l) gm[3 * ip + l] = grad[l];
