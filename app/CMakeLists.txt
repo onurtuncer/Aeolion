@@ -40,6 +40,20 @@ target_link_libraries(aeolion_poststall_sweep PRIVATE aeolion aeolion_panelbuild
 add_executable(aeolion_section_validation SectionValidationExport.cpp)
 target_link_libraries(aeolion_section_validation PRIVATE aeolion)
 
+# The aeroCD0 table of the DAVE-ML flight model: the parasite drag of the
+# body and duct (never the wing -- its profile drag is already inside the
+# coupled solve), component buildup plus a slender-body crossflow branch
+# so the estimate stays meaningful to 90 degrees incidence.
+add_executable(aeolion_parasite_drag ParasiteDragExport.cpp)
+target_link_libraries(aeolion_parasite_drag PRIVATE aeolion aeolion_panelbuilder)
+
+# The propulsion side of the DAVE-ML flight model (models/README.md): the
+# contract's ducted propulsor swept over advance ratio and the three vane
+# command modes, through the two-way rotor-vane coupling, exported as JSON
+# for the DAVE-ML assembler.
+add_executable(aeolion_propulsion_map PropulsionMapExport.cpp)
+target_link_libraries(aeolion_propulsion_map PRIVATE aeolion aeolion_panelbuilder)
+
 # The 3-D unsteady cross-check: the particle-wake solve at the declared
 # attitudes (alpha 30/60/90 x beta 0/15) on the handoff wing -- full-span
 # and coarse, built from the contract's planform law (see the driver's

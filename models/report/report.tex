@@ -1,0 +1,1633 @@
+% Aeolion technical report: the DAVE-ML flight-model tabulation.
+% Build:  pdflatex report && pdflatex report   (twice, for the ToC and
+% cross-references; no bibtex -- the bibliography is a thebibliography
+% environment, and latexmk does not run on the build machine, no perl.)
+%
+% The data tables in tables/ are GENERATED from the solver's own JSON by
+% make-tables.py; never hand-edit them (the house rule that keeps every
+% published number traceable to a run).
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=25mm]{geometry}
+% T1 so the Turkish breve/cedilla accents in the author names and the
+% bibliography render under pdflatex. Names are written as LaTeX accent
+% commands rather than literal UTF-8, matching the papers' own preamble
+% note.
+\usepackage[T1]{fontenc}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage[hidelinks]{hyperref}
+\usepackage{caption}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  frame=single,
+  rulecolor=\color{black!30},
+  backgroundcolor=\color{black!3},
+  columns=fullflexible,
+}
+
+\newcommand{\varid}[1]{\texttt{\small #1}}
+\newcommand{\dg}{^\circ}
+\newcommand{\nomen}[2]{\textit{#1} & \quad #2 \\}
+
+\title{\textbf{A DAVE-ML Flight-Model Tabulation for the Aetherion
+Ducted-Fan Tail-Sitter}\\[2mm]
+\large Structure, Conventions, Provenance, and Declared Limits}
+
+\author{
+  Onur Tuncer\thanks{Professor, Department of Aeronautical Engineering,
+    Istanbul Technical University; onur.tuncer@itu.edu.tr}
+  \and
+  \c{C}a\u{g}lar \"U\c{c}ler\thanks{Associate Professor,
+    \"Ozye\u{g}in University; caglar.ucler@ozyegin.edu.tr}
+  \and
+  Ahmet G\"une\c{s}\thanks{Associate Professor, Istanbul Technical
+    University}
+}
+\date{15 August 2026 \\[1mm] \small Aeolion Technical Report ATR--2026--01}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+This report specifies a single-file DAVE-ML flight model---the encoding
+of the American National Standard ANSI/AIAA S-119-2011---for the
+Aetherion ducted-fan tail-sitter, assembled from the Aeolion aerodynamic
+toolkit. It states the model's structure, its reference-frame
+and sign conventions, the nondimensionalisation and buildup of every
+tabulated quantity, the provenance of each of its 36 tables, and---given
+equal weight---the boundaries of what the underlying methods can support.
+Three structural decisions carry the design. First, the model is one file
+rather than the conventional aerodynamics/propulsion pair, because the
+power-on interaction increments depend on breakpoints owned by both
+halves and DAVE-ML provides no cross-file reference mechanism. Second,
+forward speed and rotor speed are collapsed into the advance ratio $J$,
+which is exact for the inviscid rotating-frame solve that generates the
+propulsor tables. Third, the model declares \emph{no} Mach and \emph{no}
+Reynolds axis: the toolkit is incompressible throughout and every source
+sweep was run at a single flight condition, so such axes would encode a
+fidelity that does not exist. The tabulation is verified not by
+inspection but by generated \texttt{checkData} static shots evaluated
+through an in-repo interpreter, including a moment-transfer shot that
+would detect the specific frame-conversion error that has occurred once
+in this codebase's history. Two blocks of the model are declared
+incomplete and are identified as such in the file itself: the
+fan-on-airframe interaction increments await an upstream-induction model,
+and the propulsor tables are axial-inflow only.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+%======================================================================
+\section*{Nomenclature}
+\addcontentsline{toc}{section}{Nomenclature}
+
+\begin{longtable}{@{}p{28mm}@{}p{112mm}@{}}
+\nomen{A\!R}{= wing aspect ratio, $b^2/S$}
+\nomen{b}{= wing reference span, m}
+\nomen{$\bar c$}{= wing reference chord, m}
+\nomen{$C_D$}{= total drag coefficient}
+\nomen{$C_{D_0}$}{= body and duct parasite drag coefficient}
+\nomen{$C_{D_i}$}{= induced drag coefficient}
+\nomen{$c_d$}{= section profile drag coefficient}
+\nomen{$C_L$}{= lift coefficient}
+\nomen{$C_{L\max}$}{= maximum lift coefficient}
+\nomen{$C_l$, $C_m$, $C_n$}{= rolling, pitching, yawing moment coefficients, body axes}
+\nomen{$C_{l_p}$, $C_{l_r}$}{= roll damping and roll-due-to-yaw-rate derivatives, per $\hat p$, $\hat r$}
+\nomen{$C_{m_q}$}{= pitch damping derivative, per $\hat q$}
+\nomen{$C_{n_p}$, $C_{n_r}$}{= yaw-due-to-roll-rate and yaw damping derivatives}
+\nomen{$C_N$}{= normal-force coefficient, chord-plane normal}
+\nomen{$C_Q$}{= rotor torque coefficient, $Q/\rho n^2 D^5$}
+\nomen{$C_T$}{= rotor thrust coefficient, $T/\rho n^2 D^4$}
+\nomen{$C_X$, $C_Y$, $C_Z$}{= body-axis force coefficients}
+\nomen{$C_{d\max}$}{= deep-stall section drag maximum (Viterna anchor)}
+\nomen{$D$}{= rotor diameter, m}
+\nomen{$D_i$}{= induced drag, N}
+\nomen{$f$}{= Kirchhoff attached-flow fraction, chordwise separation point}
+\nomen{$F_x$, $F_y$, $F_z$}{= total body-axis forces, N}
+\nomen{$J$}{= advance ratio, $V_\infty/nD$}
+\nomen{$M$}{= Mach number}
+\nomen{$M_x$, $M_y$, $M_z$}{= total body-axis moments about the reference point, N\,m}
+\nomen{$n$}{= rotor rotational speed, rev/s}
+\nomen{$p$, $q$, $r$}{= body-axis roll, pitch, yaw rates, rad/s}
+\nomen{$\hat p$, $\hat q$, $\hat r$}{= reduced (nondimensional) body rates}
+\nomen{$\bar q$}{= free-stream dynamic pressure, $\tfrac12 \rho V_\infty^2$, Pa}
+\nomen{$Q$}{= rotor shaft torque, N\,m}
+\nomen{$\mathrm{Re}_n$}{= leading-edge-normal Reynolds number}
+\nomen{$r_{\mathrm{LE}}$}{= section leading-edge radius, m}
+\nomen{$S$}{= wing gross planform reference area, m$^2$}
+\nomen{$s$}{= swirl factor of the rotor--vane momentum budget}
+\nomen{$T$}{= rotor thrust, N}
+\nomen{$T_c$}{= airframe-normalised thrust coefficient, $T/\bar q S$}
+\nomen{$\hat u$}{= free-stream unit vector, body axes}
+\nomen{$V_\infty$}{= true airspeed, m/s}
+\nomen{$v_i$}{= axial induced velocity, m/s}
+\nomen{$x$, $y$, $z$}{= body-axis coordinates, m}
+\nomen{$x_{\mathrm{cp}}$}{= centre of pressure, fraction of chord}
+\nomen{$\alpha$}{= angle of attack, deg}
+\nomen{$\alpha_{\mathrm{disk}}$}{= angle between the free stream and the rotor axis, deg}
+\nomen{$\beta$}{= sideslip angle, deg}
+\nomen{$\delta_a$}{= aileron deflection (right surface), deg}
+\nomen{$\delta_P$, $\delta_Y$, $\delta_R$}{= vane pitch, yaw, roll mode commands, deg}
+\nomen{$\delta_{\mathrm{b}}$, $\delta_{\mathrm{l}}$,}{}
+\nomen{$\delta_{\mathrm{t}}$, $\delta_{\mathrm{r}}$}{= individual vane deflections (bottom, left, top, right), deg}
+\nomen{$\eta$}{= span fraction (wing) or exit-radius fraction (vanes)}
+\nomen{$\rho$}{= air density, kg/m$^3$}
+\nomen{$\sigma$}{= total inclination of the free stream to the chord plane, $\sin\sigma = \sin\alpha\cos\beta$, deg}
+\nomen{$\phi_w$}{= crossflow azimuth about the rotor axis, deg}
+\nomen{$\Omega$}{= rotor angular speed, rad/s}
+\end{longtable}
+
+\noindent\textit{Subscripts}
+\begin{longtable}{@{}p{28mm}@{}p{112mm}@{}}
+\nomen{aero}{airframe, power-off contribution}
+\nomen{cpl}{fan-on-airframe interaction contribution}
+\nomen{disk}{referred to the rotor disk}
+\nomen{frd}{contract body frame: $x$ forward, $y$ right, $z$ down}
+\nomen{mrp}{moment reference point}
+\nomen{prop}{propulsor contribution}
+\nomen{vlm}{solver frame: $x$ aft, $y$ right, $z$ up}
+\nomen{$\infty$}{free-stream condition}
+\end{longtable}
+
+\noindent\textit{Abbreviations}
+\begin{longtable}{@{}p{28mm}@{}p{112mm}@{}}
+\nomen{BP}{breakpoint set}
+\nomen{CST}{class/shape transformation airfoil parameterisation}
+\nomen{DAVE-ML}{Dynamic Aerospace Vehicle Exchange Markup Language (AIAA S-119)}
+\nomen{FRD}{forward--right--down body axes}
+\nomen{MRP}{moment reference point}
+\nomen{RMS}{root mean square}
+\nomen{VLM}{vortex-lattice method}
+\end{longtable}
+
+%======================================================================
+\section{Purpose and scope}
+
+The Aeolion toolkit computes the aerodynamics of a ducted-fan tail-sitter
+by a family of related potential-flow methods: a vortex-lattice solve
+with source-panelled bodies, a sectional viscous coupling, an anchored
+post-stall section model, and a rotating-frame lattice for the propulsor
+with a two-way rotor--vane coupling. These methods answer questions one
+attitude at a time. A flight simulator, a trim routine, or a control
+allocator instead needs the whole envelope available at once, evaluated
+in microseconds, in a form that no longer depends on the solver being
+installed.
+
+DAVE-ML---the Dynamic Aerospace Vehicle Exchange Markup Language, the
+encoding defined by the American National Standard ANSI/AIAA
+S-119-2011~\cite{s119} and its Annex B reference
+document~\cite{davemlref}---is the standard interchange for exactly this:
+gridded tables, their breakpoints, the algebraic buildup that assembles
+them, and, importantly, machine-checkable verification data carried in
+the same document. This report specifies the Aetherion model in that
+language.
+
+\subsection{Standards conformance}
+\label{sec:standards}
+
+The model is written against the following documents, and departures
+from any of them are stated where they occur.
+
+\begin{table}[htbp]
+\centering
+\caption{Governing standards.}
+\label{tab:standards}
+\begin{tabular}{@{}llp{62mm}@{}}
+\toprule
+\textbf{Document} & \textbf{Ref.} & \textbf{Governs} \\
+\midrule
+ANSI/AIAA S-119-2011 & \cite{s119} & the exchange standard itself;
+Annex A standard variable names, Annex B the DAVE-ML reference \\
+DAVE-ML Reference 2.0.1 & \cite{davemlref} & element syntax, the
+\texttt{DAVEfunc} DTD, \texttt{checkData} semantics \\
+ANSI/AIAA R-004-1992 & \cite{r004} & body-axis definitions, angle and
+force/moment sign conventions \\
+ISO 1151-1:1988 & \cite{iso1151} & flight-dynamics concepts, quantities
+and symbols; the basis of R-004 \\
+XML 1.1, MathML 2.0 & \cite{xml,mathml} & the two open standards
+DAVE-ML is built upon \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The body frame of Section~\ref{sec:frames}---$x$ forward, $y$ toward the
+starboard wing, $z$ down, with moments positive by the right-hand rule
+about those axes---is the standard aeronautical body axis system of
+ANSI/AIAA R-004-1992~\cite{r004}, itself an adaptation of ISO
+1151-1:1988~\cite{iso1151}. The reduced-rate nondimensionalisation of
+Eq.~\eqref{eq:reduced} and the moment coefficient reference lengths
+follow the same document. Adopting the standard frame is what makes the
+solver-side conversion of Eq.~\eqref{eq:flip} necessary rather than
+optional: the solver's internal axes are not the standard ones, so the
+boundary between them must be explicit.
+
+\paragraph{One known non-conformance.} S-119 Annex A prescribes standard
+variable names for common flight-dynamics quantities. The variable
+identifiers in this model (Table~\ref{tab:inputs}) were chosen for
+namespacing---the \varid{aero*}, \varid{prop*}, \varid{coupling*}
+grouping described below---and have not yet been reconciled against
+Annex A. Reconciliation is an open item
+(Section~\ref{sec:open}); until it is done, a consumer expecting
+Annex A names must map them, and the file's variable descriptions carry
+enough information for that mapping to be mechanical.
+
+The report covers the model's structure and conventions, the complete
+set of variables, equations and tables, the provenance of each table, and
+the declared limits. It does not reproduce the underlying theory, which
+is documented in \texttt{doc/theory.rst} and in the three journal
+manuscripts the tables draw on~\cite{partone,parttwo,scitech}.
+
+\subsection{What is deliberately absent}
+
+A tabulated model is a claim about what the generating method knows.
+Three axes a reader might expect are absent by decision, and their
+absence is a statement of honesty rather than an omission of work:
+
+\begin{itemize}
+\item \textbf{No Mach axis.} Every solver in the toolkit is
+incompressible. Mach number is accepted by the section-model interfaces
+and explicitly ignored; there is no Prandtl--Glauert correction anywhere
+in the chain. A Mach breakpoint would therefore be a fabricated axis: the
+generator would produce identical numbers at every breakpoint, and a
+consumer would silently trust the resulting flat interpolation as
+physics. Validity $M < 0.3$ is declared in the file header instead.
+\item \textbf{No Reynolds axis.} All airframe sweeps were run at a single
+flight condition ($V_\infty = 25$~m/s, $\mathrm{Re}_n \approx
+3\times10^5$). The separation behaviour that shapes the post-stall tables
+was computed at that condition and at no other. The reference condition
+is declared; an axis is not invented.
+\item \textbf{No disk-incidence axis on the propulsor.} See
+Section~\ref{sec:axialonly}. The rotor--vane machinery is axisymmetric
+end to end, so non-axial inflow is not representable without new
+modelling.
+\end{itemize}
+
+%======================================================================
+\section{Model architecture}
+
+\subsection{One file, not two}
+
+The conventional split places airframe aerodynamics in one DAVE-ML file
+and propulsion in another. This model does not, for a specific reason:
+the power-on interaction increments $\Delta C(\alpha, T_c)$ are indexed
+by an airframe breakpoint ($\alpha$) and a propulsion-derived state
+($T_c$), and DAVE-ML has no mechanism by which one file may reference
+another's variables or breakpoint sets. Split across two files, the
+interaction tables' input contract would be enforced only by naming
+discipline between two documents that version independently.
+
+A single file additionally permits the total-wrench buildup of
+Section~\ref{sec:buildup}---the dimensionalisation of each coefficient
+group by its own reference quantity and the summation of the three
+contributions---to live inside the exchanged model as MathML
+\texttt{calculation} elements. This moves the most error-prone step in
+any consumer integration from the consumer's code into territory that the
+file's own verification data can pin.
+
+The cost of one file is coarser regeneration granularity, and it is
+avoided by construction: each sweep driver exports its own JSON, and a
+separate assembler builds the XML from the cached JSONs
+(Section~\ref{sec:pipeline}). Regenerating the vane map does not rerun
+the post-stall map. Variable identifiers are namespaced
+\varid{aero*}, \varid{prop*}, and \varid{coupling*}, so that a split into
+separate files---should a consumer ever require it---is a mechanical
+transformation rather than a redesign.
+
+\subsection{Structure at a glance}
+
+The file carries, in order: a header declaring provenance, reference
+condition, and validity envelope; the input variable definitions
+(Table~\ref{tab:inputs}); the constant definitions
+(Table~\ref{tab:constants}); the derived variables as MathML calculations
+(Section~\ref{sec:derived}); the breakpoint sets
+(Table~\ref{tab:breakpoints}); the 36 gridded table definitions grouped
+by namespace (Section~\ref{sec:inventory}); the buildup
+(Section~\ref{sec:buildup}); and the \texttt{checkData} static shots
+(Section~\ref{sec:verification}).
+
+%======================================================================
+\section{Reference frames, signs, and the moment reference}
+\label{sec:frames}
+
+This section is normative. Every quantity in the file obeys it, and the
+generator implements it at exactly two code sites.
+
+\subsection{The two frames}
+
+The geometry contract states its own frame once and requires the consumer
+to convert explicitly at ingest. That frame,
+\texttt{aetherion\_body\_frd}, is $x$ forward, $y$ right, $z$ down---the
+standard flight-dynamics body frame, and the frame of every quantity in
+the DAVE-ML file. The solver works internally in $x$ aft, $y$ right, $z$
+up. The two are related by a rotation of $180\dg$ about $y$:
+\begin{equation}
+x_{\mathrm{frd}} = -x_{\mathrm{vlm}}, \qquad
+y_{\mathrm{frd}} = \phantom{-}y_{\mathrm{vlm}}, \qquad
+z_{\mathrm{frd}} = -z_{\mathrm{vlm}}.
+\label{eq:flip}
+\end{equation}
+
+Equation~\eqref{eq:flip} is a \emph{proper} rotation. Two consequences
+follow, and both matter. First, handedness is preserved, so a rotation
+axis (a pseudovector) transforms exactly as an ordinary vector does, and
+the right-hand rule about a converted axis still means what it meant
+before conversion. Second, forces and moments transform identically under
+it, giving Table~\ref{tab:signs}.
+
+\begin{table}[htbp]
+\centering
+\caption{Behaviour of each wrench component under the frame conversion of
+Eq.~\eqref{eq:flip}.}
+\label{tab:signs}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Component & Transformation & Physical quantity \\
+\midrule
+$C_X$, $C_Z$ & sign flips & axial and normal force \\
+$C_Y$ & invariant & side force \\
+$C_l$, $C_n$ & sign flips & rolling and yawing moment \\
+$C_m$ & invariant & pitching moment \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The generator realises the conversion as
+\begin{equation}
+F_x = -D_i, \quad F_y = Y, \quad F_z = -L, \qquad
+M_x = -M_x^{\mathrm{vlm}}, \quad M_y = M_y^{\mathrm{vlm}}, \quad
+M_z = -M_z^{\mathrm{vlm}},
+\label{eq:export}
+\end{equation}
+where $D_i$, $Y$, $L$ are the solver's streamwise, lateral and normal
+force components.
+
+\subsection{A recorded failure, and the check that now catches it}
+
+The conversion in Eq.~\eqref{eq:flip} applies to the moment reference
+\emph{point} as much as to the wrench. Omitting it there does not produce
+an obviously wrong answer; it places the reference point an equal
+distance on the wrong side of the origin, introducing a spurious moment
+arm of twice the offset. This occurred once in this codebase: a sweep
+driver passed the contract's moment reference point into the solver
+without the flip, producing a moment-arm error of approximately
+$0.48$~m---about one body length---and inflating $C_{m\alpha}$ by an
+order of magnitude. The error was invisible to every existing test,
+because no test compared moments across two reference points.
+
+The model therefore adopts two structural defences. First, the generator
+performs the conversion at exactly two sites---reference-point ingest and
+wrench export, Eq.~\eqref{eq:export}---and nowhere else, so that there is
+one place to audit rather than a scattering of sign flips. Second, the
+file carries a \emph{moment-transfer static shot}: the same flight
+condition exported about the contract's reference point and about a point
+displaced $+0.10$~m in $x_{\mathrm{frd}}$. The difference in $C_m$ must
+equal the hand-derivable transfer arm,
+\begin{equation}
+\Delta C_m = \frac{\Delta x \, F_z - \Delta z \, F_x}{\bar q S \bar c},
+\label{eq:transfer}
+\end{equation}
+evaluated at $\Delta x = 0.10$~m, $\Delta z = 0$. A wrong flip fails this
+shot by $2 \times 0.2423$~m of arm, roughly two reference chords, which
+cannot be mistaken for numerical noise.
+
+\subsection{Moment reference point}
+
+All moments in the file are taken about the contract's stated moment
+reference point,
+\begin{equation}
+(x, y, z)_{\mathrm{mrp}} = (-0.2423,\ 0,\ 0)~\mathrm{m}, \qquad
+\text{contract frame (FRD)},
+\end{equation}
+declared twice in the document: as prose in the file header, and as three
+constant variable definitions \varid{XmrpM}, \varid{YmrpM},
+\varid{ZmrpM}. The redundancy is deliberate---a consumer transferring the
+model to its own centre of gravity needs the point as data, not as a
+comment, and the transfer is then Eq.~\eqref{eq:transfer} generalised to
+all three axes:
+\begin{align}
+M_x' &= M_x - \Delta y\,F_z + \Delta z\,F_y, \\
+M_y' &= M_y - \Delta z\,F_x + \Delta x\,F_z, \\
+M_z' &= M_z - \Delta x\,F_y + \Delta y\,F_x,
+\end{align}
+with $\Delta = \mathbf{r}_{\mathrm{new}} - \mathbf{r}_{\mathrm{mrp}}$.
+
+\subsection{Deflection sign convention}
+
+Positive deflection of any control surface is the right-hand rule about
+that surface's hinge-axis vector \emph{as stated in the contract's FRD
+frame}. This is the entire normative statement. English glosses
+(``positive is trailing edge down'') are excluded from the file's
+normative text, because such a description must be re-derived in each
+frame and a re-derivation that goes wrong inverts half the controls
+silently. The numeric meaning of each sign is instead pinned by a
+generated static shot, and each control's variable definition cites the
+shot that defines it.
+
+%======================================================================
+\section{Nondimensionalisation}
+\label{sec:nondim}
+
+Three normalisation groups appear in the model, and mixing them is the
+most likely consumer error---which is why the buildup of
+Section~\ref{sec:buildup} is carried inside the file.
+
+\paragraph{Airframe coefficients} use free-stream dynamic pressure and
+wing reference geometry:
+\begin{equation}
+C_X = \frac{F_x^{\mathrm{aero}}}{\bar q S}, \quad
+C_Y = \frac{F_y^{\mathrm{aero}}}{\bar q S}, \quad
+C_Z = \frac{F_z^{\mathrm{aero}}}{\bar q S}, \quad
+C_l = \frac{M_x^{\mathrm{aero}}}{\bar q S b}, \quad
+C_m = \frac{M_y^{\mathrm{aero}}}{\bar q S \bar c}, \quad
+C_n = \frac{M_z^{\mathrm{aero}}}{\bar q S b},
+\end{equation}
+with
+\begin{equation}
+\bar q = \tfrac{1}{2}\rho V_\infty^2 .
+\end{equation}
+
+\paragraph{Propulsor coefficients} use the propeller convention, which
+remains finite at zero airspeed and is therefore the only viable choice
+for a tail-sitter that must be modelled in hover:
+\begin{equation}
+C_T = \frac{T}{\rho n^2 D^4}, \qquad
+C_Q = \frac{Q}{\rho n^2 D^5},
+\label{eq:propnorm}
+\end{equation}
+with $n$ in revolutions per second. The declared validity excludes
+$n \to 0$, where this group degenerates; windmilling and
+low-rotor-speed descent are outside the model's envelope and are
+identified as future work.
+
+\subsection{Drag accounting}
+\label{sec:drag}
+
+Drag deserves its own statement, because the body-axis force tables are
+routinely misread as carrying induced drag alone, and because one of the
+three physical contributions is not computed anywhere in the toolkit.
+
+\begin{table}[htbp]
+\centering
+\caption{The three drag contributions, where each lives, and its status.}
+\label{tab:drag}
+\begin{tabular}{@{}llp{52mm}@{}}
+\toprule
+\textbf{Contribution} & \textbf{Carried by} & \textbf{Status} \\
+\midrule
+Induced & \varid{aeroCX}, \varid{aeroCZ} & computed (near-field
+Kutta--Joukowski; cross-checked against a Trefftz-plane integral) \\
+Wing section profile & the same tables & computed---the section model's
+$c_d$ is integrated per strip and folded into the same force vector \\
+Body and duct parasite & \varid{aeroCD0} & computed by a component
+buildup plus a crossflow branch, Eq.~\eqref{eq:cd0} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The first point is that the airframe force tables are \emph{not} induced-drag
+tables. The Level-2 coupled solve accumulates the circulatory
+(Kutta--Joukowski) force and the sectional profile force into one total
+per strip, so the exported body-axis coefficients already contain the
+wing's viscous drag as the section model computes it. The attached-flow
+study~\cite{partone} reports induced drag alone, both near-field and by a
+Trefftz-plane integral; the post-stall study~\cite{parttwo} reports
+induced plus profile. Neither reports a complete drag polar.
+
+The second point is the contribution the solves cannot give. A
+potential-flow method cannot produce the parasite drag of a closed body:
+source-panelled bodies carry zero net force in uniform flow to machine
+precision, which is d'Alembert's paradox behaving correctly rather than a
+defect. That contribution must come from a component buildup---skin
+friction with form and interference factors, in the manner of Raymer and
+Hoerner~\cite{raymer2018,hoerner1965fluiddynamicdrag}---driven by wetted
+areas assembled from the geometry contract.
+
+Two consequences shape the model, and both are easy to get wrong:
+
+\begin{enumerate}
+\item \textbf{A whole-airframe $C_{D_0}$ must never be added on top of
+these tables.} The wing's skin friction is already inside the section
+$c_d$. The parasite term admitted to this model is \emph{body and duct
+wetted area only}; adding a conventional airframe buildup would
+double-count the wing.
+\item \textbf{Parasite drag cannot be a constant here.} The tables span
+$\alpha$ to $90\dg$. A slender body broadside to the flow carries a
+crossflow drag of order unity on its projected area---comparable to the
+entire tabulated normal force---and that contribution varies strongly
+with attitude. A single constant $C_{D_0}$, the conventional choice for a
+cruise-envelope model, would underpredict axial force in precisely the
+deep-stall regime this model exists to cover.
+\end{enumerate}
+
+Parasite drag is therefore tabulated as \varid{aeroCD0}$(\alpha)$: a
+component buildup for the friction branch plus a slender-body crossflow
+term,
+\begin{equation}
+C_{D_0}(\alpha) = C_{D_0,\mathrm{friction}}
+ + \eta\,C_{d_c}\,\frac{S_{\mathrm{plan}}}{S}\,\lvert\sin^3\alpha\rvert ,
+\label{eq:cd0}
+\end{equation}
+following Allen and Perkins and Jorgensen~\cite{allenPerkins1951,
+jorgensen1977}, with $S_{\mathrm{plan}}$ the body's side-projected area,
+$C_{d_c} = 1.2$ the subcritical circular-cylinder crossflow drag
+coefficient, and $\eta = 0.65$ the finite-length proportionality factor
+at this body's fineness ratio of 5. The measured values are in
+Section~\ref{sec:parasiteresults}.
+
+In the assembled model the parasite term is resolved into body axes along
+the velocity direction and added to the force buildup of
+Section~\ref{sec:buildup}, so that the total drag
+\begin{equation}
+C_D = \underbrace{C_{D_i} + C_{d,\mathrm{wing}}}_{\text{inside }
+\varid{aeroCX},\, \varid{aeroCY},\, \varid{aeroCZ}} \;+\;
+\underbrace{\varid{aeroCD0}(\alpha)}_{\text{body{+}duct}}
+\end{equation}
+is recovered from the assembled body-axis components by the projection
+onto the free-stream direction of Eq.~\eqref{eq:uhat},
+\begin{equation}
+C_D = -\bigl(C_X \cos\alpha \cos\beta + C_Y \sin\beta
++ C_Z \sin\alpha\cos\beta\bigr),
+\label{eq:CDrecover}
+\end{equation}
+with no further term: once the buildup has run, every drag contribution
+is already inside the body-axis components, and adding \varid{aeroCD0}
+to Eq.~\eqref{eq:CDrecover} would count it twice.
+
+\paragraph{Rate derivatives} use the conventional reduced-rate
+nondimensionalisation,
+\begin{equation}
+\hat p = \frac{pb}{2V_\infty}, \qquad
+\hat q = \frac{q\bar c}{2V_\infty}, \qquad
+\hat r = \frac{rb}{2V_\infty},
+\label{eq:reduced}
+\end{equation}
+so that $C_{l_p} = \partial C_l / \partial \hat p$ and so forth. This
+convention is worth stating explicitly because its reciprocal was once
+implemented in this codebase: the reduced-rate fields multiplied by
+$b/2V_\infty$ where Eq.~\eqref{eq:reduced} requires division by that
+factor---an error of $(2V_\infty/b)^2 \approx 2000$ at these
+numbers, which reported $C_{l_p} = -2\times 10^{-4}$ for a wing whose
+textbook value is $-0.45$. With the convention corrected the solver
+returns $-0.452$, and that value is now pinned both by a unit test and by
+a static shot in this file.
+
+%======================================================================
+\section{Variables}
+\label{sec:variables}
+
+\subsection{Inputs}
+
+\begin{longtable}{@{}llp{74mm}@{}}
+\caption{Input variable definitions.}
+\label{tab:inputs} \\
+\toprule
+\textbf{varID} & \textbf{Units} & \textbf{Meaning} \\
+\midrule
+\endfirsthead
+\multicolumn{3}{@{}l}{\small\itshape Table~\ref{tab:inputs}, continued} \\
+\toprule
+\textbf{varID} & \textbf{Units} & \textbf{Meaning} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\varid{alphaDeg} & deg & angle of attack $\alpha$ \\
+\varid{betaDeg} & deg & sideslip angle $\beta$ \\
+\varid{trueAirspeedMps} & m/s & true airspeed $V_\infty$ \\
+\varid{airDensityKgpm3} & kg/m$^3$ & air density $\rho$ \\
+\varid{rollRateRadps} & rad/s & body roll rate $p$ \\
+\varid{pitchRateRadps} & rad/s & body pitch rate $q$ \\
+\varid{yawRateRadps} & rad/s & body yaw rate $r$ \\
+\varid{propSpeedRevps} & rev/s & rotor speed $n$ \\
+\varid{aileronDeg} & deg & antisymmetric aileron command $\delta_a$,
+right surface; the left surface deflects to $-\delta_a$ \\
+\varid{vanePitchDeg} & deg & vane pitch mode command $\delta_P$ \\
+\varid{vaneYawDeg} & deg & vane yaw mode command $\delta_Y$ \\
+\varid{vaneRollDeg} & deg & vane roll mode command $\delta_R$ \\
+\end{longtable}
+
+\subsection{Constants}
+
+Values are transcribed by the assembler from the geometry contract, never
+typed by hand.
+
+\begin{table}[htbp]
+\centering
+\caption{Constant variable definitions (contract 1.8.0 values).}
+\label{tab:constants}
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{varID} & \textbf{Value} & \textbf{Units} & \textbf{Meaning} \\
+\midrule
+\varid{WingAreaM2} & 0.1883 & m$^2$ & gross planform reference area $S$ \\
+\varid{WingSpanM} & 1.0629 & m & reference span $b$ \\
+\varid{WingChordM} & 0.1771 & m & reference chord $\bar c$ \\
+\varid{DiskDiameterM} & 0.2030 & m & rotor diameter $D$ \\
+\varid{XmrpM} & $-0.2423$ & m & moment reference point, FRD \\
+\varid{YmrpM} & 0 & m & \\
+\varid{ZmrpM} & 0 & m & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent
+Parasite drag is deliberately \emph{not} among the constants; it is a
+table, for the reason developed in Section~\ref{sec:drag}.
+
+The reference planform is rectangular and unswept ($b = 1.0629$~m,
+$\bar c = 0.1771$~m), giving aspect ratio $A\!R = 6.0$---a number that
+recurs in the post-stall anchors of Section~\ref{sec:aerotables}. The
+rotor is a three-bladed fan of diameter $0.2030$~m within a duct of bore
+diameter $0.2090$~m and chord $0.09135$~m, centred at
+$x_{\mathrm{frd}} = -0.46787$~m.
+
+\subsection{Derived variables}
+\label{sec:derived}
+
+These are MathML \texttt{calculation} elements inside the file, evaluated
+before any table lookup.
+
+\begin{align}
+\bar q &= \tfrac{1}{2}\,\rho\,V_\infty^2
+  &&\text{dynamic pressure} \label{eq:qbar}\\[1mm]
+J &= \frac{V_\infty}{n D}
+  &&\text{advance ratio} \label{eq:J}\\[1mm]
+\hat u &= \bigl(\cos\alpha\cos\beta,\ \sin\beta,\
+  \sin\alpha\cos\beta\bigr)
+  &&\text{free-stream unit vector, FRD} \label{eq:uhat}\\[1mm]
+\alpha_{\mathrm{disk}} &= \arccos\bigl(\cos\alpha\,\cos\beta\bigr)
+  &&\text{disk incidence (validity monitor)} \label{eq:alphadisk}\\[1mm]
+\phi_w &= \operatorname{atan2}\!\bigl(\sin\beta,\
+  \sin\alpha\cos\beta\bigr)
+  &&\text{crossflow azimuth (diagnostic)} \label{eq:phiw}\\[1mm]
+\sigma &= \arcsin\bigl(\sin\alpha\,\cos\beta\bigr)
+  &&\text{total inclination} \label{eq:sigma}\\[1mm]
+\hat p &= \frac{p\,b}{2V_\infty}, \quad
+\hat q = \frac{q\,\bar c}{2V_\infty}, \quad
+\hat r = \frac{r\,b}{2V_\infty}
+  &&\text{reduced rates} \label{eq:rates}\\[1mm]
+T_c &= \frac{T}{\bar q\,S}
+  &&\text{interaction index} \label{eq:Tc}
+\end{align}
+
+Three of these warrant comment.
+
+\paragraph{Equations~\eqref{eq:alphadisk} and \eqref{eq:phiw} are
+monitors, not table indices.} With the rotor axis along body $+x$, the
+angle between the free stream and the axis follows from the first
+component of Eq.~\eqref{eq:uhat}, and $\phi_w$ is the azimuth of the
+crossflow about that axis, zero in the pitch plane. Neither indexes a
+table, for the reason given in Section~\ref{sec:axialonly}: the
+propulsor model is axial-inflow only. They are computed and exported
+precisely so that a consumer can \emph{detect} when it has left the
+model's validity envelope, which is a more useful service than an axis
+the solver cannot honestly fill.
+
+\paragraph{Equation~\eqref{eq:sigma}} is the collapse variable of the
+post-stall study: beyond separation the loading depends on attitude
+almost entirely through $\sigma$, with cross-$\beta$ spread within 13\%
+from $\alpha \approx 6\dg$ through $75\dg$. It is exported as a
+diagnostic and is the natural coordinate in which to inspect the
+post-stall tables for consistency.
+
+\paragraph{Equation~\eqref{eq:Tc} closes no algebraic loop.} The
+propulsor wrench does not depend on $T_c$, so thrust is available from
+the \varid{prop*} tables before the \varid{coupling*} tables are
+evaluated. The evaluation order is fixed: derived scalars, propulsor
+tables, $T_c$, airframe tables, interaction tables, buildup.
+
+%======================================================================
+\section{The vane command space}
+\label{sec:vanes}
+
+\subsection{Why not four independent angles}
+
+The duct-exit cruciform has four all-moving vanes, and the contract
+states each one's hinge axis independently. Tabulating four independent
+angles would require $7^4 = 2401$ combinations before the advance-ratio
+axis is considered---infeasible, and structurally wrong, because a flight
+controller does not command vanes individually. It commands moments.
+
+\subsection{Mode shapes from the geometry}
+
+All four hinge axes in the contract point radially \emph{outward}:
+$[0,0,1]$ (bottom, since $z$ is down), $[0,-1,0]$ (left), $[0,0,-1]$
+(top), and $[0,1,0]$ (right). Applying an equal right-hand-rule rotation
+about four outward radial axes tilts every plate with the same handedness
+as seen from outside the duct, so all four tangential forces circulate
+the same way about the $x$ axis: the net force cancels by symmetry and a
+pure rolling couple survives. Differential deflection of one opposed pair
+instead redirects the jet transversely, producing a net force and the
+associated moment. Hence the mixing
+\begin{equation}
+\begin{pmatrix}
+\delta_{\mathrm{b}} \\ \delta_{\mathrm{l}} \\
+\delta_{\mathrm{t}} \\ \delta_{\mathrm{r}}
+\end{pmatrix}
+=
+\begin{pmatrix}
+\phantom{-}0 & \phantom{-}1 & 1 \\
+-1 & \phantom{-}0 & 1 \\
+\phantom{-}0 & -1 & 1 \\
+\phantom{-}1 & \phantom{-}0 & 1
+\end{pmatrix}
+\begin{pmatrix}
+\delta_P \\ \delta_Y \\ \delta_R
+\end{pmatrix},
+\label{eq:mixing}
+\end{equation}
+in which the third column is the common mode (roll), the first is the
+$y$-pair differential (pitch, redirecting the jet in $z$), and the second
+is the $z$-pair differential (yaw, redirecting it in $y$). The
+\emph{numeric} signs in Eq.~\eqref{eq:mixing}---which member of each pair
+receives the positive angle---are a convention, and the file pins them by
+static shot rather than by argument, for the reason given in
+Section~\ref{sec:frames}.
+
+\subsection{Three properties the tables must respect}
+
+\paragraph{Each mode carries a full wrench.} Rotor swirl means the two
+vanes of a differential pair meet the jet at different local incidence,
+so a pitch command produces measurable yaw and roll components. These
+cross-terms are recorded rather than assumed zero---see the generated
+Table~\ref{tab:propmodes}, where they are visible. Each mode table also
+carries $\Delta C_Q$, the back-pressure on the rotor, because the
+rotor--vane coupling is two-way: vane blockage and upwash enter the
+rotor's boundary condition, and the rotor's loading shifts measurably
+when the vanes deflect.
+
+\paragraph{Deflection is not antisymmetric in $\delta$.} The vane sits in
+a jet whose dynamic pressure and swirl are set by the rotor, not by the
+free stream, so the loads at $+\delta$ and $-\delta$ are not mirror
+images. The tables therefore carry both signs explicitly; no mirroring is
+applied.
+
+\paragraph{Superposition was measured, and it partly fails.} The obvious
+buildup---tabulate three modes, add them---was tested rather than
+assumed, and the test changed the model. The result is
+Section~\ref{sec:superposition}: pitch and yaw superpose to better than
+$0.1\%$, but any pair involving roll is wrong by $6$ to $33\%$. The
+mechanism is simple once seen, and it is the reason the test was worth
+running.
+
+\subsection{Travel limits}
+
+The contract states mechanical stops of $\pm 20\dg$ and a soft limit of
+$\pm 15\dg$. The tables are generated over $\pm 15\dg$, and an allocator
+consuming this model should saturate the \emph{sum} of the three mode
+commands at each individual vane---i.e. each row of
+Eq.~\eqref{eq:mixing}---against the soft limit. That limit exists
+precisely because a vane can be driven to its mechanical stop but should
+not be in normal operation.
+
+%======================================================================
+\section{Breakpoint sets}
+
+\begin{table}[htbp]
+\centering
+\caption{Breakpoint sets. Angles in degrees.}
+\label{tab:breakpoints}
+\begin{tabular}{@{}llp{78mm}@{}}
+\toprule
+\textbf{bpID} & \textbf{Count} & \textbf{Values} \\
+\midrule
+\varid{alphaBp} & 25 & $-4$, $-2$, 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20,
+22, 24, 26, 30, 35, 40, 45, 50, 60, 70, 80, 90 \\
+\varid{betaBp} & 13 & $0, \pm5, \pm10, \pm15, \pm20, \pm25, \pm30$
+(generated at $\beta \geq 0$, mirrored) \\
+\varid{aileronBp} & 7 & $-20$, $-10$, $-5$, 0, 5, 10, 20 \\
+\varid{jBp} & 11 & 0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0 \\
+\varid{vaneBp} & 7 & $-15$, $-10$, $-5$, 0, 5, 10, 15 \\
+\varid{tcBp} & 6 & 0, 0.5, 1, 2, 4, 8 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The $\alpha$ grid is deliberately non-uniform: $2\dg$ spacing through the
+stall break, where the anchored section model produces $C_{L\max}$ at
+$\alpha = 18\dg$ and the loads change rapidly, coarsening to $5$--$10\dg$
+in the plate regime where the loading varies slowly with attitude. The
+$\beta$ grid exploits the unpowered airframe's mirror symmetry,
+\begin{equation}
+C_Y, C_l, C_n \ \text{odd in } \beta; \qquad
+C_X, C_Z, C_m \ \text{even in } \beta,
+\label{eq:mirror}
+\end{equation}
+a property confirmed numerically in the source sweeps rather than merely
+assumed. The $T_c$ grid is logarithmically spaced because the induced
+velocity ratio that drives the interaction varies as $\sqrt{T_c}$ in
+momentum theory, so equal ratios of $T_c$ correspond to roughly equal
+increments of effect.
+
+%======================================================================
+\section{Table inventory and provenance}
+\label{sec:inventory}
+
+Every table is listed. Each group states which solver path generated it,
+so that any number in the model can be traced to a run.
+
+\subsection{\varid{aero*}: airframe, power-off}
+\label{sec:aerotables}
+
+Source: the Level-2 coupled solve---vortex lattice with source-panelled
+body and duct, sectional viscous feedback, and the anchored post-stall
+section model (Kirchhoff attenuation driven by a computed separation
+point, Viterna--Corrigan deep stall~\cite{viterna} with
+aspect-ratio-aware $C_{d\max}$, and Rayleigh free-streamline centre of
+pressure).
+
+\begin{longtable}{@{}lllp{50mm}@{}}
+\caption{Airframe tables (21).}
+\label{tab:aerotables} \\
+\toprule
+\textbf{varID} & \textbf{Axes} & \textbf{Quantity} & \textbf{Notes} \\
+\midrule
+\endfirsthead
+\multicolumn{4}{@{}l}{\small\itshape Table~\ref{tab:aerotables},
+continued} \\
+\toprule
+\textbf{varID} & \textbf{Axes} & \textbf{Quantity} & \textbf{Notes} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\varid{aeroCX} & $\alpha\times\beta$ & $C_X$ & baseline, controls
+neutral, power-off \\
+\varid{aeroCY} & $\alpha\times\beta$ & $C_Y$ & \\
+\varid{aeroCZ} & $\alpha\times\beta$ & $C_Z$ & \\
+\varid{aeroCl} & $\alpha\times\beta$ & $C_l$ & \\
+\varid{aeroCm} & $\alpha\times\beta$ & $C_m$ & \\
+\varid{aeroCn} & $\alpha\times\beta$ & $C_n$ & \\
+\addlinespace
+\varid{aeroCZq} & $\alpha$ & $\partial C_Z/\partial \hat q$ & from
+\texttt{CL\_q\_nd}, sign per Table~\ref{tab:signs} \\
+\varid{aeroCmq} & $\alpha$ & $\partial C_m/\partial \hat q$ & from
+\texttt{Cm\_q\_nd} \\
+\varid{aeroClp} & $\alpha$ & $\partial C_l/\partial \hat p$ & from
+\texttt{Croll\_p\_nd} \\
+\varid{aeroCnp} & $\alpha$ & $\partial C_n/\partial \hat p$ & from
+\texttt{Cn\_p\_nd} \\
+\varid{aeroClr} & $\alpha$ & $\partial C_l/\partial \hat r$ & from
+\texttt{Croll\_r\_nd} \\
+\varid{aeroCnr} & $\alpha$ & $\partial C_n/\partial \hat r$ & from
+\texttt{Cn\_r\_nd} \\
+\varid{aeroCYp} & $\alpha$ & $\partial C_Y/\partial \hat p$ & converted
+by the assembler from the per-rad/s field \\
+\varid{aeroCYr} & $\alpha$ & $\partial C_Y/\partial \hat r$ & likewise \\
+\addlinespace
+\varid{aeroDCX} & $\alpha\times\delta_a$ & $\Delta C_X$ & aileron
+increment from baseline \\
+\varid{aeroDCY} & $\alpha\times\delta_a$ & $\Delta C_Y$ & retained though
+symmetry expects $\approx 0$ \\
+\varid{aeroDCZ} & $\alpha\times\delta_a$ & $\Delta C_Z$ & \\
+\varid{aeroDCl} & $\alpha\times\delta_a$ & $\Delta C_l$ & the primary
+roll authority \\
+\varid{aeroDCm} & $\alpha\times\delta_a$ & $\Delta C_m$ & \\
+\varid{aeroDCn} & $\alpha\times\delta_a$ & $\Delta C_n$ & adverse yaw \\
+\addlinespace
+\varid{aeroCD0} & $\alpha$ & $C_{D_0}$ & body and duct parasite
+\emph{only}, never the wing (Section~\ref{sec:drag}) \\
+\end{longtable}
+
+All rate-derivative tables are generated at $\beta = 0$ and carry the
+taper of Section~\ref{sec:ratetaper}. The eight comprise the full set the
+solver produces in reduced-rate form; $\partial C_X/\partial\hat q$ is
+omitted because the underlying induced-drag derivative reflects induced
+drag only and is not a trustworthy axial-force rate term.
+
+\paragraph{The overlap decision.} Two solver paths cover
+$\alpha \in [6\dg, 16\dg]$: the attached-flow matrix of Part
+I~\cite{partone} and the coupled post-stall solve of Part
+II~\cite{parttwo}. Tabulating one range from each would introduce a seam
+in the middle of the most flight-critical region. The model takes the
+Part II coupled solve as its single source across the whole $\alpha$
+range, because that solve reduces to the attached solution below
+separation by construction; the Part I matrix is retained as a
+cross-check in the verification data rather than as table content. There
+is therefore exactly one solver path behind every airframe number, and no
+blend to justify.
+
+\paragraph{Post-stall values are cycle means.} Beyond separation the
+coupled fixed point does not converge to a steady state; it enters a
+limit cycle, and the exported value is the cycle mean, flagged
+unconverged in the source JSON with its residual. Independent iteration
+paths agree on these means to four or more digits, so they are
+reproducible quantities---but a consumer flying a smooth interpolation
+through this region is modelling a regime that physically buffets. The
+tables therefore carry DAVE-ML uncertainty bounds derived from the cycle
+RMS, which is the mechanism the standard provides for exactly this
+situation.
+
+\paragraph{Anchors worth stating.} The anchored model produces
+$C_{L\max} = 1.76$ at $\alpha = 18\dg$, emergent from the computed
+separation tables rather than fitted; $C_N(90\dg) = 1.52$ against the
+Viterna anchor
+\begin{equation}
+C_{d\max} = 1.11 + 0.018\,A\!R = 1.218 \quad (A\!R = 6),
+\end{equation}
+and a centre of pressure that walks from the attached quarter chord to
+$x_{\mathrm{cp}} = 0.52\bar c$, landing on Rayleigh's free-streamline
+mid-chord---a metric the model was never fitted to. $C_{L\max}$ is an
+\emph{upper bound}: bubble bursting is not modelled, so the usable
+incidence limit may be lower than the tabulated stall.
+
+\paragraph{Rate derivatives past stall.}
+\label{sec:ratetaper}
+The derivatives are computed by finite difference on the attached solve
+and have no meaning once the flow separates. Both available
+treatments---holding the last attached value, or zeroing
+discontinuously---are wrong; the model applies a linear taper
+\begin{equation}
+C_{(\cdot)}(\alpha) \;\longrightarrow\; C_{(\cdot)}(\alpha)\cdot
+\max\!\left(0,\ \min\!\left(1,\ \frac{40\dg - \alpha}{20\dg}\right)\right),
+\end{equation}
+which is the conservative choice in the sense that it does not grant a
+simulator attached-flow damping in deep stall. This is a declared
+assumption, not a computed result.
+
+\subsection{\varid{prop*}: rotor, duct, and vanes}
+
+Source: the two-way rotor--vane coupled solve---a block Gauss--Seidel
+alternation of the rotating-frame rotor-plus-duct solve and the
+static-frame vane solve, with an angular-momentum budget on the swirl.
+This is the method validated in the SciTech manuscript~\cite{scitech}.
+Thrust is recovered as $-D_i$ and shaft torque as $-M_x$ of the
+rotating-frame solve, both then converted by Eq.~\eqref{eq:export}.
+
+\begin{longtable}{@{}lllp{46mm}@{}}
+\caption{Propulsor tables (9). The vane tables are \emph{per-vane}, not
+per-mode: one vane's response to its own deflection, serving all four
+positions by the cruciform's rotational symmetry. See
+Section~\ref{sec:superposition} for the measurement that forced this
+structure.}
+\label{tab:proptables} \\
+\toprule
+\textbf{varID} & \textbf{Axes} & \textbf{Quantity} & \textbf{Notes} \\
+\midrule
+\endfirsthead
+\multicolumn{4}{@{}l}{\small\itshape Table~\ref{tab:proptables},
+continued} \\
+\toprule
+\textbf{varID} & \textbf{Axes} & \textbf{Quantity} & \textbf{Notes} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\varid{propCT} & $J$ & $C_T$ & vanes neutral; includes duct and vane
+axial force \\
+\varid{propCQ} & $J$ & $C_Q$ & shaft torque \\
+\addlinespace
+\varid{propDCXvane} & $J\times\delta_i$ & $\Delta C_X$ & one vane's own
+increment, normalised per Eq.~\eqref{eq:propnorm} \\
+\varid{propDCYvane} & $J\times\delta_i$ & $\Delta C_Y$ & \\
+\varid{propDCZvane} & $J\times\delta_i$ & $\Delta C_Z$ & \\
+\varid{propDClvane} & $J\times\delta_i$ & $\Delta C_l$ & \\
+\varid{propDCmvane} & $J\times\delta_i$ & $\Delta C_m$ & \\
+\varid{propDCnvane} & $J\times\delta_i$ & $\Delta C_n$ & \\
+\varid{propDCQvane} & $J\times\delta_i$ & $\Delta C_Q$ & two-way
+back-pressure on the shaft \\
+\end{longtable}
+
+\subsection{Axial inflow only: a declared structural limit}
+\label{sec:axialonly}
+
+The propulsor tables carry no disk-incidence axis. This is not an
+economy; it is a statement about what the method can represent.
+
+The rotor--vane coupling is built on axisymmetry at every stage. The
+slipstream is reconstructed as radial bands of axial and swirl velocity;
+the vanes' influence on the rotor enters as an azimuthally averaged
+induced field; the self-consistent wake pitch is set by a radial inflow
+distribution $v_i(r)$. Each of these assumes the loading is independent
+of azimuth. Under non-axial inflow it is not: a blade advancing into the
+crossflow meets a different relative velocity than one retreating, and
+the resulting once-per-revolution loading produces the very in-plane
+force and hub moment that a disk-incidence table would be created to
+carry.
+
+Generating an $\alpha_{\mathrm{disk}}$ sweep from this solver would
+therefore produce numbers that vary---the free-stream projection changes
+with incidence---while omitting the physical mechanism the axis exists to
+capture. That is worse than an absent axis: it is a plausible artifact.
+The model declares axial inflow, exports $\alpha_{\mathrm{disk}}$ as a
+validity monitor (Eq.~\ref{eq:alphadisk}), and records non-axial
+propulsor modelling as identified future work.
+
+For a tail-sitter this limitation is real and bounded: the model is exact
+in hover and in axial climb, and it degrades through the transition
+corridor, where the free stream meets the disk at increasing incidence.
+The interaction increments of Section~\ref{sec:coupling} are subject to
+the same bound.
+
+\subsection{\varid{coupling*}: fan-on-airframe increments}
+\label{sec:coupling}
+
+\emph{This block is specified but not yet generable.}
+
+\begin{longtable}{@{}lllp{46mm}@{}}
+\caption{Interaction tables (6). Blocked pending an upstream-induction
+model.}
+\label{tab:cpltables} \\
+\toprule
+\textbf{varID} & \textbf{Axes} & \textbf{Quantity} & \textbf{Notes} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\varid{couplingDCX} & $\alpha\times T_c$ & $\Delta C_X$ & $\beta = 0$;
+valid $V_\infty \geq 10$~m/s \\
+\varid{couplingDCY} & $\alpha\times T_c$ & $\Delta C_Y$ & \\
+\varid{couplingDCZ} & $\alpha\times T_c$ & $\Delta C_Z$ & the separation
+delay appears here \\
+\varid{couplingDCl} & $\alpha\times T_c$ & $\Delta C_l$ & \\
+\varid{couplingDCm} & $\alpha\times T_c$ & $\Delta C_m$ & \\
+\varid{couplingDCn} & $\alpha\times T_c$ & $\Delta C_n$ & \\
+\end{longtable}
+
+The mechanism is specific to this configuration and worth stating
+precisely, because it is frequently misidentified. The ducted fan sits
+\emph{aft} of the wing: the duct leading edge is $0.21$ chords behind the
+wing trailing edge. The fan therefore does not blow the wing. What it
+does is induce a favourable pressure gradient \emph{upstream} of itself,
+over the wing, delaying separation---and it does so over precisely the
+span that sheds first (duct outer radius to semi-span ratio $0.21$,
+against a worst separation station at $|2y/b| \approx 0.15$--$0.23$).
+
+The existing slipstream model cannot compute this: it is a
+momentum-theory wake and returns identically zero upstream of the disk by
+construction. Applied here it would report exactly zero interaction---an
+artifact indistinguishable from a physical null result. A semi-infinite
+vortex cylinder, which has a closed-form upstream field, is the
+identified prerequisite, and the interaction tables are blocked on it.
+The file's structure reserves their place so that adding them later does
+not perturb anything else.
+
+%======================================================================
+\section{The buildup}
+\label{sec:buildup}
+
+The file assembles the total wrench in MathML, so that a consumer
+receives forces and moments rather than a set of coefficients it must
+combine correctly. Airframe coefficients accumulate baseline, control,
+interaction and rate contributions:
+\begin{align}
+C_X &= \varid{aeroCX}(\alpha,\beta) + \varid{aeroDCX}(\alpha,\delta_a)
+     + \varid{couplingDCX}(\alpha,T_c)
+     - \varid{aeroCD0}(\alpha)\,\cos\alpha\cos\beta \\
+C_Y &= \varid{aeroCY}(\alpha,\beta) + \varid{aeroDCY}(\alpha,\delta_a)
+     + \varid{couplingDCY}(\alpha,T_c)
+     + \varid{aeroCYp}\,\hat p + \varid{aeroCYr}\,\hat r
+     - \varid{aeroCD0}(\alpha)\,\sin\beta \\
+C_Z &= \varid{aeroCZ}(\alpha,\beta) + \varid{aeroDCZ}(\alpha,\delta_a)
+     + \varid{couplingDCZ}(\alpha,T_c) + \varid{aeroCZq}\,\hat q
+     - \varid{aeroCD0}(\alpha)\,\sin\alpha\cos\beta \\
+C_l &= \varid{aeroCl}(\alpha,\beta) + \varid{aeroDCl}(\alpha,\delta_a)
+     + \varid{couplingDCl}(\alpha,T_c)
+     + \varid{aeroClp}\,\hat p + \varid{aeroClr}\,\hat r \\
+C_m &= \varid{aeroCm}(\alpha,\beta) + \varid{aeroDCm}(\alpha,\delta_a)
+     + \varid{couplingDCm}(\alpha,T_c) + \varid{aeroCmq}\,\hat q \\
+C_n &= \varid{aeroCn}(\alpha,\beta) + \varid{aeroDCn}(\alpha,\delta_a)
+     + \varid{couplingDCn}(\alpha,T_c)
+     + \varid{aeroCnp}\,\hat p + \varid{aeroCnr}\,\hat r
+\end{align}
+
+Propulsor coefficients accumulate the baseline and the vane
+contribution:
+\begin{align}
+C_X^{\mathrm{prop}} &= \varid{propCT}(J) + \Delta C_X^{\mathrm{vane}},
+  \label{eq:propsumfirst}\\
+C_k^{\mathrm{prop}} &= \Delta C_k^{\mathrm{vane}},
+  \qquad k \in \{Y, Z, l, m, n\}, \\
+C_Q^{\mathrm{prop}} &= \varid{propCQ}(J) + \Delta C_Q^{\mathrm{vane}}.
+  \label{eq:propsumlast}
+\end{align}
+
+The vane contribution is \emph{not} a sum over the three command modes.
+That structure was tested and rejected on measurement
+(Section~\ref{sec:superposition}). It is instead a sum over the four
+physical vanes, each evaluated at its own total commanded angle from
+Eq.~\eqref{eq:mixing}:
+\begin{equation}
+\Delta C_k^{\mathrm{vane}} = \sum_{i \in \{\mathrm{b,l,t,r}\}}
+  \varid{propDC}k\varid{vane}(J,\ \delta_i), \qquad
+\delta_i = \bigl[\mathbf{M}\,(\delta_P, \delta_Y, \delta_R)^{\!\top}\bigr]_i ,
+\label{eq:pervane}
+\end{equation}
+with $\mathbf{M}$ the mixing matrix of Eq.~\eqref{eq:mixing}. A single
+per-vane table---one vane's response to its own deflection, the other
+three neutral---serves all four positions by the cruciform's rotational
+symmetry, with the wrench components permuted accordingly. This replaces
+21 mode tables with 7 per-vane tables and, unlike the mode sum, respects
+the measured physics.
+
+Dimensionalisation then uses each group's own reference quantities, and
+the two groups sum in body axes:
+\begin{align}
+F_x &= \bar q S\, C_X + \rho n^2 D^4\, C_X^{\mathrm{prop}} \\
+F_y &= \bar q S\, C_Y + \rho n^2 D^4\, C_Y^{\mathrm{prop}} \\
+F_z &= \bar q S\, C_Z + \rho n^2 D^4\, C_Z^{\mathrm{prop}} \\
+M_x &= \bar q S b\, C_l + \rho n^2 D^5\, C_l^{\mathrm{prop}} \\
+M_y &= \bar q S \bar c\, C_m + \rho n^2 D^5\, C_m^{\mathrm{prop}} \\
+M_z &= \bar q S b\, C_n + \rho n^2 D^5\, C_n^{\mathrm{prop}}
+\end{align}
+
+Both groups' moments are already referred to the same point---the
+generator exports the propulsor wrench about the contract's moment
+reference point, not about the disk centre---so no transfer term appears
+in the sum. Thrust and shaft torque are exported alongside as
+\begin{equation}
+T = \rho n^2 D^4\, C_X^{\mathrm{prop}}, \qquad
+Q = \rho n^2 D^5\, C_Q^{\mathrm{prop}},
+\end{equation}
+because $T$ feeds Eq.~\eqref{eq:Tc} and $Q$ is what a powertrain model
+needs.
+
+%======================================================================
+\section{First generated results}
+
+The propulsor generator has been run against the 1.8.0 geometry contract
+at the contract's reference rotor speed. The tables below are reproduced
+verbatim from the generated JSON by \texttt{make-tables.py}---they are
+included as evidence that the pipeline closes end to end, not as a
+validated performance prediction, which awaits the anchor data identified
+in~\cite{scitech}.
+
+\input{tables/propulsion-baseline}
+
+\noindent
+The behaviour is qualitatively correct for a ducted fan: thrust falls
+monotonically with advance ratio as the blades unload, and the
+cruciform's lateral force and moment components vanish at neutral
+deflection, as Eq.~\eqref{eq:mixing} with $\delta_P = \delta_Y =
+\delta_R = 0$ requires. The swirl-recovery vanes return the large
+majority of the shaft torque, leaving a small residual net rolling
+moment---which is the design intent of a swirl-recovery cruciform, and
+the reason the aircraft's rolling moment cannot be read off the rotor
+alone.
+
+\paragraph{The two highest advance ratios are outside the envelope, and
+show it.} Thrust crosses zero near $J \approx 0.85$ and both $C_T$ and
+$C_Q$ are negative at $J = 0.9$ and $1.0$: the rotor has entered the
+windmilling regime, which Section~\ref{sec:nondim} declares outside the
+model's validity. The residual rolling moment simultaneously jumps by
+more than an order of magnitude, from $-0.019$ to $+0.745$~N\,m, because
+the swirl the vanes were sized to recover has reversed while the vanes
+have not. These rows are retained in the generated map rather than
+deleted---they are the measured location of the envelope boundary, and
+knowing where the model stops behaving is worth more than a table that
+ends without explanation---but the assembler truncates the \varid{jBp}
+axis below the thrust reversal, and a consumer must not interpolate into
+that corner. Modelling windmilling properly requires the
+inflow-angle parameterisation noted in Section~\ref{sec:nondim}, not an
+extension of this grid.
+
+\input{tables/propulsion-modes}
+
+\subsection{Parasite drag, and the case against a constant}
+\label{sec:parasiteresults}
+
+\input{tables/parasite}
+
+\noindent
+Two results are worth drawing out. First, the body and the duct
+contribute almost equally to the friction branch ($0.00521$ against
+$0.00507$), which is not obvious in advance: the duct's wetted area is
+smaller, but its chord is short enough that its Reynolds number is a
+factor of five lower and its skin-friction coefficient correspondingly
+higher. A buildup that treated the duct as a minor appendage would lose
+half the friction drag.
+
+Second, and decisively for the model's structure, the crossflow branch
+reaches $0.185$ at $90\dg$---\textbf{17.5 times} the friction total. Had
+parasite drag been carried as the single constant that a cruise-envelope
+model would naturally use, the tabulation would have omitted $95\%$ of
+the parasite drag at the attitude this model exists to describe. Against
+the configuration's $C_N(90\dg) = 1.52$ the parasite branch is a $13\%$
+addition: not dominant, but far outside the tolerance any other number
+here is quoted to. This is the measurement that converted
+\varid{aeroCD0} from a constant into a table.
+
+\subsection{Vane-mode superposition: measured, and partly false}
+\label{sec:superposition}
+
+The natural buildup for a three-mode control system is to tabulate each
+mode and add the increments, and that is what this model originally
+specified. It was tested by solving each simultaneous pair of commands
+directly and comparing against the sum of the corresponding single-mode
+increments, all taken from the neutral baseline at matched advance ratio.
+Each mode was commanded at $7.5\dg$ so that the per-vane sum---which is
+what the mechanism actually sees---stays within the $\pm15\dg$ soft
+limit.
+
+\input{tables/superposition}
+
+\noindent
+The result splits cleanly in two. \textbf{Pitch and yaw superpose
+essentially exactly}, to within $0.04$--$0.09\%$ across every advance
+ratio and both signs. \textbf{Any pair involving roll does not},
+with errors from $6\%$ to $33\%$, worst in hover and at positive
+commands.
+
+The mechanism follows from the mixing matrix, Eq.~\eqref{eq:mixing}.
+Pitch acts on the $y$-pair and yaw on the $z$-pair: \emph{disjoint}
+sets of vanes. Commanding both leaves every vane at the same angle it
+would have held under one command alone, so the loads add because
+nothing about any individual vane has changed. Roll is the common mode
+and deflects \emph{all four}---including the two a pitch or yaw command
+is already deflecting. Under roll-plus-pitch the starboard vane sits at
+$\delta_R + \delta_P = 15\dg$, whereas the two single-mode cases each
+placed it at $7.5\dg$. A vane's load is not linear in its own
+deflection, so the increments cannot add.
+
+Two conclusions follow, and the second is the useful one:
+
+\begin{enumerate}
+\item \textbf{The mode-sum buildup is invalid} and was removed from
+Section~\ref{sec:buildup}. Retaining it would have given a control
+allocator a $33\%$ error in hover---precisely the flight condition in
+which a tail-sitter depends on vane authority most.
+\item \textbf{The failure is per-vane nonlinearity, not vane-to-vane
+interference.} This is what the pitch-plus-yaw result establishes: that
+case has all four vanes deflected simultaneously and still superposes to
+$0.05\%$, so the mutual influence between vanes is negligible at these
+deflections. What breaks superposition is only that a vane's own
+response curves with its own angle.
+\end{enumerate}
+
+The second conclusion prescribes the replacement structure. If the
+wrench is a sum of independent per-vane responses, each evaluated at that
+vane's \emph{total} commanded angle, then the correct tabulation is
+per-vane rather than per-mode---Eq.~\eqref{eq:pervane}. That structure is
+nonlinear in each vane's angle by construction, and it is also cheaper:
+seven tables in place of twenty-one, since one vane's response serves all
+four positions under the cruciform's rotational symmetry.
+
+\paragraph{The replacement was then verified, not assumed.} A separate
+sweep deflected each vane alone, and the per-vane summation model was
+used to predict every command in the superposition study---the three
+single modes and the three pairs---from those single-vane responses
+alone. Table~\ref{tab:pervane} compares the two candidate structures on
+the same measurements.
+
+\begin{table}[htbp]
+\centering
+\caption{Worst-case prediction error of the two candidate buildups,
+over the three single modes and three simultaneous pairs at
+$\pm 7.5\dg$ and $J \in \{0, 0.2, 0.4\}$.}
+\label{tab:pervane}
+\begin{tabular}{@{}lrr@{}}
+\toprule
+Buildup & worst error & tables required \\
+\midrule
+Sum of the three command modes & 32.7\% & 21 \\
+Sum of the four per-vane responses, Eq.~\eqref{eq:pervane} & 1.4\% & 7 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The per-vane model predicts every case to within $1.4\%$, and that worst
+case is roll in hover---the same corner where the mode sum is worst by
+$33\%$. Pitch and yaw are predicted to $0.13\%$. The model that is
+simultaneously more accurate by a factor of twenty and cheaper by a
+factor of three is the one the file adopts, and adopting it cost one
+additional sweep of the driver that already existed.
+
+\subsection{Three conditions that do not converge, and what was measured
+about them}
+\label{sec:nonconv}
+
+Of the 209 conditions in the generated map, 206 met the outer iteration's
+convergence tolerance of $0.01$. The three exceptions are all
+\emph{positive} roll-mode commands at $J = 0.6$, with residuals of
+$0.027$ to $0.066$. Because a reader is entitled to know whether such
+cells are salvageable, both standard cures were tried and both failed:
+
+\begin{table}[htbp]
+\centering
+\caption{The non-converging corner. Neither a larger iteration budget nor
+a damped feedback gain resolves it.}
+\label{tab:nonconv}
+\begin{tabular}{@{}rrrrrr@{}}
+\toprule
+$\delta_R$ & \multicolumn{2}{c}{residual} & \multicolumn{2}{c}{thrust
+[N]} & spread \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+[deg] & 24 passes & 48 passes & $\omega = 0.35$ & $\omega = 0.15$ & \\
+\midrule
+$-15$ & 0.0061 & 0.0061 & \multicolumn{3}{c}{\itshape converged in 3
+passes} \\
+$-10$ & 0.0094 & 0.0094 & \multicolumn{3}{c}{\itshape converged in 2
+passes} \\
+$-5$ & 0.0066 & 0.0066 & \multicolumn{3}{c}{\itshape converged in 2
+passes} \\
+\addlinespace
+$+5$ & 0.0656 & 0.0656 & 4.8766 & 4.8764 & 0.004\% \\
+$+10$ & 0.0459 & 0.0465 & 4.5183 & 4.6779 & 3.5\% \\
+$+15$ & 0.0268 & 0.0278 & 4.1554 & 4.1580 & 0.06\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Doubling the iteration budget reproduces the residuals to three digits,
+and two of them worsen marginally---the signature of a stationary limit
+cycle in the block Gauss--Seidel alternation, not of slow convergence.
+Damping the vane-feedback relaxation from $0.35$ to $0.15$, the
+conventional remedy for an oscillating Gauss--Seidel iteration, likewise
+fails. The failure is moreover \emph{sign-asymmetric}: negative roll
+commands converge in two or three passes at the same advance ratio. That
+asymmetry is physical rather than numerical---a common-mode deflection
+either adds to or opposes the residual swirl the vanes sit in, and only
+one sign drives the vane row toward the incidence at which its own solve
+is multivalued.
+
+The useful outcome is not a fix but a measurement. Two independent
+iteration paths bound the exported value: thrust agrees to $0.004\%$ and
+$0.06\%$ at $\delta_R = +5\dg$ and $+15\dg$, so those cells are
+reproducible despite missing tolerance, while $\delta_R = +10\dg$ differs
+by $3.5\%$ and is genuinely path-dependent. The assembler carries all
+three as DAVE-ML uncertainty bounds---the mechanism the standard provides
+for precisely this---rather than as ordinary entries, and a consumer
+therefore sees a stated confidence rather than a false precision.
+
+%======================================================================
+\section{Verification}
+\label{sec:verification}
+
+A generated file that nothing re-reads is the one artifact in a codebase
+that can rot silently. The model is therefore verified by its own
+contents.
+
+\subsection{Static shots}
+
+The standard provides for this directly: a \texttt{checkData} element
+carries one or more \texttt{staticShot} children, each an input vector
+(\texttt{checkInputs}), an optional dump of internal signals
+(\texttt{internalValues}), and an output vector with per-signal matching
+tolerances (\texttt{checkOutputs})~\cite{davemlref}. The model uses all
+three, and the \texttt{internalValues} dump is what makes a failing shot
+diagnosable rather than merely red---an intermediate coefficient that
+already disagrees localises the fault to a table, while agreement
+through to the final summation localises it to the buildup.
+
+Every shot is generated from a solve; none is hand-written.
+
+\begin{enumerate}
+\item \textbf{Moment transfer.} One condition about the contract
+reference point and about a point displaced $+0.10$~m in
+$x_{\mathrm{frd}}$; the $C_m$ difference must satisfy
+Eq.~\eqref{eq:transfer}. Detects the frame-conversion failure described
+in Section~\ref{sec:frames}.
+\item \textbf{Aileron sign.} $\delta_a = +5\dg$ at $\alpha = 4\dg$; the
+solved $C_l$ defines the sign, and \varid{aileronDeg}'s variable
+definition cites this shot.
+\item \textbf{Rate derivative.} $C_{l_p} = -0.452$, the value already
+pinned by the solver's unit tests against the textbook figure for an
+$A\!R = 6$ wing.
+\item \textbf{Vane modes.} Pure pitch, pure yaw and pure roll commands,
+each pinning the dominant components and recording the off-axis
+residuals at their solved values---these are physics, not zeros, and
+pinning them at zero would be a falsification.
+\item \textbf{Propulsor reference.} The SciTech reference case, whose
+thrust already serves as that manuscript's own consistency anchor.
+\item \textbf{Part I cross-checks.} Attached-range $C_L$ and $C_m$ at
+several attitudes from the independent Part I matrix, at a tolerance
+that accommodates the viscous-versus-inviscid difference. This is the
+recorded justification for the overlap decision of
+Section~\ref{sec:aerotables}.
+\item \textbf{Summed wrench.} One fully populated condition---attitude,
+rates, aileron, vane commands, powered---evaluated through the buildup of
+Section~\ref{sec:buildup} to dimensional forces and moments, pinning
+normalisation, summation and reference consistency end to end.
+\end{enumerate}
+
+\subsection{The evaluator}
+
+Verification runs through a small in-repo interpreter: it parses the
+file, performs multilinear interpolation on the gridded tables, evaluates
+the MathML buildup, and compares each static shot against its stated
+value. The alternative---depending on an external DAVE-ML
+implementation---was rejected on the same grounds that keep the rest of
+this codebase free of heavyweight dependencies, and because the MathML
+subset the file uses is under the author's control precisely so that a
+compact evaluator suffices. The verifier runs in continuous integration,
+so the file cannot drift from the generators that produced it.
+
+%======================================================================
+\section{Generation pipeline}
+\label{sec:pipeline}
+
+\begin{lstlisting}
+app/AeroMapExport.cpp        -> models/data/aero-map.json
+app/PropulsionMapExport.cpp  -> models/data/propulsion-map.json
+app/InductionMapExport.cpp   -> models/data/coupling-map.json   [blocked]
+models/build-daveml.py       -> models/AetherionFlightModel.dml
+models/verify-daveml.py      -> ctest suite
+models/report/make-tables.py -> models/report/tables/*.tex
+\end{lstlisting}
+
+\noindent
+Each driver exports JSON independently and the assembler consumes the
+cached JSONs, so regenerating one map does not rerun the others. Rows are
+flushed as they complete, so an interrupted long sweep retains every
+finished condition. The JSON files are committed alongside the XML: the
+model and the data that produced it version together. This report's data
+tables are generated from the same JSON by the same rule---no number in
+this document was typed by hand.
+
+%======================================================================
+\section{Declared limits}
+
+Collected here so that a consumer need not reconstruct them from the body
+of the report.
+
+\begin{enumerate}
+\item \textbf{Incompressible.} No Mach dependence exists in the
+generating methods. Validity $M < 0.3$. The rotor tip Mach number at the
+reference speed is $0.38$, so the blades themselves sit at the edge of
+this assumption.
+\item \textbf{Single Reynolds number.} All tables were generated at
+$V_\infty = 25$~m/s, $\mathrm{Re}_n \approx 3\times 10^5$.
+\item \textbf{Axial inflow on the propulsor}
+(Section~\ref{sec:axialonly}): exact in hover and axial climb, degrading
+through transition. No in-plane force or hub moment from disk incidence.
+\item \textbf{Powered operation only.} The $\rho n^2 D^4$ group of
+Eq.~\eqref{eq:propnorm} excludes $n \to 0$; windmilling and
+low-rotor-speed descent are outside the envelope.
+\item \textbf{No interaction increments yet}
+(Section~\ref{sec:coupling}), pending an upstream-induction model. Until
+they exist, the airframe tables are power-off and the model
+underpredicts the separation delay the fan provides in transition.
+\item \textbf{Parasite drag is a conceptual-design estimate}
+(Sections~\ref{sec:drag} and~\ref{sec:parasiteresults}), carrying the
+conventional $\pm10$--$20\%$ accuracy of a component buildup. It is
+moreover incomplete in one direction only: the duct's own separated drag
+at incidence and any body-wake/wing interference are not modelled, and
+both omissions push the same way, so \varid{aeroCD0} is a lower bound at
+high incidence.
+\item \textbf{Post-stall values are cycle means} with uncertainty bounds,
+not steady states.
+\item \textbf{$C_{L\max}$ is an upper bound}: bubble bursting is not
+modelled.
+\item \textbf{No hysteresis.} The tables are the ascending-$\alpha$
+branch. Static hysteresis is a known feature of this regime and a static
+gridded table cannot express it; representation is deferred to a
+dedicated study.
+\item \textbf{Rate derivatives are tapered, not computed, past
+$\alpha = 20\dg$} (Section~\ref{sec:ratetaper}).
+\item \textbf{Vane mode superposition} is spot-checked, not tabulated
+pairwise.
+\end{enumerate}
+
+%======================================================================
+\section{Open items}
+\label{sec:open}
+
+\begin{itemize}
+\item \textbf{Reconcile the variable identifiers against S-119 Annex A}
+(Section~\ref{sec:standards}), the standard variable names. Where a
+standard name exists it should be adopted; where the namespacing
+requirement genuinely conflicts, the departure should be recorded in the
+file header rather than left implicit.
+\item Validate the assembled file against the \texttt{DAVEfunc} DTD as a
+build step, so that structural conformance is checked by a tool rather
+than by reading.
+\item Generate the airframe map (\varid{aero*}) and assemble the file.
+\item Extend the parasite estimate with the duct's separated drag at
+incidence, the one contribution the slender-body form of
+Eq.~\eqref{eq:cd0} cannot supply.
+\item Build the upstream-induction model and unblock \varid{coupling*}.
+\item Inspect post-stall aileron effectiveness before shipping: the
+coupled solve should attenuate roll authority past separation, and a
+table that retained attached-flow authority at $\alpha = 40\dg$ would
+model a simulator recovering from departures it should not.
+\item Measure and record vane-mode superposition error at soft-limit
+corners.
+\item Determine the sensitivity of the propulsor tables to the vane
+azimuth assumption.
+\item Confirm the rotor rotation sense against the aircraft's actual
+installation; the generated map states the sense it used, and the
+contract states the axis but not the handedness of the reference speed
+about it.
+\item Acquire the validation anchors identified in~\cite{scitech}
+(isolated-propeller thrust and torque data; ducted-fan-with-vanes
+experiment or RANS comparison) before any table is used for
+certification-adjacent work.
+\end{itemize}
+
+%======================================================================
+\begin{thebibliography}{99}
+
+\bibitem{s119}
+ANSI/AIAA S-119-2011 (reaffirmed 2016),
+\emph{Flight Dynamics Model Exchange Standard},
+American Institute of Aeronautics and Astronautics, Reston, VA, approved
+22 March 2011. doi:10.2514/4.867965. Annex A, \emph{Standard Variable
+Names}; Annex B, \emph{Dynamic Aerospace Vehicle Exchange Markup
+Language (DAVE-ML) Reference}.
+
+\bibitem{davemlref}
+AIAA Modeling and Simulation Technical Committee, Simulation Standards
+Subcommittee,
+``Dynamic Aerospace Vehicle Exchange Markup Language (DAVE-ML)
+Reference,'' Version 2.0.1, 31 March 2011.
+\url{https://daveml.org/DTDs/prod/Ref/}
+
+\bibitem{jackson2002}
+Jackson, E. B., and Hildreth, B. L.,
+``Flight Dynamic Model Exchange using XML,''
+AIAA Modeling and Simulation Technologies Conference and Exhibit,
+Monterey, CA, AIAA Paper 2002-4482, August 2002.
+NASA NTRS 20030015249.
+
+\bibitem{jackson2009}
+Jackson, E. B., and Hildreth, B. L.,
+``Benefits to the Simulation Training Community of a New ANSI Standard
+for the Exchange of Aero Simulation Models,''
+NASA Langley Research Center, NTRS 20090041825, 2009.
+
+\bibitem{s119status}
+``Status Report: ANSI/AIAA S-119-2011 Flight Dynamic Model Exchange
+Standard,'' NASA Technical Reports Server, NTRS 20200004989, 2020.
+
+\bibitem{r004}
+ANSI/AIAA R-004-1992,
+\emph{Recommended Practice for Atmospheric and Space Flight Vehicle
+Coordinate Systems},
+American Institute of Aeronautics and Astronautics, Washington, DC,
+1992.
+
+\bibitem{iso1151}
+ISO 1151-1:1988,
+\emph{Flight Dynamics---Concepts, Quantities and Symbols---Part 1:
+Aircraft Motion Relative to the Air},
+International Organization for Standardization, Geneva, 1988.
+
+\bibitem{xml}
+Bray, T., et al. (eds.),
+\emph{Extensible Markup Language (XML) 1.1}, 2nd ed.,
+W3C Recommendation, 2006.
+
+\bibitem{mathml}
+Carlisle, D., Ion, P., Miner, R., and Poppelier, N. (eds.),
+\emph{Mathematical Markup Language (MathML) Version 2.0}, 2nd ed.,
+W3C Recommendation, 2003.
+
+\bibitem{partone}
+Tuncer, O., \"U\c{c}ler, \c{C}., and G\"une\c{s}, A.,
+``Aerodynamic Characterisation Across the Separation Boundary,
+Part I: Attachment Lines, the Separation March, and the Attached-Flow
+Envelope,'' manuscript, 2026.
+
+\bibitem{parttwo}
+Tuncer, O., \"U\c{c}ler, \c{C}., and G\"une\c{s}, A.,
+``Aerodynamic Characterisation Across the Separation Boundary,
+Part II: Anchored Post-Stall Sections and the Attitude Map to
+$90\dg$,'' manuscript, 2026.
+
+\bibitem{scitech}
+Tuncer, O., \"U\c{c}ler, \c{C}., and G\"une\c{s}, A.,
+``Ducted-Fan Thrust Vectoring with Downstream Control Vanes: A
+Rotating-Frame Lattice Method with Two-Way Rotor--Vane Coupling,''
+AIAA SciTech Forum, manuscript, 2026.
+
+\bibitem{raymer2018}
+Raymer, D. P.,
+\emph{Aircraft Design: A Conceptual Approach}, 6th ed.,
+AIAA Education Series, American Institute of Aeronautics and
+Astronautics, Reston, VA, 2018.
+
+\bibitem{hoerner1965fluiddynamicdrag}
+Hoerner, S. F.,
+\emph{Fluid-Dynamic Drag},
+published by the author, Bricktown, NJ, 1965.
+
+\bibitem{allenPerkins1951}
+Allen, H. J., and Perkins, E. W.,
+``A Study of Effects of Viscosity on Flow over Slender Inclined Bodies
+of Revolution,'' NACA Report 1048, 1951.
+
+\bibitem{jorgensen1977}
+Jorgensen, L. H.,
+``Prediction of Static Aerodynamic Characteristics for Slender Bodies
+Alone and with Lifting Surfaces to Very High Angles of Attack,''
+NASA TR R-474, 1977.
+
+\bibitem{viterna}
+Viterna, L. A., and Corrigan, R. D.,
+``Fixed Pitch Rotor Performance of Large Horizontal Axis Wind
+Turbines,'' NASA Lewis Research Center, Cleveland, OH, 1982.
+
+\end{thebibliography}
+
+\end{document}
