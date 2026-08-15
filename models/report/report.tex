@@ -232,15 +232,48 @@ solver-side conversion of Eq.~\eqref{eq:flip} necessary rather than
 optional: the solver's internal axes are not the standard ones, so the
 boundary between them must be explicit.
 
-\paragraph{One known non-conformance.} S-119 Annex A prescribes standard
-variable names for common flight-dynamics quantities. The variable
-identifiers in this model (Table~\ref{tab:inputs}) were chosen for
+\paragraph{Conformance of the variable names.} S-119 Annex A prescribes
+standard variable names for common flight-dynamics quantities, and this
+model's identifiers (Table~\ref{tab:inputs}) were chosen instead for
 namespacing---the \varid{aero*}, \varid{prop*}, \varid{coupling*}
-grouping described below---and have not yet been reconciled against
-Annex A. Reconciliation is an open item
-(Section~\ref{sec:open}); until it is done, a consumer expecting
-Annex A names must map them, and the file's variable descriptions carry
-enough information for that mapping to be mechanical.
+grouping described below. The two requirements turn out not to conflict,
+because the standard separates the two roles that a single identifier
+would otherwise have to serve. A \texttt{variableDef} carries both a
+\texttt{varID}, ``an internal identifier that is unique within the
+file'' and unconstrained in form, and a \texttt{name}, which ``should
+correspond to the standard AIAA parameter name''~\cite{davemlref}. The
+model therefore keeps its namespaced \texttt{varID}s for the structural
+reason above and carries the Annex A name alongside, so a consumer
+expecting standard names finds them without the file losing its
+split-ability.
+
+\paragraph{Three attributes the model must populate.} The same element
+provides declarations for exactly the ambiguities
+Section~\ref{sec:frames} is concerned with, and they are more useful than
+prose:
+
+\begin{itemize}
+\item \texttt{axisSystem} names the frame a signal is measured in
+(body, inertial, \ldots). Every force, moment and rate in this model is
+body-axis, and says so in the attribute rather than only in this report.
+\item \texttt{sign} declares the positive direction with a short token
+---\texttt{+UP}, \texttt{+RWD}, \texttt{TED} for trailing-edge-down.
+This refines the position taken in Section~\ref{sec:frames}. The
+objection there is to a \emph{prose gloss standing in place of} a
+verified convention, not to a machine-readable declaration: a
+\texttt{sign} attribute is checkable by tooling and is exactly where the
+convention belongs. The generated static shot remains the numerical
+proof; the attribute is the statement of intent, and a mismatch between
+them is itself a defect worth catching.
+\item \texttt{symbol} carries the conventional symbol, letting a
+consumer's documentation render $\alpha$ rather than
+\varid{alphaDeg}.
+\end{itemize}
+
+\noindent
+The \texttt{alias} attribute---a facility-specific name outside the AIAA
+convention---is available and is deliberately not used, the reference
+itself discouraging it for portability.
 
 The report covers the model's structure and conventions, the complete
 set of variables, equations and tables, the provenance of each table, and
@@ -588,34 +621,48 @@ a static shot in this file.
 
 \subsection{Inputs}
 
-\begin{longtable}{@{}llp{74mm}@{}}
-\caption{Input variable definitions.}
+\begin{longtable}{@{}llll@{}}
+\caption{Input variable definitions. The \texttt{varID} is namespaced for
+this file's structure; the \texttt{name} is the Annex A standard
+parameter name a consumer will look for. Angles are in degrees
+throughout, which the \texttt{units} attribute states explicitly.}
 \label{tab:inputs} \\
 \toprule
-\textbf{varID} & \textbf{Units} & \textbf{Meaning} \\
+\textbf{varID} & \textbf{name} (Annex A) & \textbf{Units} &
+\textbf{Symbol} \\
 \midrule
 \endfirsthead
-\multicolumn{3}{@{}l}{\small\itshape Table~\ref{tab:inputs}, continued} \\
+\multicolumn{4}{@{}l}{\small\itshape Table~\ref{tab:inputs}, continued} \\
 \toprule
-\textbf{varID} & \textbf{Units} & \textbf{Meaning} \\
+\textbf{varID} & \textbf{name} (Annex A) & \textbf{Units} &
+\textbf{Symbol} \\
 \midrule
 \endhead
 \bottomrule
 \endfoot
-\varid{alphaDeg} & deg & angle of attack $\alpha$ \\
-\varid{betaDeg} & deg & sideslip angle $\beta$ \\
-\varid{trueAirspeedMps} & m/s & true airspeed $V_\infty$ \\
-\varid{airDensityKgpm3} & kg/m$^3$ & air density $\rho$ \\
-\varid{rollRateRadps} & rad/s & body roll rate $p$ \\
-\varid{pitchRateRadps} & rad/s & body pitch rate $q$ \\
-\varid{yawRateRadps} & rad/s & body yaw rate $r$ \\
-\varid{propSpeedRevps} & rev/s & rotor speed $n$ \\
-\varid{aileronDeg} & deg & antisymmetric aileron command $\delta_a$,
-right surface; the left surface deflects to $-\delta_a$ \\
-\varid{vanePitchDeg} & deg & vane pitch mode command $\delta_P$ \\
-\varid{vaneYawDeg} & deg & vane yaw mode command $\delta_Y$ \\
-\varid{vaneRollDeg} & deg & vane roll mode command $\delta_R$ \\
+\varid{alphaDeg} & \varid{angleOfAttack} & deg & $\alpha$ \\
+\varid{betaDeg} & \varid{angleOfSideslip} & deg & $\beta$ \\
+\varid{trueAirspeedMps} & \varid{trueAirspeed} & m/s & $V_\infty$ \\
+\varid{airDensityKgpm3} & \varid{airDensity} & kg/m$^3$ & $\rho$ \\
+\varid{rollRateRadps} & \varid{bodyAngularRate\_Roll} & rad/s & $p$ \\
+\varid{pitchRateRadps} & \varid{bodyAngularRate\_Pitch} & rad/s & $q$ \\
+\varid{yawRateRadps} & \varid{bodyAngularRate\_Yaw} & rad/s & $r$ \\
+\varid{propSpeedRevps} & \varid{propellerSpeed} & rev/s & $n$ \\
+\varid{aileronDeg} & \varid{aileronDeflection} & deg & $\delta_a$ \\
+\varid{vanePitchDeg} & \varid{vaneDeflection\_Pitch} & deg & $\delta_P$ \\
+\varid{vaneYawDeg} & \varid{vaneDeflection\_Yaw} & deg & $\delta_Y$ \\
+\varid{vaneRollDeg} & \varid{vaneDeflection\_Roll} & deg & $\delta_R$ \\
 \end{longtable}
+
+\noindent
+Every entry additionally carries \texttt{axisSystem="body"} where a frame
+applies, and a \texttt{sign} token: \varid{aileronDeg} is the right
+surface's angle with the left slaved to its negative, and the vane
+commands resolve to per-vane angles through Eq.~\eqref{eq:mixing}. The
+four names carrying an underscore-suffixed component follow the Annex A
+pattern for a resolved vector quantity; the vane names have no Annex A
+counterpart, this control effector being specific to the configuration,
+and are formed to the same pattern.
 
 \subsection{Constants}
 
@@ -1574,11 +1621,10 @@ pairwise.
 \label{sec:open}
 
 \begin{itemize}
-\item \textbf{Reconcile the variable identifiers against S-119 Annex A}
-(Section~\ref{sec:standards}), the standard variable names. Where a
-standard name exists it should be adopted; where the namespacing
-requirement genuinely conflicts, the departure should be recorded in the
-file header rather than left implicit.
+\item Confirm the Annex A spellings in Table~\ref{tab:inputs} against
+the published standard text rather than against the reference
+documentation's examples, and settle the vane names, which have no
+Annex A counterpart.
 \item Validate the assembled file against the \texttt{DAVEfunc} DTD as a
 build step, so that structural conformance is checked by a tool rather
 than by reading.

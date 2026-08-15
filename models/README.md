@@ -66,9 +66,33 @@ Settled in design review; do not relitigate without new evidence.
 - **XML 1.1** and **MathML 2.0** — the two open standards DAVE-ML is
   built on.
 
-**Known non-conformance:** varIDs have not been reconciled against
-S-119 Annex A standard variable names (open item below). Validate the
-assembled file against the `DAVEfunc` DTD as a build step.
+**Variable naming — RESOLVED, no conflict.** The standard separates the
+two roles: `varID` is "an internal identifier that is unique within the
+file" and is *unconstrained in form*; `name` "should correspond to the
+standard AIAA parameter name". So the namespaced `aero*`/`prop*`/
+`coupling*` varIDs stay, and the Annex A name rides alongside:
+
+| varID | name (Annex A) |
+|---|---|
+| `alphaDeg` | `angleOfAttack` |
+| `betaDeg` | `angleOfSideslip` |
+| `trueAirspeedMps` | `trueAirspeed` |
+| `airDensityKgpm3` | `airDensity` |
+| `rollRateRadps` / `pitchRateRadps` / `yawRateRadps` | `bodyAngularRate_Roll` / `_Pitch` / `_Yaw` |
+| `propSpeedRevps` | `propellerSpeed` |
+| `aileronDeg` | `aileronDeflection` |
+| `vane{Pitch,Yaw,Roll}Deg` | no Annex A counterpart; formed to the same pattern |
+
+**Three attributes to populate** (previously unused): `axisSystem`
+("body" on every force/moment/rate), `sign` (positive-direction token —
+`+UP`, `+RWD`, `TED`), and `symbol`. The `sign` attribute REFINES the
+"no prose glosses" rule above: the objection is to prose standing *in
+place of* a verified convention, not to a machine-readable declaration.
+Populate `sign` AND pin it with a generated staticShot; a mismatch
+between the two is itself a defect worth catching. `alias` is available
+and deliberately unused (the reference discourages it for portability).
+
+Validate the assembled file against the `DAVEfunc` DTD as a build step.
 
 ## Conventions (normative)
 
@@ -347,8 +371,11 @@ coarsening here if taken).
 
 ## Open items
 
-- [ ] **Reconcile varIDs against S-119 Annex A** standard variable
-      names; record any deliberate departure in the fileHeader.
+- [x] ~~Reconcile varIDs against S-119 Annex A~~ — RESOLVED 2026-08-15:
+      no conflict, `varID` is unconstrained and `name` carries the
+      standard name (mapping table above). Remaining: confirm the
+      spellings against the published standard text rather than the
+      reference docs' examples, and settle the vane names.
 - [ ] **Validate against the `DAVEfunc` DTD** in CI.
 - [x] ~~`aeroCD0` parasite-drag driver~~ — DONE 2026-08-15,
       `app/ParasiteDragExport.cpp`. Body+duct wetted areas from the
