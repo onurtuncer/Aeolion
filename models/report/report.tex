@@ -887,14 +887,16 @@ by the assembler from the per-rad/s field \\
 \varid{aeroCYr} & $\alpha$ & $\partial C_Y/\partial \hat r$ & likewise \\
 \addlinespace
 \varid{aeroDCX} & $\alpha\times\delta_a$ & $\Delta C_X$ & aileron
-increment from baseline \\
-\varid{aeroDCY} & $\alpha\times\delta_a$ & $\Delta C_Y$ & retained though
-symmetry expects $\approx 0$ \\
-\varid{aeroDCZ} & $\alpha\times\delta_a$ & $\Delta C_Z$ & \\
-\varid{aeroDCl} & $\alpha\times\delta_a$ & $\Delta C_l$ & the primary
-roll authority \\
-\varid{aeroDCm} & $\alpha\times\delta_a$ & $\Delta C_m$ & \\
-\varid{aeroDCn} & $\alpha\times\delta_a$ & $\Delta C_n$ & adverse yaw \\
+increment from baseline. \textbf{BLOCKED}, \\
+\varid{aeroDCY} & $\alpha\times\delta_a$ & $\Delta C_Y$ & Section
+\ref{sec:aileron}: the generating \\
+\varid{aeroDCZ} & $\alpha\times\delta_a$ & $\Delta C_Z$ & path cannot
+represent a hinge, \\
+\varid{aeroDCl} & $\alpha\times\delta_a$ & $\Delta C_l$ & so these would
+ship identically \\
+\varid{aeroDCm} & $\alpha\times\delta_a$ & $\Delta C_m$ & zero ---
+an aircraft with no \\
+\varid{aeroDCn} & $\alpha\times\delta_a$ & $\Delta C_n$ & roll control \\
 \addlinespace
 \varid{aeroCD0} & $\alpha$ & $C_{D_0}$ & body and duct parasite
 \emph{only}, never the wing (Section~\ref{sec:drag}) \\
@@ -1194,6 +1196,80 @@ extension of this grid.
 
 \input{tables/propulsion-modes}
 
+\subsection{The aileron tables cannot be generated, and why that is worth
+a section}
+\label{sec:aileron}
+
+The model's open items included a routine-sounding check: confirm that
+aileron roll authority decays past separation before shipping
+\varid{aeroDCl}, since a table retaining attached-flow roll power at
+$40\dg$ would model a simulator recovering from departures it should
+not. The check was run, and it returned something worse than a bad decay
+curve.
+
+The same $10\dg$ antisymmetric deflection was solved three ways at every
+attitude: on the contract's native eight-row chordwise lattice, on a
+single-row lattice, and through the Level-2 coupled path that actually
+generates the model's force tables.
+
+\begin{table}[htbp]
+\centering
+\caption{Aileron rolling-moment increment for a $10\dg$ antisymmetric
+command. Both single-row columns are exactly zero at every attitude.}
+\label{tab:aileron}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+$\alpha$ [deg] & 8 rows, inviscid & 1 row, inviscid & 1 row, coupled \\
+\midrule
+0 & 0.00925 & 0 & 0 \\
+6 & 0.00936 & 0 & 0 \\
+12 & 0.00926 & 0 & 0 \\
+18 & 0.00896 & 0 & 0 \\
+30 & 0.00781 & 0 & 0 \\
+60 & 0.00318 & 0 & 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Two reasonable contracts that cannot both be satisfied.} The
+lattice builder splits a strip at the hinge line only when it has at
+least two chordwise rows to split across; with one row it returns the
+undivided strip and the deflection is never applied. The viscous
+coupling, in turn, requires exactly one Weissinger row per strip, since
+its whole premise is one section state per strip. Each rule is
+defensible on its own. Together they make a hinged control surface
+unrepresentable in the only solve that produces the model's tables, and
+the failure is silent: the solve converges, reports sensible forces, and
+returns an aileron increment of exactly zero.
+
+Had the check not been run, the model would have shipped six
+control-derivative tables of zeros---an aircraft with no roll control
+whatsoever---and neither the generator, the assembler, nor the
+DTD validation would have objected. Only a \texttt{checkData} shot
+comparing a deflected condition against a nonzero expectation would have
+caught it, which is an argument for generating verification data from a
+\emph{different} path than the tables themselves.
+
+\paragraph{The inviscid column is not a substitute.} It is a real control
+effect, but its decay---$0.00936$ at $\alpha = 6\dg$ falling to
+$0.00318$ at $60\dg$---is purely geometric, arising from the free-stream
+projection and induced effects in a lattice that contains no stall
+anywhere. It passes through the configuration's own stall near $18\dg$
+without a break of any kind. A table built from it would hand a
+simulator most of its attached-flow roll authority deep into stall:
+precisely the failure the original check was meant to prevent, arrived at
+from the opposite direction.
+
+\paragraph{What the fix has to be.} It is solver-side rather than
+driver-side. A deflected strip must carry the flap in its \emph{section}
+description---\varid{StripSection::Alpha0Deg} shifted by the
+thin-airfoil flap increment for its hinge position and deflection, and
+ideally a flap-shifted stall angle---so that the section model, onto
+which the coupling drives the lattice's circulation, knows the flap is
+down. Until then the aileron tables are declared blocked rather than
+generated, which is the same discipline applied to the interaction
+tables of Section~\ref{sec:coupling}.
+
 \subsection{Parasite drag, and the case against a constant}
 \label{sec:parasiteresults}
 
@@ -1468,6 +1544,10 @@ low-rotor-speed descent are outside the envelope.
 (Section~\ref{sec:coupling}), pending an upstream-induction model. Until
 they exist, the airframe tables are power-off and the model
 underpredicts the separation delay the fan provides in transition.
+\item \textbf{No aileron tables} (Section~\ref{sec:aileron}). The
+generating path cannot represent a hinged surface, so \varid{aeroDCX}
+through \varid{aeroDCn} are declared blocked rather than shipped as
+zeros. The model presently has no roll control input.
 \item \textbf{Parasite drag is a conceptual-design estimate}
 (Sections~\ref{sec:drag} and~\ref{sec:parasiteresults}), carrying the
 conventional $\pm10$--$20\%$ accuracy of a component buildup. It is
@@ -1507,10 +1587,10 @@ than by reading.
 incidence, the one contribution the slender-body form of
 Eq.~\eqref{eq:cd0} cannot supply.
 \item Build the upstream-induction model and unblock \varid{coupling*}.
-\item Inspect post-stall aileron effectiveness before shipping: the
-coupled solve should attenuate roll authority past separation, and a
-table that retained attached-flow authority at $\alpha = 40\dg$ would
-model a simulator recovering from departures it should not.
+\item \textbf{Unblock the aileron tables} (Section~\ref{sec:aileron}) by
+carrying the flap into the strip's section description, so that a
+deflection survives the viscous coupling. This is a behaviour change to
+a tested solver module and wants its own branch.
 \item Measure and record vane-mode superposition error at soft-limit
 corners.
 \item Determine the sensitivity of the propulsor tables to the vane

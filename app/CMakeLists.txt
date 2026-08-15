@@ -65,3 +65,11 @@ find_package(OpenMP QUIET)
 if(OpenMP_CXX_FOUND)
   target_link_libraries(aeolion_particle_crosscheck PRIVATE OpenMP::OpenMP_CXX)
 endif()
+
+# The aeroDCl(alpha) question of the DAVE-ML model: solves the same
+# antisymmetric aileron deflection inviscidly and through the Level-2
+# coupled path at each attitude, so post-stall roll authority can be
+# inspected -- and so it is visible whether the section model sees the
+# deflection at all.
+add_executable(aeolion_aileron_effectiveness AileronEffectivenessExport.cpp)
+target_link_libraries(aeolion_aileron_effectiveness PRIVATE aeolion aeolion_panelbuilder)

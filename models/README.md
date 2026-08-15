@@ -365,8 +365,27 @@ coarsening here if taken).
       (semi-infinite vortex cylinder, the fan-induction paper's work
       item). `SlipstreamField` returns zero upstream by construction
       and must not be used for this.
-- [ ] Aileron post-stall effectiveness: inspect `aeroDCl(α)` decay from
-      the coupled solve before shipping.
+- [ ] **BLOCKER — `aeroDC*` (aileron) tables cannot be generated.**
+      MEASURED 2026-08-15 (`app/AileronEffectivenessExport.cpp`): the
+      Level-2 coupled path produces ΔCl **identically zero at every
+      attitude**, because `PanelBuilder::MinRowsToResolveHinge = 2` (a
+      hinge needs ≥2 chordwise rows or `ChordwiseRowBounds` returns the
+      undivided strip and the deflection is silently dropped) collides
+      with `SolveViscousCoupled`'s exactly-one-row-per-strip contract.
+      Both are individually reasonable; together they make an aileron
+      unrepresentable. A model shipped this way has **no roll control**
+      and nothing flags it.
+      The inviscid 8-row lattice does give a real effect (ΔCl 0.00925 at
+      α=0, peak 0.00936 at α=6, 0.00318 at α=60) but is NOT a substitute:
+      that decay is purely geometric — it passes through the ~18° stall
+      with no break, so it would keep most attached-flow roll authority
+      deep into stall.
+      FIX (solver-side, own branch): a deflected strip must carry the
+      flap in its section description — `StripSection::Alpha0Deg` shifted
+      by the thin-airfoil flap increment for its hinge position and
+      deflection, ideally with a flap-shifted stall angle — so the
+      section model the coupling drives the lattice onto knows the flap
+      is down.
 - [x] ~~Simultaneous-command superposition~~ — MEASURED 2026-08-15;
       mode-sum rejected, per-vane summation adopted and verified (above).
 - [x] ~~Vane-mode azimuth error at φ_w = 45°~~ — moot: the propulsor
