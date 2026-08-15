@@ -67,4 +67,24 @@ Pfenninger, W., \enquote{Flow Phenomena at the Leading Edge of Swept Wings,}
 Gaster, M., \enquote{On the Flow Along Swept Leading Edges,} {\em Aeronautical
   Quarterly\/}, Vol.~18, No.~2, 1967, pp.~165--184.
 
+\bibitem{raymer2018}
+Raymer, D.~P., {\em Aircraft Design: A Conceptual Approach\/}, AIAA Education
+  Series, American Institute of Aeronautics and Astronautics, Reston, Virginia,
+  6th ed., 2018.
+
+\bibitem{hoerner1965fluiddynamicdrag}
+Hoerner, S.~F., {\em Fluid-Dynamic Drag\/}, Published by the author, Bricktown,
+  New Jersey, 1965.
+
+\bibitem{allenPerkins1951}
+Allen, H.~J. and Perkins, E.~W., \enquote{A Study of Effects of Viscosity on
+  Flow over Slender Inclined Bodies of Revolution,} Tech. Rep. NACA Report
+  1048, National Advisory Committee for Aeronautics, 1951.
+
+\bibitem{jorgensen1977}
+Jorgensen, L.~H., \enquote{Prediction of Static Aerodynamic Characteristics for
+  Slender Bodies Alone and with Lifting Surfaces to Very High Angles of
+  Attack,} Tech. Rep. NASA TR R-474, National Aeronautics and Space
+  Administration, 1977.
+
 \end{thebibliography}

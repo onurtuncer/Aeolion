@@ -92,6 +92,10 @@ what makes a quasi-steady post-stall map reproducible at all.
   $c_l, c_d, c_m$ \> section lift, drag and quarter-chord moment coefficients \\
   $c_n, c_c$ \> section normal and chordwise (suction) force coefficients \\
   $C_L, C_D, C_N$ \> configuration lift, drag and normal-force coefficients \\
+  $C_{D_0}$ \> parasite drag coefficient of body and duct, Eq.~(\ref{eq:crossflow}) \\
+  $C_{d_c}$ \> crossflow drag coefficient of a circular cylinder \\
+  $S_{\mathrm{plan}}$ \> body side-projected area, m$^2$ \\
+  $\eta$ \> crossflow proportionality factor for finite length \\
   $C_{d,\max}$ \> bluff-plate drag ceiling of the Viterna extension \\
   $f$ \> suction-side separation point, $x/c$, 1 attached \\
   $K(f)$ \> Kirchhoff lift attenuation, $((1+\sqrt{f})/2)^2$ \\
@@ -140,7 +144,7 @@ pressure at mid-chord? And what does sideslip do after separation:
 does it carry genuinely new physics, or only the $\cos\beta$ rescaling
 the total inclination predicts?
 
-The scope of this part is the full post-separation program, in three
+The scope of this part is the full post-separation program, in two
 tiers of increasing fidelity that check one another. The first tier ---
 the anchored quasi-steady map reported in
 Sections~\ref{sec:method}--\ref{sec:map} --- carries the classical
@@ -154,12 +158,7 @@ number and the Ostowari--Naik aspect-ratio trends, and the static
 hysteresis band from up/down continuation. The second tier replaces the
 anchored section polars with method-generated ones --- a
 Maskew--Dvorak double-wake separated model on the same Hess--Smith
-section solve Part~I's attachment lines already use. The third tier is
-the unsteady cross-check: two-dimensional discrete-vortex sections with
-leading-edge-suction-parameter-modulated shedding, and a
-three-dimensional particle wake shed from the computed separation line
-at a handful of attitudes, to measure what the quasi-steady cycle means
-leave out.
+section solve Part~I's attachment lines already use.
 
 \section{Method}
 \label{sec:method}
@@ -336,6 +335,70 @@ attached flow. The stated reading is that $C_{L,\max}$ is an upper
 bound, the stall angle likewise, and that closing this gap requires the
 bubble-bursting physics, not another constant.
 
+\subsection{The parasite branch, and why it cannot be a constant}
+\label{sec:parasite}
+
+The coefficients reported above carry two of the three drag
+contributions. Induced drag comes from the circulation, and the wing's
+profile drag enters through the section model's $c_d$, integrated per
+strip and summed into the same force vector. What no potential-flow
+solve can supply is the parasite drag of the closed bodies, since a
+source-panelled body carries zero net force in uniform flow to machine
+precision. The complete drag is therefore
+\begin{equation}
+  C_D = \underbrace{C_{D_i} + c_{d,\mathrm{wing}}}_{\text{in the coupled
+    solve}} + \;C_{D_0}(\alpha),
+  \label{eq:cd-total}
+\end{equation}
+and the attitude dependence of that last term is the point of this
+subsection.
+
+At cruise incidence a component
+buildup~\cite{raymer2018,hoerner1965fluiddynamicdrag} over the body and
+duct wetted areas gives $C_{D_0} = 0.0106$ at the map's condition, a
+number Part~I reports in full. Carrying that constant to $90^\circ$
+would be a serious error. A body of revolution at incidence sheds a
+crossflow wake whose drag has nothing to do with skin friction, and
+whose classical slender-body
+form~\cite{allenPerkins1951,jorgensen1977} is
+\begin{equation}
+  C_{D_0}(\alpha) = C_{D_0,\mathrm{friction}}
+    + \eta\, C_{d_c}\, \frac{S_{\mathrm{plan}}}{S}\, \lvert\sin^3\alpha\rvert ,
+  \label{eq:crossflow}
+\end{equation}
+with $S_{\mathrm{plan}} = 0.0446$~m$^2$ the body's side-projected area,
+$C_{d_c} = 1.2$ the subcritical circular-cylinder crossflow drag
+coefficient, and $\eta = 0.65$ the finite-length proportionality factor
+at this body's fineness ratio of 5. The crossflow Reynolds number reaches
+only $1.7 \times 10^5$ at $90^\circ$, comfortably below the drag crisis,
+so the subcritical $C_{d_c}$ stands across the whole grid.
+
+Equation~\eqref{eq:crossflow} evaluates to a crossflow coefficient of
+$0.185$, so that
+\begin{equation}
+  C_{D_0}(90^\circ) = 0.0106 + 0.1848 = 0.195,
+\end{equation}
+\emph{seventeen and a half times} the friction term. A constant parasite
+drag --- the conventional choice, and the one a cruise-envelope model
+would make without comment --- would omit 95\% of the parasite drag at
+the attitude this paper exists to describe. Against the configuration's
+$C_N(90^\circ) = 1.52$ the parasite branch is a 13\% addition: not
+dominant, but far outside the tolerance any of the other numbers here
+are quoted to.
+
+Two boundaries on the statement. First, this is a
+\emph{configuration-level} addition and does not disturb the
+\emph{section-level} Viterna comparison of
+Section~\ref{sec:map}: that anchor concerns the wing section's deep-stall
+drag, and the body's crossflow wake is a separate contribution to a
+separate quantity. Second, the estimate is deliberately incomplete in one
+direction only. The duct's own separated drag at incidence is not
+modelled --- an annular ring at $90^\circ$ is a bluff body, but the
+slender-body form of Eq.~\eqref{eq:crossflow} does not apply to it ---
+and neither is any interference between the body wake and the wing.
+Both omissions push the same way, so Eq.~\eqref{eq:cd-total} is a lower
+bound on parasite drag at high incidence.
+
 \section{Validation and the remaining tiers}
 \label{sec:outlook}
 
@@ -362,10 +425,7 @@ bubble-bursting physics, not another constant.
     same Hess--Smith~$+$~attachment-march pipeline the airframe solve
     uses, on a CST fit of the section whose residual
     ($1.3\times10^{-4}c$) and recovered nose radius are reported with
-    the export. Squares with bars: the two-dimensional discrete-vortex
-    cross-check of Section~\ref{sec:cross-check}, mean $\pm$ RMS --- read for
-    its break location and fluctuation content, its mean levels
-    carrying the two-dimensional street's documented over-coherence.}
+    the export.}
   \label{fig:validation}
 \end{figure}
 
@@ -393,9 +453,7 @@ beyond $12\%$, and the drag curve rides through the same points. At
 $90^\circ$ the model's ceiling (2.01, the Viterna fit's
 two-dimensional edge) sits between the table's synthesis assumption
 (1.80) and Hoerner's measured plate
-(1.98~\cite{hoerner1965fluiddynamicdrag}) --- an $11.7\%$ spread that
-is a property of the plate-ceiling literature itself, not of this
-composite.
+(1.98~\cite{hoerner1965fluiddynamicdrag}).
 
 Through the stall break the model fails in exactly the direction
 Part~I's separation march declares itself an upper bound: the data
@@ -407,12 +465,32 @@ model carries $c_{l,\max} = 1.31$ at $16^\circ$ ($+37\%$, five degrees
 late) and passes over the valley entirely. Between $25^\circ$ and
 $40^\circ$, where the real flow is fully shed but the Kirchhoff
 branch still holds partial attachment, the normal force runs $+26\%$
-high in the mean. The practical reading for the map of
+high in the mean.
+
+Which curve to believe, where, is therefore not symmetric across the
+range. Up to roughly $30^\circ$ the table is wind-tunnel measurement,
+and where the two curves part --- the break angle, the depth of the
+valley, the overshoot beyond --- the model is simply wrong: an upper
+bound failing in its declared direction, with nothing in the composite
+entitled to a vote against measurement. Beyond $30^\circ$ the
+reference is itself a model, and the deep comparison is between two
+independent constructions --- one resting on Viterna's fit and
+Hoerner's plate, the other on Sandia's synthesis rule --- whose
+$3.8\%$ mean agreement is read as concurrence between constructions
+rather than validation against truth. At the $90^\circ$ endpoint the
+roles arguably invert: the anchored ceiling stands nearer Hoerner's
+\emph{measured} plate than the table's synthesis value does, so at the
+deep end the composite sits closer to the physically measured plate
+than the reference it is scored against --- and the $11.7\%$ maximum
+excursion of the acceptance metric measures the plate-ceiling
+literature's own spread, not a defect of either curve.
+
+The practical reading for the map of
 Section~\ref{sec:map}: its deep post-stall content --- where the
 flat-plate convergence answers live --- is quantitatively supported;
 its stall-break region is an upper bound with a now-\emph{measured}
 error band rather than an unquantified caveat; and closing that band
-is precisely the work assigned to the double-wake and unsteady tiers
+is precisely the work assigned to the double-wake tier
 below. The Ostowari--Naik aspect-ratio comparison remains pending; the
 declared $10\%$ criterion on the $90^\circ$ ceiling's $AR$ trend
 stands unchanged.
@@ -446,165 +524,6 @@ shed from the computed separation point and enclosing a
 constant-pressure region. Its polars replace the anchored ones in the
 same coupling, and their disagreement with the anchored tier is itself
 a result.
-
-\subsection{The unsteady cross-check}
-\label{sec:cross-check}
-
-\begin{figure}[tb]
-  \centering
-  \includegraphics[width=\linewidth]{figures/crosscheck-sketch.pdf}
-  \caption{The unsteady cross-check, schematically. Left, the
-    two-dimensional tier: a Glauert bound sheet on the chord,
-    trailing-edge vortices shed every step with Kelvin's theorem closing
-    their strengths, leading-edge vortices while the leading-edge
-    suction parameter exceeds its critical value. Right, the
-    three-dimensional tier: one ring per strip, the one-step buffer ring
-    whose near segment cancels the ring's trailing-edge closer, the
-    wake carried by vector particles (merged conversion, transpose-scheme
-    stretching, direct $N^2$ induction), and the counter-rotating
-    leading-edge flux pair on separated strips.}
-  \label{fig:crosscheck-sketch}
-\end{figure}
-
-% Status: the 2-D half is IMPLEMENTED and reported below
-% (Solver/DiscreteVortexSection.h, TestDiscreteVortexSection). The 3-D
-% particle tier remains TODO: particle wake shed from the TE and the
-% computed separation line at ~6 attitudes (alpha = 30/60/90 x beta =
-% 0/15), mean and RMS loads vs the quasi-steady cycle means.
-Quasi-steady strip theory cannot say what its cycle means leave out.
-The third tier's two-dimensional half measures it: a discrete-vortex
-section in the manner of Ramesh et al.~\cite{ramesh2014lesp}. The
-plate's bound vorticity is the Glauert series
-\begin{equation}
-  \gamma(\theta,t) = 2U\!\left[A_0(t)\,\frac{1+\cos\theta}{\sin\theta}
-    + \sum_{n\ge 1} A_n(t)\sin n\theta\right],
-\end{equation}
-whose coefficients are projected each step from the downwash $w$ of
-everything that is not the bound sheet (freestream and every free
-vortex): $A_0 = \tfrac{1}{\pi}\int_0^\pi (w/U)\,d\theta$,
-$A_n = -\tfrac{2}{\pi}\int_0^\pi (w/U)\cos n\theta\,d\theta$. One
-trailing-edge vortex is shed per step with its strength closing
-Kelvin's theorem,
-$\Gamma_b + \sum_{wake}\Gamma = 0$ with
-$\Gamma_b = \pi c U (A_0 + A_1/2)$; while $|A_0|$ -- the leading-edge
-suction parameter -- exceeds its critical value, a leading-edge vortex
-is shed as well, the pair solving Kelvin and $|A_0| = \mathrm{LESP}_{cr}$
-as a $2\times2$ linear system. Loads come from the impulse of the
-tracked vorticity,
-\begin{equation}
-  \mathbf{F} = \rho\,\frac{d}{dt}\sum_k \Gamma_k\,(z_k,\,-x_k),
-  \label{eq:impulse2d}
-\end{equation}
-exact at any incidence where the linearized force formulas are not.
-The tier's own calibration is pinned in the test suite: the impulsive
-start follows Wagner's function, the attached mean recovers
-$2\pi\sin\alpha$ to a fraction of a percent, and Kelvin's ledger holds
-to machine precision with both edges shedding.
-
-The three-dimensional half poses the same architecture on the wing: one
-vortex ring per strip with flow tangency at the three-quarter-chord
-points, a one-step buffer ring carrying $\Gamma_i(t{-}1)$ whose near
-segment cancels the bound ring's trailing-edge closer, and a wake of
-vector particles $(\mathbf{x}_p, \boldsymbol{\alpha}_p)$ with the
-regularized induction
-\begin{equation}
-  \mathbf{u}(\mathbf{x}) = \sum_p
-    \frac{\boldsymbol{\alpha}_p \times (\mathbf{x}-\mathbf{x}_p)}
-         {4\pi\left(|\mathbf{x}-\mathbf{x}_p|^2+\sigma^2\right)^{3/2}},
-  \qquad \sigma = 1.3\,V_\infty\Delta t .
-\end{equation}
-Particles convect with the full local velocity and stretch in the
-transpose scheme,
-$d\boldsymbol{\alpha}_p/dt = (\nabla\mathbf{u})^{T}\boldsymbol{\alpha}_p$,
-whose exact conservation of total vector strength is what keeps the
-three-dimensional impulse ledger,
-\begin{equation}
-  \mathbf{F} = -\rho\,\frac{d}{dt}\Bigl[
-    \sum_i \Gamma_i \mathbf{S}_i
-    + \sum_i \Gamma_i^{buf}\mathbf{S}_i^{buf}
-    + \tfrac{1}{2}\sum_p \mathbf{x}_p\times\boldsymbol{\alpha}_p
-  \Bigr],
-  \label{eq:impulse3d}
-\end{equation}
-readable over a chaotically shedding wake ($\mathbf{S}$: the loops'
-vector areas). Strips past their separation boundary -- the same
-$f(\eta,\alpha)$ the anchored model consumes -- shed the classical
-shear-layer flux $d\Gamma/dt = \tfrac{1}{2}V_{loc}^2$ per unit span
-from the leading edge, as a counter-rotating pair that leaves the
-total circulation untouched. The full formulation, including the
-merged wake-conversion that makes Eq.~\eqref{eq:impulse3d} usable and
-the measured failure modes of its alternatives, is documented with the
-implementation.
-
-Its cross-check products appear as the mean-$\pm$-RMS band in
-Fig.~\ref{fig:validation}. Three readings matter. First, the
-\emph{break}: the cross-check leaves the attached line between $10^\circ$
-and $20^\circ$ with the fluctuation switching on at once ---
-RMS~$c_l$ jumps from $0.005$ at $10^\circ$ to $0.57$ at $20^\circ$,
-its maximum over the sweep. The cycle means the quasi-steady map
-reports through the stall shoulder average over $\pm 0.5$-level lift
-fluctuations, and that number is now measured rather than presumed.
-Second, the fluctuation decays but never vanishes toward $90^\circ$
-(RMS~$c_l$ $0.10$, RMS~$c_d$ $0.47$ at the normal plate): the deep map
-is a mean over a permanently shedding street. Third, the cross-check's own
-MEAN levels carry the dimension's documented bias --- a
-two-dimensional street has no spanwise breakup, and its normal-plate
-drag (3.29 here) sits the classical $\sim\!65\%$ above the measured
-plate, with the mid-range lift inflated correspondingly. The
-two-dimensional cross-check is therefore read for its break location and
-its fluctuation content, not its mean levels --- and its overshoot is
-the standing, now-quantified argument for the three-dimensional tier.
-
-That tier is implemented and pinned by its own suite: attached, the
-impulse and circulation readings of the lift agree to $0.2\%$ and
-follow Wagner's growth; Kelvin-consistent shedding holds strip by strip
-including across planform gaps; and on an $AR = 6$ plate normal to the
-stream the three-dimensional street --- stretching enabled --- carries
-a mean $C_N$ of $0.4$--$0.9$ across leading-edge flux-model variants at
-test-budget averaging, where its two-dimensional sibling carries $3.3$:
-spanwise breakup collapses the street toward the scale of the
-finite-plate ceiling (1.22), which is the tier's reason to exist,
-demonstrated --- though the mean's precise level is not a converged
-number. At configuration level the declared attitude runs
-($\alpha = 30/60/90^\circ$, $\beta = 0/15^\circ$, full-span lattice)
-returned a MEASURED statistical verdict rather than a table: the
-fluctuation-to-mean ratio of the inviscid particle street runs 3 to 40
-across the attitudes and grows with incidence and with the averaging
-window, so mean loads do not converge within any feasible average at
-this tier's fidelity --- converging them to ten percent would demand
-hundreds of independent shedding periods together with the viscous
-core spreading and spanwise resolution of a production vortex-particle
-method, which is beyond a cross-check's charter and outside this
-paper's claims. The tier's deliverables therefore stand as stated: the
-attached-flow exactness checks, the fluctuation content the
-quasi-steady map cannot see (which needs no converged mean), and the
-structural deep-stall result that spanwise breakup collapses the
-street from the two-dimensional level toward the finite-plate scale.
-A mean-capable unsteady comparison is identified, quantified work ---
-not pending work disguised as a formality. A regularized variant was
-built and piloted to sharpen that quantification: eddy-viscosity core
-spreading with like-signed far-wake merging, second-order convection,
-and vorticity-consistent relaxation bounds the short-window street
-(the normal plate's force RMS falls two orders) and leaves the
-attached checks untouched, but at $\alpha = 60^\circ$ over sixty
-convective times the configuration street remains
-fluctuation-dominated: the coarse lattice's co-rotating consolidation
-feeds structures faster than the model dissipates them, and the
-batch-mean confidence intervals stay wider than the means. Nor is modest resolution the missing ingredient: with an
-octree-accelerated evaluation (pinned exactly equivalent to direct
-summation when fully opened) buying a doubling of spanwise and
-temporal resolution, the same attitude grew categorically worse ---
-smaller cores sharpen the close-range consolidation faster than the
-added resolution resolves the cascade. Converged configuration means
-at these attitudes belong to the overlap-resolved vortex-particle
-regime --- several particles per shed structure, million-particle
-wakes, subgrid dissipation, and fast-multipole or GPU summation --- a
-solver project in its own right, delimited here by measurement rather
-than promised. Two rejected shortcuts (a merge rule that annihilated
-counter-rotating pairs, and impulse bookkeeping that hid systematic
-strength edits) each produced tightly converged means that were wrong
-by an order of magnitude, and are recorded as warnings where they
-were found.
 
 \section{Limitations}
 
