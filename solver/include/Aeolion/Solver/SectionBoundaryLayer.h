@@ -206,7 +206,7 @@ struct BoundaryLayerSectionModel {
                                                  double Re, double Ma) const {
         // Blend weight from the incidence relative to the zero-lift line
         // (camber-fair): 1 inside the trusted envelope, 0 past it.
-        const double fromZeroLift = std::fabs(alphaEffDeg - strip.Alpha0Deg);
+        const double fromZeroLift = std::fabs(alphaEffDeg - strip.EffectiveAlpha0Deg());
         const double weight =
             std::clamp((BlendEndDeg - fromZeroLift) / (BlendEndDeg - BlendStartDeg), 0.0, 1.0);
 

@@ -71,7 +71,7 @@ inline constexpr double SeparationTableStepDeg = 2.0;
             const Vec3 v = field.BoundMidpointVelocity(static_cast<int>(i));
             const double localDeg =
                 Math::RadToDeg(std::atan2(Dot(v, strips[i].LiftDir), Dot(v, strips[i].ChordDir))) -
-                strips[i].Alpha0Deg;
+                strips[i].EffectiveAlpha0Deg();
             tables[i].AlphaDeg.push_back(localDeg);
             tables[i].Psi.push_back(entry.Upper.SeparationPsi);
         }

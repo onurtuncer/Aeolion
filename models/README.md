@@ -392,27 +392,34 @@ coarsening here if taken).
       (semi-infinite vortex cylinder, the fan-induction paper's work
       item). `SlipstreamField` returns zero upstream by construction
       and must not be used for this.
-- [ ] **BLOCKER — `aeroDC*` (aileron) tables cannot be generated.**
-      MEASURED 2026-08-15 (`app/AileronEffectivenessExport.cpp`): the
-      Level-2 coupled path produces ΔCl **identically zero at every
-      attitude**, because `PanelBuilder::MinRowsToResolveHinge = 2` (a
-      hinge needs ≥2 chordwise rows or `ChordwiseRowBounds` returns the
-      undivided strip and the deflection is silently dropped) collides
-      with `SolveViscousCoupled`'s exactly-one-row-per-strip contract.
-      Both are individually reasonable; together they make an aileron
-      unrepresentable. A model shipped this way has **no roll control**
-      and nothing flags it.
-      The inviscid 8-row lattice does give a real effect (ΔCl 0.00925 at
-      α=0, peak 0.00936 at α=6, 0.00318 at α=60) but is NOT a substitute:
-      that decay is purely geometric — it passes through the ~18° stall
-      with no break, so it would keep most attached-flow roll authority
-      deep into stall.
-      FIX (solver-side, own branch): a deflected strip must carry the
-      flap in its section description — `StripSection::Alpha0Deg` shifted
-      by the thin-airfoil flap increment for its hinge position and
-      deflection, ideally with a flap-shifted stall angle — so the
-      section model the coupling drives the lattice onto knows the flap
-      is down.
+- [x] ~~BLOCKER: `aeroDC*` (aileron) tables cannot be generated~~ —
+      FIXED 2026-08-16, solver-side. A deflected strip now carries the
+      flap in its SECTION description (`StripSection::FlapChordFraction`
+      / `FlapDeflectionDeg`), shifting the zero-lift angle by the
+      thin-airfoil increment -tau*delta, tau from
+      `Geometry::FlapEffectiveness`. The lattice geometry is still
+      unchanged (one chordwise row cannot hold a hinge) but the section
+      model, the AUTHORITY on cl in the coupled solve, now knows the flap
+      is down. Additive: `EffectiveAlpha0Deg()` returns `Alpha0Deg`
+      exactly when no flap is set, so every existing consumer is
+      bit-identical.
+      VALIDATED, not asserted: at alpha=0 the coupled solve reproduces
+      the RESOLVED-HINGE 8-row lattice to **1.4%** (-0.00938 vs
+      -0.00925) — an independent geometric representation of the same
+      flap. The ratio then falls monotonically with separation (0.89 at
+      6 deg, 0.71 at 12, 0.47 at 20), and only ~12% of attached roll
+      authority survives at alpha=30 against the inviscid lattice's ~84%.
+      That decay is the physics the inviscid column cannot contain.
+      tau is strongly concave: the 12%-chord aileron is worth **0.432**,
+      not 0.12 — a linear-in-chord guess underestimates roll authority
+      3.5x. `TestFlapSection` (31st suite) pins the exact limits (tau=1
+      at a LE hinge, tau=0 at zero chord), the textbook half/quarter-
+      chord values, the additive inertness, that a deflection produces a
+      rolling moment at all, and that authority decays through stall.
+      NOTE the earlier "coupled = 0 at every attitude" reading was itself
+      partly wrong: it used `res.Base.Croll`, which the coupled solve
+      never populates. The hinge finding stands on the single-row
+      INVISCID column. Coefficients now go through `Solver/BodyAxes.h`.
 - [x] ~~Simultaneous-command superposition~~ — MEASURED 2026-08-15;
       mode-sum rejected, per-vane summation adopted and verified (above).
 - [x] ~~Vane-mode azimuth error at φ_w = 45°~~ — moot: the propulsor

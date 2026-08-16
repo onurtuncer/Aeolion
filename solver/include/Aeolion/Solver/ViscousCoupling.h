@@ -42,6 +42,7 @@
 
 #pragma once
 
+#include "Aeolion/Geometry/FlapEffectiveness.h"
 #include "Aeolion/Lattice/Panel.h"
 #include "Aeolion/Math/Constants.h"
 #include "Aeolion/Math/Vec3.h"
@@ -102,6 +103,44 @@ struct StripSection {
     double Width = 0.0;     ///< Spanwise/radial width [m].
     double Eta = 0.0;       ///< Span/radius fraction keying the section shape (e.g. r/R).
     double Alpha0Deg = 0.0; ///< Thin-airfoil zero-lift angle of the section's camber line.
+
+    /**
+     * A plain trailing-edge flap on this strip, if any: the hinge as a
+     * fraction of local chord, and the deflection (positive = trailing
+     * edge down about the strip's own lift direction). Both default to
+     * zero, so every consumer that does not set them is bit-identical.
+     *
+     * WHY THIS LIVES IN THE SECTION. A hinge cannot be represented
+     * geometrically on a single-row lattice -- PanelBuilder needs at
+     * least two chordwise rows to split a strip at the hinge line, while
+     * this coupling requires exactly one row per strip, since its whole
+     * premise is one section state per strip. The two contracts are
+     * individually reasonable and jointly exclude a control surface, and
+     * MEASURED (app/AileronEffectivenessExport.cpp), a deflection through
+     * the coupled path was exactly zero at every attitude while the solve
+     * converged and reported sensible forces.
+     *
+     * The resolution is not to fight the lattice but to state the flap
+     * where a strip method actually wants it. To thin-airfoil theory a
+     * deflected flap IS a camber change, so it shifts the zero-lift angle
+     * the section model is posed against; the lattice continues to supply
+     * the induced field, and the section model remains the authority on
+     * cl. That is the standard strip-theory treatment of a flapped wing.
+     */
+    double FlapChordFraction = 0.0;  ///< Flap chord / local chord; 0 = no flap.
+    double FlapDeflectionDeg = 0.0;  ///< Positive = trailing edge down.
+
+    /**
+     * The zero-lift angle the section model must be posed against: the
+     * camber line's own, shifted by the flap. Every section model reads
+     * THIS rather than Alpha0Deg, so a flap cannot be silently ignored by
+     * one model and honoured by another.
+     */
+    [[nodiscard]] double EffectiveAlpha0Deg() const {
+        if (FlapDeflectionDeg == 0.0 || FlapChordFraction <= 0.0) return Alpha0Deg;
+        return Alpha0Deg +
+               Geometry::FlapZeroLiftShift(1.0 - FlapChordFraction, FlapDeflectionDeg);
+    }
 };
 
 /** What a section model answers with, at one (alpha_eff, Re, Ma) state. */
@@ -161,14 +200,14 @@ struct AnalyticSectionModel {
 
     [[nodiscard]] SectionCoefficients operator()(const StripSection& strip, double alphaEffDeg,
                                                  double Re, double /*Ma*/) const {
-        const double alphaRad = Math::DegToRad(alphaEffDeg - strip.Alpha0Deg);
+        const double alphaRad = Math::DegToRad(alphaEffDeg - strip.EffectiveAlpha0Deg());
         const double reScale = (Re > 0.0) ? std::pow(ReferenceReynolds / Re, ReynoldsExponent) : 1.0;
 
         SectionCoefficients attached;
         attached.cl = ClMax * std::tanh(ClAlphaPerRad * alphaRad / ClMax);
         attached.cd = Cd0 * reScale + KCd * attached.cl * attached.cl;
 
-        const double fromZeroLift = std::fabs(alphaEffDeg - strip.Alpha0Deg);
+        const double fromZeroLift = std::fabs(alphaEffDeg - strip.EffectiveAlpha0Deg());
         if (fromZeroLift <= DeepStallStartDeg) return attached;
 
         const double cn = PlateNormal * std::sin(alphaRad);
