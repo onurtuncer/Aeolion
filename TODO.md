@@ -533,6 +533,77 @@ per-row JSON flush). Theory for both halves is in doc/theory.rst and
 as an equations block in Part II; method sketch
 figures/crosscheck-sketch.pdf.
 
+### 3f. The DAVE-ML flight model (2026-08-15/16)
+
+A tabulated flight model for simulator/trim/allocator use, spec in
+`models/README.md` (normative), 26-pp technical report in
+`models/report/` (data tables generated from solver JSON by
+`make-tables.py`; no number typed by hand). ANSI/AIAA S-119-2011, ONE
+file, varIDs namespaced `aero*`/`prop*`/`coupling*`.
+
+Declared absences, each because the method cannot support the axis: no
+Mach (incompressible throughout), no Reynolds (one reference condition),
+no disk incidence (the rotor-vane machinery is axisymmetric end to end;
+`alphaDisk` is exported as a VALIDITY MONITOR instead of faked as an
+axis). Speed and RPM collapse to advance ratio J.
+
+New drivers: `aeolion_aero_map`, `aeolion_propulsion_map`,
+`aeolion_parasite_drag`, `aeolion_aileron_effectiveness`.
+New shared headers: `Solver/BodyAxes.h`, `Solver/SeparationTables.h`
+(the latter extracted verbatim from PostStallSweepExport, which now uses
+it -- post-stall numbers unchanged). New suite: `TestBodyAxes` (30th).
+
+**Five measured results, none of them assumed. Do not re-derive:**
+
+1. **The vane mode-sum buildup is WRONG.** pitch+yaw superposes (0.09%),
+   but any pair involving roll is 6-33% off -- roll is the common mode
+   and re-deflects the SAME vanes, and a vane's load is nonlinear in its
+   own angle. That pitch+yaw superposes with all four vanes deflected
+   proves vane-to-vane interference is negligible, so the failure is
+   purely per-vane nonlinearity. **Per-vane summation verified at 1.4%
+   worst case, and needs 7 tables instead of 21.**
+2. **`aeroDC*` (aileron) tables are BLOCKED.** `MinRowsToResolveHinge = 2`
+   collides with `SolveViscousCoupled`'s one-row-per-strip contract, so a
+   deflection through the table-generating path is EXACTLY ZERO at every
+   attitude -- silently, with the solve converging and reporting sensible
+   forces. Shipped unchecked that is an aircraft with no roll control.
+   The inviscid 8-row lattice does give a real effect (0.0093 at alpha 0,
+   0.0032 at 60) but its decay is purely geometric with no stall break,
+   so it is not a substitute. FIX is solver-side: `StripSection::
+   Alpha0Deg` must carry the thin-airfoil flap increment.
+3. **Parasite drag cannot be a constant.** friction CD0 = 0.0106 (body
+   0.00521 ~ duct 0.00507 -- the duct's short chord raises its Cf),
+   crossflow branch 0.185, so **CD0(90 deg) = 0.195, 17.5x friction**. A
+   constant would omit 95% of parasite drag at 90 degrees. `DragEstimate`
+   had never been called by anything before this.
+4. **A rate derivative does NOT follow the wrench frame rule.** The flip
+   applies to both response and rate, so Clp/Clr/Cnp/Cnr/Cmq are frame
+   INVARIANT while CZq/CYp/CYr flip. Applying the wrench rule gave
+   Cl_p = +0.4547 against a textbook -0.45: right magnitude, wrong sign,
+   i.e. roll ANTI-damping. Now pinned by `TestBodyAxes` WITH the sign.
+5. **`SolveViscousCoupled` leaves its coefficient members at zero** and
+   reports dimensional forces only. Reading `res.Base.CL` gives a fully
+   converged alpha sweep of exactly zero. Also pinned.
+
+Two smaller measured items: positive roll at J = 0.6 does not converge
+and neither more passes (24 vs 48 identical) nor damping (0.35 -> 0.15)
+fixes it -- a sign-asymmetric limit cycle, carried as DAVE-ML
+uncertainty bounds from two iteration paths; and the S-119 Annex A
+"non-conformance" was a misreading -- `varID` is unconstrained, `name`
+carries the standard name, so both requirements are satisfiable at once.
+
+Papers I and II now carry the parasite drag (Part I "Parasite drag and
+the complete polar", Part II "The parasite branch, and why it cannot be
+a constant"), refs Raymer / Hoerner / Allen-Perkins NACA 1048 /
+Jorgensen NASA TR R-474.
+
+**Still to build:** the assembler `models/build-daveml.py` and the
+verifier `models/verify-daveml.py` (in-repo gridded-table + MathML
+evaluator, no Janus dependency), DTD validation in CI, and the
+`coupling*` interaction tables -- still blocked on the vortex-cylinder
+upstream-induction model of 3b, since `SlipstreamField` is zero upstream
+by construction.
+
 ### 4. The actual boundary-layer coupling
 
 This work deliberately stopped at the *prerequisite*. Everything a march
