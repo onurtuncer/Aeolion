@@ -562,15 +562,29 @@ it -- post-stall numbers unchanged). New suite: `TestBodyAxes` (30th).
    proves vane-to-vane interference is negligible, so the failure is
    purely per-vane nonlinearity. **Per-vane summation verified at 1.4%
    worst case, and needs 7 tables instead of 21.**
-2. **`aeroDC*` (aileron) tables are BLOCKED.** `MinRowsToResolveHinge = 2`
-   collides with `SolveViscousCoupled`'s one-row-per-strip contract, so a
-   deflection through the table-generating path is EXACTLY ZERO at every
-   attitude -- silently, with the solve converging and reporting sensible
-   forces. Shipped unchecked that is an aircraft with no roll control.
-   The inviscid 8-row lattice does give a real effect (0.0093 at alpha 0,
-   0.0032 at 60) but its decay is purely geometric with no stall break,
-   so it is not a substitute. FIX is solver-side: `StripSection::
-   Alpha0Deg` must carry the thin-airfoil flap increment.
+2. **`aeroDC*` (aileron): the hinge was unrepresentable -- now FIXED.**
+   `MinRowsToResolveHinge = 2` collides with `SolveViscousCoupled`'s
+   one-row-per-strip contract, so a deflection through the
+   table-generating path was EXACTLY ZERO at every attitude, silently,
+   with the solve converging and reporting sensible forces.
+   FIXED 2026-08-16 by carrying the flap in the SECTION rather than the
+   panel geometry: `Geometry::FlapEffectiveness` (thin-airfoil tau) plus
+   `StripSection::{FlapChordFraction, FlapDeflectionDeg,
+   EffectiveAlpha0Deg()}`, with every section model reading the accessor.
+   Additive -- no flap set returns `Alpha0Deg` exactly, so existing
+   consumers are bit-identical.
+   VALIDATED: at alpha=0 the coupled solve reproduces the RESOLVED-HINGE
+   8-row lattice to 1.4%, then attenuates monotonically with separation
+   (0.89 at 6 deg, 0.47 at 20), leaving ~12% of attached roll authority
+   at alpha=30 against the inviscid lattice's ~84%. tau is strongly
+   concave: the 12%-chord aileron is worth 0.432, not 0.12.
+   `TestFlapSection` (31st suite) pins it. NOTE the original "coupled = 0"
+   reading was itself partly wrong -- it used `res.Base.Croll`, which the
+   coupled solve never populates; the hinge finding stands on the
+   single-row INVISCID column.
+   STILL TO DO: `aeolion_aero_map` does not yet sweep deflected
+   conditions, so the tables are absent for want of data, not for want of
+   a method.
 3. **Parasite drag cannot be a constant.** friction CD0 = 0.0106 (body
    0.00521 ~ duct 0.00507 -- the duct's short chord raises its Cf),
    crossflow branch 0.185, so **CD0(90 deg) = 0.195, 17.5x friction**. A
@@ -597,12 +611,18 @@ the complete polar", Part II "The parasite branch, and why it cannot be
 a constant"), refs Raymer / Hoerner / Allen-Perkins NACA 1048 /
 Jorgensen NASA TR R-474.
 
-**Still to build:** the assembler `models/build-daveml.py` and the
-verifier `models/verify-daveml.py` (in-repo gridded-table + MathML
-evaluator, no Janus dependency), DTD validation in CI, and the
-`coupling*` interaction tables -- still blocked on the vortex-cylinder
-upstream-induction model of 3b, since `SlipstreamField` is zero upstream
-by construction.
+**Pipeline now closes end to end.** `models/build-daveml.py` assembles
+the .dml from the cached JSONs; `models/verify-daveml.py` re-reads it
+independently (no shared code with the assembler, no Janus) and runs as
+`TestDaveMLModel`. 160 checks pass. The complete aero map is in:
+175 conditions, CL peak 1.800 at alpha=18 against Part II's 1.76, and
+the sigma-collapse reproduces at median 11.6% spread against Part II's
+~13% -- two cross-checks the map was never fitted to.
+
+**Still to build:** the aileron deflected sweep (method now exists), DTD
+validation in CI, and the `coupling*` interaction tables -- still blocked
+on the vortex-cylinder upstream-induction model of 3b, since
+`SlipstreamField` is zero upstream by construction.
 
 ### 4. The actual boundary-layer coupling
 
