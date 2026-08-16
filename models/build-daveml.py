@@ -15,10 +15,11 @@ Emits ANSI/AIAA S-119-2011 DAVE-ML 2.0.1. Inputs, in models/data/:
 
 Deliberately NOT emitted, and declared in the file header instead:
 
-  * aeroDC* (aileron increments) -- BLOCKED. The generating path cannot
-    represent a hinge (MinRowsToResolveHinge = 2 collides with the
-    coupling's one-row-per-strip contract), so every value would be
-    exactly zero. Shipping that is an aircraft with no roll control.
+  * aeroDC* (aileron increments) -- NOT YET SWEPT. The former blocker
+    (a hinge being unrepresentable on the coupled path) was fixed by
+    carrying the flap in StripSection, but aeolion_aero_map does not yet
+    run the deflected conditions, so no aileron data exists to tabulate.
+    Absent tables are declared; zero-valued ones would be a lie.
   * coupling* (fan-on-airframe) -- BLOCKED on the upstream-induction
     model. The existing slipstream model returns zero upstream by
     construction, so it would report a confident zero interaction.
@@ -295,9 +296,10 @@ def build(args):
         "LIMITATION: tables are the ascending-alpha branch; hysteresis is not represented.",
         "LIMITATION: rate derivatives are tapered to zero over alpha 20-40 deg, a declared "
         "assumption, not a computed result.",
-        "BLOCKED: aileron increment tables are NOT emitted. The generating path cannot "
-        "represent a hinge, so every value would be exactly zero -- an aircraft with no "
-        "roll control. See models/report section 'The aileron tables cannot be generated'.",
+        "INCOMPLETE: aileron increment tables are NOT emitted -- the deflected sweep has "
+        "not been run. The model therefore carries NO ROLL CONTROL INPUT. The underlying "
+        "blocker (a hinge unrepresentable on the coupled path) is fixed; the data is "
+        "simply not generated yet.",
         "BLOCKED: fan-on-airframe interaction tables are NOT emitted, pending an "
         "upstream-induction model. The airframe tables are therefore POWER-OFF and "
         "underpredict the separation delay the aft fan provides in transition.",
@@ -573,7 +575,7 @@ def build(args):
     print(f"wrote {out}: {len(tables)} tables")
     if aero is None:
         print("  (no aero* tables -- aero-map.json was absent)")
-    print("  NOT emitted, by design: aeroDC* (aileron, blocked), coupling* (blocked)")
+    print("  NOT emitted: aeroDC* (aileron -- deflected sweep not yet run), coupling* (blocked)")
     return 0
 
 
