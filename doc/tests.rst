@@ -514,3 +514,46 @@ propeller rotation axis introduced since (see TestSchema180Blocks).
 Earlier schema revisions (1.0.0, 1.1.0, 1.4.0) are no longer shipped or
 tested against -- this project does not carry a back-compat burden for
 retired schema versions, only for the currently-supported ones.
+
+TestBodyAxes
+------------
+
+The solver-to-contract-frame conversion and the body-axis rate
+derivatives (``Solver/BodyAxes.h``), pinned against textbook values
+**with their signs**. Both defects this suite guards were live in the
+flight-model generator, and both are of the kind a magnitude check
+passes.
+
+**A rate derivative does not follow the wrench frame rule.** For a force
+or moment, the 180-degree rotation about :math:`y` flips the :math:`x`
+and :math:`z` components. For a derivative the flip applies to *both* the
+response and the rate, so the two cancel whenever the pair shares
+:math:`x`/:math:`z` character: :math:`C_{l_p}`, :math:`C_{l_r}`,
+:math:`C_{n_p}`, :math:`C_{n_r}` and :math:`C_{m_q}` are frame
+invariant, while :math:`C_{Z_q}`, :math:`C_{Y_p}` and :math:`C_{Y_r}`
+flip. Applying the wrench rule blindly returned
+:math:`C_{l_p} = +0.4547` for a wing whose textbook roll damping is
+:math:`-0.45` --- the right magnitude with the wrong sign, which is roll
+*anti-damping*. The test asserts the sign, the textbook band (measured
+:math:`-0.452299`), and the five invariance identities *exactly* against
+``ComputeDerivatives``.
+
+**The conversion is a proper involution.** Applying it twice is the
+identity, :math:`y` is untouched, and the determinant is :math:`+1`.
+That last property is what allows a rotation axis to be converted like an
+ordinary vector and keep its right-hand rule, which every control-surface
+deflection sign in the flight model rests on.
+
+**The coupled result's coefficient members are not populated.**
+``SolveViscousCoupled`` reports dimensional forces and moments; reading
+``res.Base.CL`` yields a fully converged sweep of exactly zero. The test
+requires a lifting configuration to produce lift --- nonzero
+:math:`C_Z`, negative in FRD since :math:`z` points down, tracking
+lifting-line theory within 25 percent.
+
+**Streamwise drag, not axial force.** The body-axis :math:`C_X` of this
+wing at 4 degrees is *positive*, and correctly so: leading-edge suction
+outweighs profile drag, since
+:math:`C_X = -C_D\cos\alpha + C_L\sin\alpha`. Testing the axial force for
+a drag-like sign would pin an artifact, so the check resolves the force
+along the free stream instead.
