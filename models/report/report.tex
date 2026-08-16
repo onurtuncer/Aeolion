@@ -934,16 +934,17 @@ by the assembler from the per-rad/s field \\
 \varid{aeroCYr} & $\alpha$ & $\partial C_Y/\partial \hat r$ & likewise \\
 \addlinespace
 \varid{aeroDCX} & $\alpha\times\delta_a$ & $\Delta C_X$ & aileron
-increment from baseline. \textbf{BLOCKED}, \\
-\varid{aeroDCY} & $\alpha\times\delta_a$ & $\Delta C_Y$ & Section
-\ref{sec:aileron}: the generating \\
-\varid{aeroDCZ} & $\alpha\times\delta_a$ & $\Delta C_Z$ & path cannot
-represent a hinge, \\
-\varid{aeroDCl} & $\alpha\times\delta_a$ & $\Delta C_l$ & so these would
-ship identically \\
-\varid{aeroDCm} & $\alpha\times\delta_a$ & $\Delta C_m$ & zero ---
-an aircraft with no \\
-\varid{aeroDCn} & $\alpha\times\delta_a$ & $\Delta C_n$ & roll control \\
+increment from the neutral \\
+\varid{aeroDCY} & $\alpha\times\delta_a$ & $\Delta C_Y$ & configuration at
+matched $\alpha$. \\
+\varid{aeroDCZ} & $\alpha\times\delta_a$ & $\Delta C_Z$ & Swept one-sided
+and mirrored, the \\
+\varid{aeroDCl} & $\alpha\times\delta_a$ & $\Delta C_l$ & symmetry verified
+numerically \\
+\varid{aeroDCm} & $\alpha\times\delta_a$ & $\Delta C_m$ &
+(Section~\ref{sec:aileron}); \\
+\varid{aeroDCn} & $\alpha\times\delta_a$ & $\Delta C_n$ & these attenuate
+through stall \\
 \addlinespace
 \varid{aeroCD0} & $\alpha$ & $C_{D_0}$ & body and duct parasite
 \emph{only}, never the wing (Section~\ref{sec:drag}) \\
@@ -1243,8 +1244,8 @@ extension of this grid.
 
 \input{tables/propulsion-modes}
 
-\subsection{The aileron tables cannot be generated, and why that is worth
-a section}
+\subsection{The aileron: a silent zero, and where the flap actually
+belongs}
 \label{sec:aileron}
 
 The model's open items included a routine-sounding check: confirm that
@@ -1295,7 +1296,19 @@ whatsoever---and neither the generator, the assembler, nor the
 DTD validation would have objected. Only a \texttt{checkData} shot
 comparing a deflected condition against a nonzero expectation would have
 caught it, which is an argument for generating verification data from a
-\emph{different} path than the tables themselves.
+\emph{different} path than the tables themselves. The file now carries
+exactly such a shot, \varid{aileronRollAuthorityIsReal}.
+
+\paragraph{A correction to the first reading of this measurement.} The
+coupled column above was originally obtained by differencing
+\texttt{res.Base.Croll}, which \texttt{SolveViscousCoupled} never
+populates (Section~\ref{sec:drag}'s companion defect, and the reason
+Section~\ref{sec:verification} insists on independent paths). That
+column was therefore differencing two zeros, and reported ``no control
+effect'' for a reason unrelated to the hinge. The finding survives
+because it rests on the \emph{single-row inviscid} column, which uses
+the plain lattice solve and is genuinely zero. Coefficients now go
+through the tested extractor of \varid{Solver/BodyAxes.h}.
 
 \paragraph{The inviscid column is not a substitute.} It is a real control
 effect, but its decay---$0.00936$ at $\alpha = 6\dg$ falling to
@@ -1307,15 +1320,71 @@ simulator most of its attached-flow roll authority deep into stall:
 precisely the failure the original check was meant to prevent, arrived at
 from the opposite direction.
 
-\paragraph{What the fix has to be.} It is solver-side rather than
-driver-side. A deflected strip must carry the flap in its \emph{section}
-description---\varid{StripSection::Alpha0Deg} shifted by the
-thin-airfoil flap increment for its hinge position and deflection, and
-ideally a flap-shifted stall angle---so that the section model, onto
-which the coupling drives the lattice's circulation, knows the flap is
-down. Until then the aileron tables are declared blocked rather than
-generated, which is the same discipline applied to the interaction
-tables of Section~\ref{sec:coupling}.
+\paragraph{The fix, and why it is not a workaround.} It is solver-side,
+and it consists of not fighting the lattice. A hinge genuinely cannot be
+represented on one chordwise row; but to a strip method a deflected flap
+is not a geometric object at all, it is a \emph{camber change}. Thin
+airfoil theory says so quantitatively: a plain flap hinged at $x_h$
+shifts the section's zero-lift angle by $-\tau\delta$, with
+\begin{equation}
+\tau = 1 - \frac{\theta_h}{\pi} + \frac{\sin\theta_h}{\pi}, \qquad
+\theta_h = \arccos(1 - 2x_h).
+\label{eq:tau}
+\end{equation}
+A deflected strip therefore carries \varid{FlapChordFraction} and
+\varid{FlapDeflectionDeg}, and every section model is posed against
+\varid{EffectiveAlpha0Deg()} rather than the camber line's own
+$\alpha_0$. The lattice continues to supply the induced field; the
+section model, which is the authority on $c_l$ in the coupled solve,
+now knows the flap is down. This is the standard strip-theory treatment
+of a flapped wing, not an expedient.
+
+The change is additive---with no flap set the accessor returns
+$\alpha_0$ exactly---so every existing consumer is bit-identical, which
+\texttt{TestViscousCoupling}, \texttt{TestPostStallSection} and
+\texttt{TestRotorVaneCoupling} confirm.
+
+\paragraph{It was validated, not asserted.} The same driver was re-run
+after the fix, and the comparison it affords is the point: the
+\emph{resolved-hinge} eight-row lattice is an independent geometric
+representation of the very same flap.
+
+\begin{table}[htbp]
+\centering
+\caption{Aileron rolling-moment increment after the fix, both columns in
+FRD. The coupled solve reproduces the independent geometric
+representation where both are valid, and departs from it exactly where
+only one contains the physics.}
+\label{tab:aileronfixed}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+$\alpha$ [deg] & 8 rows, inviscid & coupled & ratio \\
+\midrule
+0 & $-0.009254$ & $-0.009384$ & 1.014 \\
+6 & $-0.009361$ & $-0.008322$ & 0.889 \\
+12 & $-0.009261$ & $-0.006620$ & 0.715 \\
+20 & $-0.008815$ & $-0.004184$ & 0.475 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+At zero incidence the two agree to $1.4\%$. The ratio then falls
+monotonically as separation develops, and by $\alpha = 30\dg$ only about
+$12\%$ of the attached-flow roll authority survives, against the
+inviscid lattice's $84\%$. That decay is precisely the physics the
+inviscid column structurally cannot contain, and it is the answer to the
+question this section opened with.
+
+\paragraph{One number worth carrying away.} Equation~\eqref{eq:tau} is
+strongly concave, so the contract's $12\%$-chord aileron is worth
+$\tau = 0.432$, not $0.12$. A linear-in-chord estimate---the intuitive
+one---understates roll authority by a factor of three and a half while
+looking entirely reasonable. \texttt{TestFlapSection} pins $\tau$ at its
+two exact limits ($\tau = 1$ for a leading-edge hinge, the whole section
+rotating; $\tau = 0$ for zero flap chord), at the textbook half-chord
+and quarter-chord values, and pins that a deflection produces a rolling
+moment at all---the assertion that would have caught the original defect
+the day it appeared.
 
 \subsection{Parasite drag, and the case against a constant}
 \label{sec:parasiteresults}
@@ -1591,10 +1660,12 @@ low-rotor-speed descent are outside the envelope.
 (Section~\ref{sec:coupling}), pending an upstream-induction model. Until
 they exist, the airframe tables are power-off and the model
 underpredicts the separation delay the fan provides in transition.
-\item \textbf{No aileron tables} (Section~\ref{sec:aileron}). The
-generating path cannot represent a hinged surface, so \varid{aeroDCX}
-through \varid{aeroDCn} are declared blocked rather than shipped as
-zeros. The model presently has no roll control input.
+\item \textbf{Aileron increments carry the flap as a section camber
+change} (Section~\ref{sec:aileron}), not as panel geometry. The lift
+shift is thin-airfoil theory's; the accompanying section pitching-moment
+increment is not modelled, and neither is gap leakage nor the viscous
+decay of effectiveness at large deflection---all of which reduce real
+control power, so the tabulated authority is an upper bound.
 \item \textbf{Parasite drag is a conceptual-design estimate}
 (Sections~\ref{sec:drag} and~\ref{sec:parasiteresults}), carrying the
 conventional $\pm10$--$20\%$ accuracy of a component buildup. It is
@@ -1633,10 +1704,9 @@ than by reading.
 incidence, the one contribution the slender-body form of
 Eq.~\eqref{eq:cd0} cannot supply.
 \item Build the upstream-induction model and unblock \varid{coupling*}.
-\item \textbf{Unblock the aileron tables} (Section~\ref{sec:aileron}) by
-carrying the flap into the strip's section description, so that a
-deflection survives the viscous coupling. This is a behaviour change to
-a tested solver module and wants its own branch.
+\item Extend the flap model with the section pitching-moment increment,
+which thin-airfoil theory also supplies and which the present lift-only
+treatment omits.
 \item Measure and record vane-mode superposition error at soft-limit
 corners.
 \item Determine the sensitivity of the propulsor tables to the vane
