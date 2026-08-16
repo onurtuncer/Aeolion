@@ -45,3 +45,12 @@ papers/**/*.blg
 papers/**/*.fls
 papers/**/*.fdb_latexmk
 papers/**/*.synctex.gz
+
+# Sweep driver run logs -- the JSON beside them carries the data
+models/data/*.log
+
+# LaTeX intermediates for the technical report (papers/ keeps only .bbl)
+models/report/*.aux
+models/report/*.log
+models/report/*.out
+models/report/*.toc
