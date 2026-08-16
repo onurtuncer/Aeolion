@@ -108,6 +108,8 @@ chordwise march, and Poll's attachment-line Reynolds number.
   $c_n$ \> chord in the leading-edge-normal plane, m \\
   $C_p$ \> pressure coefficient \\
   $C_L, C_{D_i}, C_Y$ \> lift, induced-drag and side-force coefficients \\
+  $C_D, C_{D_0}$ \> total and parasite drag coefficients,
+    $C_D = C_{D_i} + C_{D_0}$ \\
   $C_l, C_m, C_n$ \> rolling, pitching and yawing moment coefficients \\
   $h$ \> streamline divergence (spreading) metric \\
   $H$ \> boundary-layer shape factor \\
@@ -1067,6 +1069,77 @@ Reporting the number with that limitation attached is more useful than
 either omitting it or presenting it as converged; a chordwise-resolved
 lattice would be required to do better, at a cost the rest of this method
 does not otherwise incur.
+
+\subsection{Parasite drag and the complete polar}
+\label{sec:parasite}
+
+Everything above concerns $C_{D_i}$, and a reader entitled to a drag
+polar is entitled to know what is missing from it. A potential-flow
+method cannot produce parasite drag at all: a source-panelled closed body
+carries zero net force in uniform flow to machine precision, which is
+d'Alembert's paradox behaving correctly rather than a defect of the
+implementation. The lattice therefore returns the induced component and
+nothing else, and the complete drag is
+\begin{equation}
+  C_D = C_{D_i} + C_{D_0},
+  \label{eq:totaldrag}
+\end{equation}
+with $C_{D_0}$ supplied by a component buildup of the kind standard in
+conceptual design~\cite{raymer2018,hoerner1965fluiddynamicdrag}: skin
+friction at each component's own Reynolds number, scaled by a form factor
+for its thickness or fineness and an interference factor for its
+junction, summed over wetted area.
+
+Evaluated for this airframe at the matrix condition
+($V_\infty = 25$~m/s, sea-level ISA) the buildup gives the entries of
+Table~\ref{tab:parasite}. The body and the duct contribute almost
+equally, which is not obvious in advance: the duct's wetted area is
+smaller, but its chord is short enough that its Reynolds number is a
+factor of five lower and its skin-friction coefficient correspondingly
+higher.
+
+\begin{table}[tb]
+  \centering
+  \caption{Component buildup of parasite drag at $V_\infty = 25$~m/s,
+    referred to the wing reference area $S = 0.1883$~m$^2$. The wing is
+    deliberately absent: this table supplies only what the lattice cannot,
+    and the wing's own profile drag belongs to the sectional treatment of
+    Part~II rather than to a flat-plate buildup.}
+  \label{tab:parasite}
+  \begin{tabular}{lrrrrr}
+    \hline
+    Component & $S_{\mathrm{wet}}$ [m$^2$] & $Re$ & $C_f$ & $FF$ &
+      $C_{D_0}$ \\
+    \hline
+    Body & 0.1422 & $8.41 \times 10^5$ & 0.00462 & 1.493 & 0.00521 \\
+    Duct & 0.1246 & $1.56 \times 10^5$ & 0.00649 & 1.181 & 0.00507 \\
+    \hline
+    \multicolumn{5}{l}{Total, including a 3\% excrescence allowance} &
+      0.01058 \\
+    \hline
+  \end{tabular}
+\end{table}
+
+The consequence for the polar is largest where it is least often
+remarked. At the top of the attached range the induced component
+dominates and a $C_{D_0}$ of $0.0106$ is a modest correction; but at low
+lift it is the whole of the drag, and a polar plotted from $C_{D_i}$
+alone passes through the origin, which no real polar does. The
+zero-lift intercept discussed in Section~\ref{sec:coefficients} is
+therefore not merely a numerical artifact to be driven to zero --- once
+Eq.~\eqref{eq:totaldrag} is applied, the physical intercept is
+$C_{D_0}$, and the far-field integration's residual $-0.0003$ is
+correctly read as small against it rather than against zero.
+
+Two limitations are stated rather than absorbed. The buildup assumes
+attached flow over both components, so it is valid across this paper's
+attached matrix and not beyond it; the incidence-dependent separated
+drag of a body of revolution grows as the cube of $\sin\alpha$ and is the
+subject of Part~II, where the attitude range makes it
+dominant~\cite{allenPerkins1951,jorgensen1977}. And a component buildup
+is a conceptual-design estimate, with a conventional accuracy of
+$\pm 10$--$20\%$ for a clean configuration; it is reported here to
+complete the polar, not as a validated prediction.
 
 \subsection{The skin-flow portrait}
 

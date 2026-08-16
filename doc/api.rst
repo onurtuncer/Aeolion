@@ -65,6 +65,17 @@ Stagnation and attachment lines (see :doc:`theory`):
 * :cpp:class:`Aeolion::Solver::TrefftzResult` — far-field induced drag and
   span efficiency, from the wake trace rather than the near-field forces;
   the trustworthy ``CDi`` on a coupled configuration.
+* :cpp:class:`Aeolion::Solver::BodyAxisCoefficients` --- body-axis (FRD)
+  force and moment coefficients, and
+  :cpp:class:`Aeolion::Solver::BodyAxisRateDerivatives` --- the
+  reduced-rate stability derivatives in that frame. The conversion from
+  the solver's working frame is a 180-degree rotation about :math:`y`;
+  note that a *rate derivative* does not follow the wrench rule, since
+  the flip applies to both the response and the rate and cancels for the
+  roll/yaw pairs (see the header, and ``TestBodyAxes``).
+* :cpp:class:`Aeolion::Solver::StripSeparationTable` --- the per-strip
+  separation point against local incidence that the anchored post-stall
+  model is driven by, built once from an inviscid alpha sweep.
 * :cpp:class:`Aeolion::Solver::PostStallSectionModel` — the anchored
   post-stall section model: Kirchhoff attenuation from the computed
   separation point, Viterna-Corrigan deep stall with AR-aware

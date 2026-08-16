@@ -9,6 +9,7 @@ aeolion_add_test(TestAttachmentBoundaryLayer)
 aeolion_add_test(TestPostStallSection)
 aeolion_add_test(TestDiscreteVortexSection)
 aeolion_add_test(TestParticleWake)
+aeolion_add_test(TestParticleTree)
 # The particle wake's N^2 sums are the one place OpenMP pays for itself;
 # harmless (and absent) everywhere else.
 find_package(OpenMP QUIET)
@@ -17,3 +18,4 @@ if(OpenMP_CXX_FOUND)
 endif()
 aeolion_add_test(TestDiskInduction)
 aeolion_add_test(TestTrefftzPlane)
+aeolion_add_test(TestBodyAxes)

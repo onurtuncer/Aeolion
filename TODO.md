@@ -493,7 +493,34 @@ coarse-lattice co-rotating consolidation outruns the model dissipation
 (quasi-2-D inverse cascade; each merge raises its own cap ceiling).
 VERDICT: regularization alone cannot converge configuration means at
 12-strip resolution; Phase B = resolution (treecode + finer shedding +
-smaller cores). TWO REJECTED SHORTCUTS, do not reintroduce: (a) merging
+smaller cores).
+
+**Phase B (2026-08-14): treecode DONE and kept; the resolution
+hypothesis MEASURED FALSE at feasible scale.** Solver/ParticleTree.h
+(Barnes-Hut, monopole + gradient, core-clearance acceptance) is pinned
+by TestParticleTree: machine-exact at theta=0, 0.45%/0.008% u/grad
+error at theta=0.5, 2.3x over direct at N=6000 single-thread; wired
+into ParticleWake above 2000 particles. The alpha=60 pilot at DOUBLED
+resolution (24 strips, dt 0.05, duration 60, C=1e-3) is categorically
+WORSE (CN -1315 +- 1511, RMS ~15000, 85k merges): refinement shrinks
+the cores and sharpens the close-range consolidation faster than it
+resolves the cascade. Three independent setups (coarse, honest-merge
+coarse, refined) now land in the same class. CONCLUSION: converged
+mid-alpha configuration means need the overlap-resolved VPM regime --
+several particles per shed structure per step, N ~ 1e6, subgrid
+dissipation, FMM/GPU -- a standalone project, not an increment of this
+tier. The cross-check's charter (attached exactness, fluctuation
+content, structural deep-stall results, and now the measured limits)
+is complete; the treecode stays as verified infrastructure for
+whatever comes next. **The overlap-resolved VPM now lives in its own
+repository, [onurtuncer/VPM](https://github.com/onurtuncer/VPM)**
+(private; the BEMT precedent — plain `VPM::` namespace, no dependency
+either way): GPU-first architecture (SoA, one host/device kernel
+definition, CUDA stub compiled on hosted CI, execution tests on a
+self-hosted runner when the NVIDIA machine joins), the physics core
+ported with all five recorded rules — and a sixth earned on its first
+day (N-body RK2 must advance sources to the midpoint; frozen sources
+demote it to first order, measured on the vortex-ring anchor test). TWO REJECTED SHORTCUTS, do not reintroduce: (a) merging
 without the alignment check annihilates counter-rotating pairs (=
 momentum parcels) and produced tightly converged means wrong by 10x
 (CL ~ 25-27 at alpha 60, CI shrinking around the bias); (b) hiding
@@ -505,6 +532,77 @@ full-strength residue at the TE). `aeolion_particle_crosscheck <handoff> <out.js
 per-row JSON flush). Theory for both halves is in doc/theory.rst and
 as an equations block in Part II; method sketch
 figures/crosscheck-sketch.pdf.
+
+### 3f. The DAVE-ML flight model (2026-08-15/16)
+
+A tabulated flight model for simulator/trim/allocator use, spec in
+`models/README.md` (normative), 26-pp technical report in
+`models/report/` (data tables generated from solver JSON by
+`make-tables.py`; no number typed by hand). ANSI/AIAA S-119-2011, ONE
+file, varIDs namespaced `aero*`/`prop*`/`coupling*`.
+
+Declared absences, each because the method cannot support the axis: no
+Mach (incompressible throughout), no Reynolds (one reference condition),
+no disk incidence (the rotor-vane machinery is axisymmetric end to end;
+`alphaDisk` is exported as a VALIDITY MONITOR instead of faked as an
+axis). Speed and RPM collapse to advance ratio J.
+
+New drivers: `aeolion_aero_map`, `aeolion_propulsion_map`,
+`aeolion_parasite_drag`, `aeolion_aileron_effectiveness`.
+New shared headers: `Solver/BodyAxes.h`, `Solver/SeparationTables.h`
+(the latter extracted verbatim from PostStallSweepExport, which now uses
+it -- post-stall numbers unchanged). New suite: `TestBodyAxes` (30th).
+
+**Five measured results, none of them assumed. Do not re-derive:**
+
+1. **The vane mode-sum buildup is WRONG.** pitch+yaw superposes (0.09%),
+   but any pair involving roll is 6-33% off -- roll is the common mode
+   and re-deflects the SAME vanes, and a vane's load is nonlinear in its
+   own angle. That pitch+yaw superposes with all four vanes deflected
+   proves vane-to-vane interference is negligible, so the failure is
+   purely per-vane nonlinearity. **Per-vane summation verified at 1.4%
+   worst case, and needs 7 tables instead of 21.**
+2. **`aeroDC*` (aileron) tables are BLOCKED.** `MinRowsToResolveHinge = 2`
+   collides with `SolveViscousCoupled`'s one-row-per-strip contract, so a
+   deflection through the table-generating path is EXACTLY ZERO at every
+   attitude -- silently, with the solve converging and reporting sensible
+   forces. Shipped unchecked that is an aircraft with no roll control.
+   The inviscid 8-row lattice does give a real effect (0.0093 at alpha 0,
+   0.0032 at 60) but its decay is purely geometric with no stall break,
+   so it is not a substitute. FIX is solver-side: `StripSection::
+   Alpha0Deg` must carry the thin-airfoil flap increment.
+3. **Parasite drag cannot be a constant.** friction CD0 = 0.0106 (body
+   0.00521 ~ duct 0.00507 -- the duct's short chord raises its Cf),
+   crossflow branch 0.185, so **CD0(90 deg) = 0.195, 17.5x friction**. A
+   constant would omit 95% of parasite drag at 90 degrees. `DragEstimate`
+   had never been called by anything before this.
+4. **A rate derivative does NOT follow the wrench frame rule.** The flip
+   applies to both response and rate, so Clp/Clr/Cnp/Cnr/Cmq are frame
+   INVARIANT while CZq/CYp/CYr flip. Applying the wrench rule gave
+   Cl_p = +0.4547 against a textbook -0.45: right magnitude, wrong sign,
+   i.e. roll ANTI-damping. Now pinned by `TestBodyAxes` WITH the sign.
+5. **`SolveViscousCoupled` leaves its coefficient members at zero** and
+   reports dimensional forces only. Reading `res.Base.CL` gives a fully
+   converged alpha sweep of exactly zero. Also pinned.
+
+Two smaller measured items: positive roll at J = 0.6 does not converge
+and neither more passes (24 vs 48 identical) nor damping (0.35 -> 0.15)
+fixes it -- a sign-asymmetric limit cycle, carried as DAVE-ML
+uncertainty bounds from two iteration paths; and the S-119 Annex A
+"non-conformance" was a misreading -- `varID` is unconstrained, `name`
+carries the standard name, so both requirements are satisfiable at once.
+
+Papers I and II now carry the parasite drag (Part I "Parasite drag and
+the complete polar", Part II "The parasite branch, and why it cannot be
+a constant"), refs Raymer / Hoerner / Allen-Perkins NACA 1048 /
+Jorgensen NASA TR R-474.
+
+**Still to build:** the assembler `models/build-daveml.py` and the
+verifier `models/verify-daveml.py` (in-repo gridded-table + MathML
+evaluator, no Janus dependency), DTD validation in CI, and the
+`coupling*` interaction tables -- still blocked on the vortex-cylinder
+upstream-induction model of 3b, since `SlipstreamField` is zero upstream
+by construction.
 
 ### 4. The actual boundary-layer coupling
 

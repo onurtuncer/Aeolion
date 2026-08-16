@@ -1,0 +1,431 @@
+# Aetherion flight model — DAVE-ML specification
+
+**Target artifact:** `models/AetherionFlightModel.dml` — a single DAVE-ML
+2.0.1 (AIAA S-119) file carrying the airframe aerodynamics, the ducted
+propulsor with its vane cruciform, and the fan-on-airframe interaction
+increments. Generated, never hand-edited; committed alongside its source
+JSONs (the house pattern used for paper figures).
+
+**Status (2026-08-14):** specification agreed; sweep drivers and the
+assembler are the open work items. The interaction (`coupling*`) tables
+are additionally blocked on the upstream-induction model (see Open
+items). Nothing in this folder is consumable yet.
+
+---
+
+## Decisions of record (2026-08-14)
+
+Settled in design review; do not relitigate without new evidence.
+
+1. **Single file.** The power-on increments straddle the aero/propulsion
+   boundary and DAVE-ML has no cross-file reference mechanism; one file
+   keeps the shared inputs and breakpoints internally consistent and
+   lets MathML calculations assemble the total wrench inside the
+   exchanged model. varIDs are namespaced `aero*` / `prop*` /
+   `coupling*` so a later split into two files is mechanical.
+2. **No Mach axis.** The entire toolkit is incompressible — Mach is
+   accepted and ignored (`ViscousCoupling.h`, `SectionBoundaryLayer.h`).
+   Validity `M < 0.3` is declared in the fileHeader instead.
+3. **No Reynolds axis.** All source sweeps ran at one condition
+   (V = 25 m/s, Re_n ≈ 3×10⁵). Declared as a fixed reference condition,
+   not pretended as an axis.
+4. **Speed and RPM collapse to advance ratio `J = V/(nD)`** for the
+   propulsor (inviscid similarity). Revisit only if Level-3 blade
+   viscous coupling introduces a measured tip-Reynolds dependence.
+5. **One antisymmetric aileron axis** (`aileronDeg`). No flaperon mode.
+6. **Vane command space, not per-vane angles**: roll = common mode,
+   pitch/yaw = pair differentials (mode shapes below). Mixing-matrix
+   signs are pinned by checkData, never derived in prose.
+7. **Part II (coupled post-stall solve) is the single table truth**,
+   including the attached range; Part I's inviscid matrix is demoted to
+   checkData cross-checks. One solver path, no seam.
+8. **Fan state variable for the interaction tables is
+   `Tc = T/(q∞·S)`**, computed inside the file from the propulsor's own
+   thrust output (no algebraic loop: the prop wrench does not depend on
+   Tc).
+9. **Hysteresis is deferred.** Static tables carry up-branch cycle
+   means; post-stall tables carry DAVE-ML uncertainty bounds from the
+   cycle RMS. Representation to be revisited with the hysteresis study.
+10. **Deep-stall values are cycle means** exported with their RMS as
+    uncertainty bounds — the file must not launder the `Converged=false`
+    honesty of the source sweeps.
+
+---
+
+## Governing standards
+
+- **ANSI/AIAA S-119-2011** (approved 22 Mar 2011, reaffirmed 2016;
+  doi:10.2514/4.867965) — the exchange standard. Annex A = standard
+  variable names, Annex B = the DAVE-ML reference.
+- **DAVE-ML Reference 2.0.1** (31 Mar 2011) / the `DAVEfunc` DTD —
+  element syntax and `checkData`/`staticShot` semantics.
+- **ANSI/AIAA R-004-1992** — body axes and sign conventions, adapted
+  from **ISO 1151-1:1988**. The contract's FRD frame *is* R-004's
+  standard aeronautical body axis system, which is exactly why the
+  solver-side flip has to be explicit rather than assumed.
+- **XML 1.1** and **MathML 2.0** — the two open standards DAVE-ML is
+  built on.
+
+**Variable naming — RESOLVED, no conflict.** The standard separates the
+two roles: `varID` is "an internal identifier that is unique within the
+file" and is *unconstrained in form*; `name` "should correspond to the
+standard AIAA parameter name". So the namespaced `aero*`/`prop*`/
+`coupling*` varIDs stay, and the Annex A name rides alongside:
+
+| varID | name (Annex A) |
+|---|---|
+| `alphaDeg` | `angleOfAttack` |
+| `betaDeg` | `angleOfSideslip` |
+| `trueAirspeedMps` | `trueAirspeed` |
+| `airDensityKgpm3` | `airDensity` |
+| `rollRateRadps` / `pitchRateRadps` / `yawRateRadps` | `bodyAngularRate_Roll` / `_Pitch` / `_Yaw` |
+| `propSpeedRevps` | `propellerSpeed` |
+| `aileronDeg` | `aileronDeflection` |
+| `vane{Pitch,Yaw,Roll}Deg` | no Annex A counterpart; formed to the same pattern |
+
+**Three attributes to populate** (previously unused): `axisSystem`
+("body" on every force/moment/rate), `sign` (positive-direction token —
+`+UP`, `+RWD`, `TED`), and `symbol`. The `sign` attribute REFINES the
+"no prose glosses" rule above: the objection is to prose standing *in
+place of* a verified convention, not to a machine-readable declaration.
+Populate `sign` AND pin it with a generated staticShot; a mismatch
+between the two is itself a defect worth catching. `alias` is available
+and deliberately unused (the reference discourages it for portability).
+
+Validate the assembled file against the `DAVEfunc` DTD as a build step.
+
+## Conventions (normative)
+
+### Frames
+
+All file quantities are **body-frame FRD** (`aetherion_body_frd`:
+x forward, y right, z down), the contract's own frame. The solver frame
+(x aft, y right, z up) is related by one proper rotation, 180° about y:
+
+```
+x_frd = -x_vlm    y_frd = y_vlm    z_frd = -z_vlm
+```
+
+Being a proper rotation it applies identically to force and moment
+vectors: **CX, CZ, Cl, Cn flip sign between frames; CY and Cm are
+invariant.** The assembler applies this map in exactly two places —
+reference-point ingest and wrench output — and nowhere else. The ingest
+line carries its own unit test independent of any table (this is where
+the 2026-08-09 Cm_α bug lived).
+
+### Moment reference
+
+All moments are about the contract's `moment_reference_point`,
+**(x, y, z) = (−0.2423, 0, 0) m, FRD**, stated twice in the file: prose
+in the fileHeader and as constant variableDefs `XmrpM`, `YmrpM`,
+`ZmrpM` so a consumer can transfer to its own CG mechanically.
+
+### Deflection signs
+
+Positive deflection is the **right-hand rule about the hinge-axis
+vector as stated in the contract (FRD)**. English glosses (TE-up/down)
+are banned from normative text; every sign is defined by citation to a
+checkData staticShot. `aileronDeg` is the right-surface angle;
+antisymmetry (left = −right) is applied by the generator.
+
+### Sideslip mirroring
+
+Power-off airframe generation runs β ≥ 0 only; the assembler writes the
+full signed β range using airframe symmetry: **CY, Cl, Cn odd in β;
+CX, CZ, Cm even.** Propulsor tables are parameterized by disk incidence
+and crossflow azimuth instead and are never mirrored.
+
+### Validity envelope (fileHeader)
+
+M < 0.3; Re fixed at the reference condition; `coupling*` tables valid
+for V ≥ 10 m/s (q∞ normalization degenerates toward hover — defensible
+because the fan is aft of the wing and its upstream induction decays
+with distance); propulsor tables valid for powered operation
+(`propSpeedRevps` well above zero — the ρn²D⁴ normalization excludes
+windmilling); α_disk azimuth assumption for vane tables (below).
+
+---
+
+## Inputs
+
+| varID | units | meaning |
+|---|---|---|
+| `alphaDeg` | deg | angle of attack |
+| `betaDeg` | deg | sideslip |
+| `trueAirspeedMps` | m/s | V |
+| `airDensityKgpm3` | kg/m³ | ρ |
+| `rollRateRadps` `pitchRateRadps` `yawRateRadps` | rad/s | body rates p, q, r |
+| `propSpeedRevps` | rev/s | n (RPM/60) |
+| `aileronDeg` | deg | antisymmetric aileron, right surface |
+| `vanePitchDeg` `vaneYawDeg` `vaneRollDeg` | deg | vane mode commands |
+
+## Constants (variableDefs, values filled by assembler from the contract)
+
+`WingAreaM2` (≈0.1883), `WingSpanM` (1.0629), `WingChordM` (0.1771),
+`DiskDiameterM` (0.203), `XmrpM` (−0.2423), `YmrpM` (0), `ZmrpM` (0).
+
+**Drag accounting — read before touching CX.** Three components, and
+only two are computed anywhere:
+
+| Component | Where it lives | Status |
+|---|---|---|
+| induced | `aeroCX`/`aeroCZ` (near-field, in `Base.Di`) | computed |
+| wing section profile | the same tables — the section model's `cd` is integrated per strip into `Base.Di` (`PostStallSweepExport.cpp:390`, "induced + profile") | computed |
+| body + duct parasite | nothing | **MISSING** |
+
+So the body-axis force tables already carry induced *and* wing profile
+drag; they are not CDi tables. What they omit is the body/duct parasite
+term. Two consequences:
+
+1. **Never add a whole-airframe CD0 buildup on top of these tables** — it
+   would double-count the wing's skin friction, which is already inside
+   the section `cd`. The parasite term must be **body + duct wetted area
+   only**.
+2. **A constant CD0 is wrong for this model's α range.** The tables run
+   to α = 90°, where a body's crossflow drag dominates and is strongly
+   attitude-dependent (a slender body broadside carries a crossflow drag
+   of order 1.2 on projected area). A single constant would underpredict
+   axial force in exactly the deep-stall regime the model exists to
+   cover.
+
+Therefore parasite drag is a **table, `aeroCD0(alphaDeg)`**, not a
+constant, generated by a new path: `DragEstimate`'s component buildup
+(body + duct wetted areas from the contract) for the attached branch,
+blended into a crossflow-drag estimate on the body's projected area at
+high incidence. Neither half is wired today — `DragEstimate` has never
+been called, and no crossflow model exists. Until that driver is built
+the table ships as an all-zero placeholder with the omission declared in
+the fileHeader, so a consumer sees a stated gap rather than a silently
+optimistic drag polar.
+
+## Derived variables (MathML calculations)
+
+- `qbarPa = ½ ρ V²`
+- `J = V / (n · DiskDiameterM)`
+- `alphaDiskDeg`: freestream in FRD is
+  u = (cosα cosβ, sinβ, sinα cosβ); rotation axis is +x, so
+  `cos(alphaDisk) = cosα·cosβ`
+- `phiWDeg = atan2(sinβ, sinα·cosβ)` — crossflow azimuth, 0 in the
+  pitch plane
+- `phat = p·b/(2V)`, `qhat = q·c̄/(2V)`, `rhat = r·b/(2V)` (the
+  StabilityDerivatives `_nd` convention)
+- `Tc = T / (qbarPa · WingAreaM2)` with T from the propulsor's own
+  thrust output — feeds the `coupling*` tables
+- Total wrench buildup: aero terms dimensionalized by q∞S(b,c̄), prop
+  terms by ρn²D⁴(D⁵), prop disk-frame components rotated into FRD by
+  `phiWDeg`, coupling increments added; outputs both the coefficient
+  sets and dimensional `FXTotalN … MZTotalNm`.
+
+## Vane mode shapes
+
+Contract vane order and outward radial hinge axes: bottom [0,0,1],
+left [0,−1,0], top [0,0,−1], right [0,1,0].
+
+| Mode | (δ_bottom, δ_left, δ_top, δ_right) | Net effect |
+|---|---|---|
+| `vaneRollDeg` | (+δ, +δ, +δ, +δ) common mode | pure Mx couple |
+| `vanePitchDeg` | (0, −δ, 0, +δ) y-pair differential | Fz + My |
+| `vaneYawDeg` | (+δ, 0, −δ, 0) z-pair differential | Fy + Mz |
+
+Numeric signs of the ± entries are pinned by the vane-mode checkData
+shots. Allocation saturates per-vane sums against the contract's
+**soft limit ±15°** (hard stops ±20° are not for normal operation).
+
+---
+
+## Breakpoint sets
+
+| bpID | values |
+|---|---|
+| `alphaBp` (deg) | −4, −2, 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 30, 35, 40, 45, 50, 60, 70, 80, 90 |
+| `betaBp` (deg) | ±30, ±20, ±15, ±10, ±5, 0 (generated β ≥ 0, mirrored) |
+| `aileronBp` (deg) | −20, −10, −5, 0, 5, 10, 20 |
+| `jBp` | 0, 0.1, … , 1.0 |
+| `alphaDiskBp` (deg) | 0, 15, 30, 45, 60, 75, 90 |
+| `vaneBp` (deg) | −15, −10, −5, 0, 5, 10, 15 |
+| `tcBp` | 0, 0.5, 1, 2, 4, 8 |
+
+α is dense (2°) through the stall break — CLmax is emergent at 18° —
+and coarsens in the plate regime. Refine from generated data if the
+verifier's interpolation-error spot-checks demand it.
+
+---
+
+## Table inventory
+
+### `aero*` — airframe, power-off (source: Part II coupled solve)
+
+| Tables | Axes | Notes |
+|---|---|---|
+| `aeroCX aeroCY aeroCZ aeroCl aeroCm aeroCn` | α × β | baseline, aileron 0; **carry induced + wing profile drag**, not CDi alone; post-stall entries carry uncertainty bounds from cycle RMS |
+| `aeroCD0` | α | body + duct parasite only (never the wing — see the drag-accounting note above). BLOCKED: placeholder zeros until the buildup + crossflow driver exists |
+| `aeroClp aeroClr aeroCmq aeroCnp aeroCnr` (+ any further `_nd` fields StabilityDerivatives provides) | α | β = 0; **tapered linearly to zero over α ∈ [20°, 40°]**, held zero beyond — a documented assumption, revisit with the hysteresis work |
+| `aeroDCl aeroDCn aeroDCm aeroDCX` | α × aileron | increments from baseline, β = 0; the coupled solve's Kirchhoff attenuation provides the post-stall effectiveness decay — verify it decays plausibly before shipping, clamp only if it does not |
+
+### `prop*` — rotor + duct + vanes (source: SciTech configuration, rotor-vane coupled solve)
+
+Body-axis (FRD) components directly — the vanes are body-fixed and the
+inflow is axial, so there is no disk-frame rotation to apply:
+
+| Tables | Axes | Notes |
+|---|---|---|
+| `propCT propCQ` | J | vanes neutral; thrust = −Di, shaft torque = −Mx of the rotating-frame solve, converted per the frame rule |
+| `propDCXvane … propDCnvane` + `propDCQvane` | J × δ_i | **PER-VANE, not per-mode** — one vane's response to its own angle, serving all four positions by rotational symmetry. Full 6-component wrench + torque back-pressure; ±δ is not antisymmetric (jet dynamic pressure), so no mirroring in δ |
+
+**MEASURED (2026-08-15), and it changed the structure.** The obvious
+buildup — tabulate three command modes, add them — was tested against
+directly-solved simultaneous commands and **fails**:
+
+| Pair | worst error |
+|---|---|
+| pitch+yaw | 0.09 % — superposes |
+| pitch+roll, yaw+roll | 6–33 % — does **not** superpose |
+
+Pitch and yaw act on *disjoint* vane pairs, so they add. Roll is the
+common mode and re-deflects the *same* vanes, and a vane's load is
+nonlinear in its own angle. The pitch+yaw result (all four vanes
+deflected, still 0.05 %) proves vane-to-vane interference is
+negligible, so the failure is purely per-vane nonlinearity.
+
+Replacement, **verified** against every command in the study:
+
+| Buildup | worst error | tables |
+|---|---|---|
+| sum of 3 command modes | 32.7 % | 21 |
+| sum of 4 per-vane responses | **1.4 %** | **7** |
+
+So the buildup is `ΔC = Σ_i propDC*vane(J, δ_i)` with `δ_i` the per-vane
+angles from the mixing matrix — 20× more accurate and 3× cheaper.
+Reproduce: `aeolion_propulsion_map <handoff> <out> <rpm> combo 0.4 3`
+and `... single 0.4 3`.
+
+**Non-convergence, also measured:** positive roll at J = 0.6 does not
+converge, and neither cure works — 24 vs 48 outer passes give identical
+residuals (limit cycle, not slow convergence), and damping relaxation
+0.35 → 0.15 still fails. Sign-asymmetric (negative roll converges in
+2–3 passes). Two iteration paths bound the value: thrust reproducible to
+0.004 % / 0.06 % at δ = +5 / +15, but 3.5 % apart at +10. Carry as
+DAVE-ML uncertainty bounds.
+
+### `coupling*` — fan-on-airframe increments (BLOCKED, see Open items)
+
+| Tables | Axes | Notes |
+|---|---|---|
+| `couplingDCX … couplingDCn` | α × Tc | β = 0; valid V ≥ 10 m/s; Δ from the power-off baseline at matched α |
+
+---
+
+## checkData (staticShots — every one generated from a solve, none hand-written)
+
+1. **Moment-transfer pin**: one condition exported about the contract
+   reference point and about a point shifted +0.10 m in x_frd; the Cm
+   difference must equal the hand-derivable transfer arm. A wrong frame
+   flip errors by 2·0.2423 m ≈ two chord lengths.
+2. **Aileron sign pin**: `aileronDeg = +5` at α = 4°; the solved Cl is
+   the sign definition, cited by the `aileronDeg` variableDef.
+3. **Rate-derivative pin**: Cl_p = −0.452 (the `TestSolverCore` value).
+4. **Vane-mode pins**: pure pitch, pure yaw, pure roll commands — each
+   pinning the dominant components and recording the off-axis residuals
+   at their solved values (they are physics, not zeros). These pin the
+   mixing signs.
+5. **Propulsor pin**: the SciTech Table 1 reference row (the
+   `TestVaneCascade` configuration; its thrust/pass count is already
+   the paper's own consistency anchor).
+6. **Part I cross-checks**: attached-range CL/Cm at a few (α, β) points
+   from the Part I matrix, with tolerance loose enough for the
+   viscous-vs-inviscid delta — the recorded justification for
+   decision 7.
+7. **Summed-wrench pin**: one full-up condition (α, β, rates, aileron,
+   vane commands, powered) through the MathML buildup to dimensional
+   `FXTotalN … MZTotalNm` — pins normalization, rotation, and summation
+   end to end.
+
+---
+
+## Generation pipeline
+
+```
+app/AeroMapExport.cpp        -> models/data/aero-map.json        (baseline + rates + aileron)
+app/PropulsionMapExport.cpp  -> models/data/propulsion-map.json  (prop baseline + vane modes)
+app/InductionMapExport.cpp   -> models/data/coupling-map.json    (BLOCKED on upstream-induction model)
+models/build-daveml.py       -> models/AetherionFlightModel.dml  (assembler: cached JSONs -> XML + checkData)
+models/verify-daveml.py      -> ctest suite: DTD-validate, evaluate every staticShot with an
+                                independent gridded-table/MathML interpreter, compare within tolerance
+```
+
+Each driver exports JSON independently (the `PostStallSweepExport`
+precedent), so regenerating the vane map never reruns the post-stall
+map. The `.dml` and the JSONs are committed together; the verifier runs
+in CI so the file cannot drift from its generators. No external DAVE-ML
+dependency (no Janus) — the verifier's evaluator is deliberately small
+and in-repo.
+
+Rough solve budgets: aero baseline 25α × 6β = 150 coupled solves;
+aileron 25α × 6δ = 150; rates: central differences at the attached α
+points; prop baseline 11J × 7α_disk = 77 rotor-vane coupled solves;
+vane modes 11J × 7α_disk × 6δ × 3 ≈ 1400 (coarsen α_disk to
+{0, 45, 90} for the first pass ≈ 600 if runtime bites — record the
+coarsening here if taken).
+
+---
+
+## Open items
+
+- [x] ~~Reconcile varIDs against S-119 Annex A~~ — RESOLVED 2026-08-15:
+      no conflict, `varID` is unconstrained and `name` carries the
+      standard name (mapping table above). Remaining: confirm the
+      spellings against the published standard text rather than the
+      reference docs' examples, and settle the vane names.
+- [ ] **Validate against the `DAVEfunc` DTD** in CI.
+- [x] ~~`aeroCD0` parasite-drag driver~~ — DONE 2026-08-15,
+      `app/ParasiteDragExport.cpp`. Body+duct wetted areas from the
+      contract through `DragEstimate` (previously never called by
+      anything) plus an Allen-Perkins/Jorgensen crossflow branch.
+      MEASURED: friction CD0 = 0.01058 (body 0.00521 ≈ duct 0.00507 —
+      the duct's shorter chord raises its Cf), crossflow coefficient
+      0.1848, so **CD0(90°) = 0.1954, 17.5× the friction term**. That
+      settles the constant-vs-table question: a constant would omit 95%
+      of parasite drag at 90°. Excludes the wing by construction.
+      Reflected in Part I §Parasite drag and Part II §The parasite
+      branch.
+- [ ] **`coupling*` tables blocked on the upstream-induction model**
+      (semi-infinite vortex cylinder, the fan-induction paper's work
+      item). `SlipstreamField` returns zero upstream by construction
+      and must not be used for this.
+- [ ] **BLOCKER — `aeroDC*` (aileron) tables cannot be generated.**
+      MEASURED 2026-08-15 (`app/AileronEffectivenessExport.cpp`): the
+      Level-2 coupled path produces ΔCl **identically zero at every
+      attitude**, because `PanelBuilder::MinRowsToResolveHinge = 2` (a
+      hinge needs ≥2 chordwise rows or `ChordwiseRowBounds` returns the
+      undivided strip and the deflection is silently dropped) collides
+      with `SolveViscousCoupled`'s exactly-one-row-per-strip contract.
+      Both are individually reasonable; together they make an aileron
+      unrepresentable. A model shipped this way has **no roll control**
+      and nothing flags it.
+      The inviscid 8-row lattice does give a real effect (ΔCl 0.00925 at
+      α=0, peak 0.00936 at α=6, 0.00318 at α=60) but is NOT a substitute:
+      that decay is purely geometric — it passes through the ~18° stall
+      with no break, so it would keep most attached-flow roll authority
+      deep into stall.
+      FIX (solver-side, own branch): a deflected strip must carry the
+      flap in its section description — `StripSection::Alpha0Deg` shifted
+      by the thin-airfoil flap increment for its hinge position and
+      deflection, ideally with a flap-shifted stall angle — so the
+      section model the coupling drives the lattice onto knows the flap
+      is down.
+- [x] ~~Simultaneous-command superposition~~ — MEASURED 2026-08-15;
+      mode-sum rejected, per-vane summation adopted and verified (above).
+- [x] ~~Vane-mode azimuth error at φ_w = 45°~~ — moot: the propulsor
+      model is axial-inflow only (decision below), so there is no
+      azimuth to sweep. Non-axial modelling is the real open item.
+- [ ] Non-axial propulsor inflow: the rotor–vane machinery is
+      axisymmetric end to end (slipstream bands, azimuthal-mean vane
+      feedback, `AxialInflowFromBands`), so disk incidence is not
+      representable. `alphaDiskDeg` is exported as a validity monitor,
+      never as a table axis.
+- [ ] Duct separated drag at incidence — the one parasite contribution
+      the slender-body crossflow form cannot supply; `aeroCD0` is a
+      lower bound at high α until it lands.
+- [ ] Rate-derivative taper [20°, 40°]: assumption, revisit with the
+      hysteresis study.
+- [ ] Hysteresis representation (deferred by decision 9).

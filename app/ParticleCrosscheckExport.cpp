@@ -70,6 +70,9 @@ int main(int argc, char** argv) {
     const double betaOnly = pilot ? std::atof(argv[5]) : 0.0;
     const double nuCoeff =
         (argc > 6) ? std::atof(argv[6]) : S::PwTurbulentViscosityCoeff;
+    // Phase-B resolution knobs: spanwise strips and the convective step.
+    const int stripCount = (argc > 7) ? std::atoi(argv[7]) : FullSpanStrips;
+    const double timeStep = (argc > 8) ? std::atof(argv[8]) : S::PwDefaultTimeStep;
 
     Geometry::HandoffContract contract;
     try {
@@ -98,8 +101,8 @@ int main(int argc, char** argv) {
     std::vector<S::Panel> wing;
     std::vector<S::StripSection> strips;
     double grossArea = 0.0;
-    const double width = contract.Span / FullSpanStrips;
-    for (int i = 0; i < FullSpanStrips; ++i) {
+    const double width = contract.Span / stripCount;
+    for (int i = 0; i < stripCount; ++i) {
         const double y0 = -halfSpan + width * i;
         const double etaMid = std::fabs(y0 + 0.5 * width) / halfSpan;
         const double chord = chordAt(etaMid);
@@ -156,6 +159,7 @@ int main(int argc, char** argv) {
             S::ParticleWakeOptions wakeOptions;
             wakeOptions.Duration = duration;
             wakeOptions.TurbulentViscosityCoeff = nuCoeff;
+            wakeOptions.TimeStep = timeStep;
             const S::ParticleWakeResult run =
                 S::SolveParticleWake(wing, strips, fc, ref, wakeOptions);
             std::cerr << "alpha=" << alphaDeg << " beta=" << betaDeg << " nu=" << nuCoeff
