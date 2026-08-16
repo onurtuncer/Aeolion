@@ -73,3 +73,9 @@ endif()
 # deflection at all.
 add_executable(aeolion_aileron_effectiveness AileronEffectivenessExport.cpp)
 target_link_libraries(aeolion_aileron_effectiveness PRIVATE aeolion aeolion_panelbuilder)
+
+# The aero* half of the DAVE-ML flight model: body-axis force and moment
+# coefficients over alpha x beta from the anchored coupled solve, plus
+# reduced-rate derivatives from the inviscid prepared system.
+add_executable(aeolion_aero_map AeroMapExport.cpp)
+target_link_libraries(aeolion_aero_map PRIVATE aeolion aeolion_panelbuilder)
