@@ -69,4 +69,7 @@ if(AEOLION_BUILD_TESTS)
   # The core header-only library's (Math/Lattice/Geometry/DragEstimate)
   # own tests -- everything else lives beside the module it tests.
   add_subdirectory(tests)
+  # The DAVE-ML flight model's verifier, which re-reads the generated
+  # .dml so it cannot drift from the drivers that produced it.
+  add_subdirectory(models)
 endif()
