@@ -28,23 +28,32 @@
 // converted at ingest. Those are the only two conversion sites, which is
 // the discipline the 2026-08-09 moment-arm bug earned.
 //
-// WHAT IS NOT HERE. Aileron increment tables (aeroDC*) are BLOCKED and
-// deliberately not emitted: PanelBuilder's MinRowsToResolveHinge = 2
-// collides with SolveViscousCoupled's one-row-per-strip contract, so a
-// deflection through this path is exactly zero at every attitude --
-// measured in app/AileronEffectivenessExport.cpp. Emitting them would
-// ship a flight model with no roll control. Parasite drag is its own
-// driver (aeolion_parasite_drag) since no solve produces it.
+//   AILERON INCREMENTS come from the same coupled solve with the flap
+//   carried in the SECTION (StripSection::FlapChordFraction), which is
+//   what makes them computable at all: a hinge cannot be represented on
+//   a single chordwise row, and before that fix a deflection through
+//   this path was exactly zero at every attitude, silently. Neutral and
+//   deflected are solved in the SAME pass, each warm-started up its own
+//   alpha column, because differencing two limit-cycle means taken from
+//   different continuation histories would add noise to the increment
+//   that has nothing to do with the control surface.
 //
-// Beta is swept one-sided; the assembler mirrors it using the unpowered
-// airframe's symmetry (CY, Cl, Cn odd in beta; CX, CZ, Cm even), which
-// the source sweeps confirmed numerically.
+// Parasite drag is NOT here -- it is its own driver
+// (aeolion_parasite_drag), since no solve produces it.
+//
+// TWO ONE-SIDED SWEEPS, both mirrored by the assembler on symmetry
+// arguments that this driver also checks numerically rather than
+// assuming. Beta: CY, Cl, Cn odd, CX, CZ, Cm even. Aileron: the
+// configuration is mirror-symmetric about xz and mirroring maps +delta
+// onto -delta, so the same odd/even split holds in deflection; the sweep
+// solves one negative deflection to verify it.
 //
 // Usage:
 //   aeolion_aero_map <handoff.json> <out.json> [Vinf] [relaxation]
-//                    [maxIterations] [beta|all]
+//                    [maxIterations] [beta|all] [all|baseline|aileron]
 
 #include "Aeolion/Geometry/CstSurface.h"
+#include "Aeolion/Geometry/FlapEffectiveness.h"
 #include "Aeolion/Geometry/HandoffContract.h"
 #include "Aeolion/PanelBuilder/PanelBuilder.h"
 #include "Aeolion/Solver/BodyAxes.h"
@@ -96,7 +105,9 @@ constexpr double RateDerivativeMaxAlphaDeg = 20.0;
 // frame is the solver frame itself; a swept or twisted wing needs a
 // PanelBuilder-side strip builder that carries the section plane.
 std::vector<S::StripSection> StripsFromPanels(const std::vector<S::Panel>& panels, double halfSpan,
-                                              const std::vector<Geometry::AirfoilSection>& sections) {
+                                              const std::vector<Geometry::AirfoilSection>& sections,
+                                              const Geometry::ControlSurface* aileron = nullptr,
+                                              double aileronDeg = 0.0) {
     std::vector<S::StripSection> strips;
     strips.reserve(panels.size());
     for (const S::Panel& panel : panels) {
@@ -108,6 +119,19 @@ std::vector<S::StripSection> StripsFromPanels(const std::vector<S::Panel>& panel
         strip.Width = panel.SpanwiseWidth;
         strip.Eta = std::fabs(mid.y) / halfSpan;
         strip.Alpha0Deg = Geometry::SectionZeroLiftAngleDeg(sections, strip.Eta);
+
+        // The aileron, carried in the SECTION rather than the panel
+        // geometry: a hinge cannot be represented on a single chordwise
+        // row, but to thin-airfoil theory a deflected flap is a camber
+        // change, so it shifts the zero-lift angle the section model is
+        // posed against (StripSection::FlapChordFraction). ANTISYMMETRIC:
+        // the right semi-span takes +delta and the left -delta, which is
+        // what makes it an aileron rather than a flaperon.
+        if (aileron && aileronDeg != 0.0 && strip.Eta >= aileron->EtaStart &&
+            strip.Eta <= aileron->EtaEnd) {
+            strip.FlapChordFraction = aileron->ChordFraction;
+            strip.FlapDeflectionDeg = (mid.y >= 0.0) ? aileronDeg : -aileronDeg;
+        }
         strips.push_back(strip);
     }
     return strips;
@@ -136,6 +160,16 @@ int main(int argc, char** argv) {
     const std::string betaArg = (argc > 6) ? argv[6] : "all";
     const bool betaFiltered = betaArg != "all";
     const double betaOnly = betaFiltered ? std::atof(betaArg.c_str()) : 0.0;
+    // Which blocks to compute. The baseline map is expensive and rarely
+    // needs regenerating alongside the aileron sweep, so they are
+    // selectable: "all" | "baseline" | "aileron".
+    const std::string blocks = (argc > 7) ? argv[7] : "all";
+    const bool wantBaseline = (blocks == "all" || blocks == "baseline");
+    const bool wantAileron = (blocks == "all" || blocks == "aileron");
+    if (!wantBaseline && !wantAileron) {
+        std::cerr << "unknown block selector '" << blocks << "' (all | baseline | aileron)\n";
+        return 1;
+    }
 
     Geometry::HandoffContract contract;
     try {
@@ -248,6 +282,7 @@ int main(int argc, char** argv) {
     bool firstRow = true;
     int unconverged = 0;
     for (const double betaDeg : Betas) {
+        if (!wantBaseline) break;
         if (betaFiltered && std::fabs(betaDeg - betaOnly) > 1e-9) continue;
         // Warm-start continuation UP each alpha column: the map is the
         // ASCENDING branch, deliberately (hysteresis is a separate study,
@@ -285,7 +320,100 @@ int main(int argc, char** argv) {
         }
     }
 
-    out << "\n]}\n";
+    out << "\n]";
+
+    // --- aileron increments, beta = 0 ----------------------------------------
+    // ONE-SIDED in deflection. The configuration is mirror-symmetric about
+    // its xz-plane, and mirroring maps an antisymmetric command of +delta
+    // onto one of -delta while flipping the lateral wrench. So
+    //
+    //     dCY, dCl, dCn  are ODD in delta_a
+    //     dCX, dCZ, dCm  are EVEN
+    //
+    // and the assembler mirrors, exactly as it does for sideslip. That is
+    // an argument, not a measurement, so the sweep also solves one
+    // NEGATIVE deflection and checks it -- recorded in "aileronMirror".
+    //
+    // Neutral and deflected are solved in the SAME pass, each warm-started
+    // up its own alpha column. Differencing two limit-cycle means computed
+    // from different continuation histories would add noise to the
+    // increment that has nothing to do with the control surface.
+    if (wantAileron) {
+        out << ",\n\"aileron\":[\n";
+        const Geometry::ControlSurface* aileron = nullptr;
+        for (const Geometry::ControlSurface& cs : contract.ControlSurfaces)
+            if (cs.Name == "aileron") { aileron = &cs; break; }
+        if (!aileron) {
+            std::cerr << "contract states no surface named 'aileron'\n";
+            return 1;
+        }
+        const double tau = Geometry::FlapEffectiveness(1.0 - aileron->ChordFraction);
+        std::cout << "\naileron: chord fraction " << aileron->ChordFraction << ", eta "
+                  << aileron->EtaStart << "-" << aileron->EtaEnd
+                  << ", thin-airfoil tau = " << tau << "\n"
+                  << "alpha  delta     dCX        dCZ        dCl        dCn    iters\n";
+
+        // Positive deflections only; plus one negative, for the mirror check.
+        const std::vector<double> deltas = {5.0, 10.0, 20.0};
+        const double mirrorProbeDeg = -10.0;
+
+        struct Chain {
+            double Delta;
+            std::vector<S::StripSection> Strips;
+            std::vector<double> Warm;
+        };
+        std::vector<Chain> chains;
+        chains.push_back({0.0, StripsFromPanels(wing, halfSpan, contract.AirfoilSections), {}});
+        for (const double d : deltas)
+            chains.push_back(
+                {d, StripsFromPanels(wing, halfSpan, contract.AirfoilSections, aileron, d), {}});
+        chains.push_back({mirrorProbeDeg,
+                          StripsFromPanels(wing, halfSpan, contract.AirfoilSections, aileron,
+                                           mirrorProbeDeg),
+                          {}});
+
+        const double q = 0.5 * Rho * flightSpeed * flightSpeed;
+        bool firstAil = true;
+        fc.betaDeg = 0.0;
+        for (const double alphaDeg : BuildAlphaGrid()) {
+            fc.alphaDeg = alphaDeg;
+            S::BodyAxisCoefficients neutral;
+            for (Chain& chain : chains) {
+                S::ViscousCouplingOptions opts = coupling;
+                opts.InitialGamma = chain.Warm;
+                const auto res = S::SolveViscousCoupled(wing, chain.Strips, fc, ref, trail, model,
+                                                        opts, sources);
+                chain.Warm = res.Base.gamma;
+                const S::BodyAxisCoefficients w = S::BodyAxisFromCoupled(res, q, ref);
+                if (chain.Delta == 0.0) {
+                    neutral = w;
+                    continue;
+                }
+                if (!res.Converged) ++unconverged;
+                if (!firstAil) out << ",\n";
+                firstAil = false;
+                out << R"( {"alphaDeg":)" << alphaDeg << R"(,"deltaDeg":)" << chain.Delta
+                    << R"(,"dCX":)" << (w.CX - neutral.CX) << R"(,"dCY":)" << (w.CY - neutral.CY)
+                    << R"(,"dCZ":)" << (w.CZ - neutral.CZ) << R"(,"dCl":)" << (w.Cl - neutral.Cl)
+                    << R"(,"dCm":)" << (w.Cm - neutral.Cm) << R"(,"dCn":)" << (w.Cn - neutral.Cn)
+                    << R"(,"converged":)" << (res.Converged ? "true" : "false")
+                    << R"(,"iterations":)" << res.Iterations << R"(,"residual":)"
+                    << res.MaxResidual << '}';
+                out.flush();
+
+                std::cout << alphaDeg << "\t" << chain.Delta << "\t" << (w.CX - neutral.CX) << "\t"
+                          << (w.CZ - neutral.CZ) << "\t" << (w.Cl - neutral.Cl) << "\t"
+                          << (w.Cn - neutral.Cn) << "\t" << res.Iterations
+                          << (res.Converged ? "" : "  (cycle-mean)") << std::endl;
+            }
+        }
+        out << "\n],\n\"aileronMirrorProbeDeg\":" << mirrorProbeDeg
+            << ",\n\"aileronTau\":" << tau
+            << ",\n\"aileronEtaStart\":" << aileron->EtaStart
+            << ",\n\"aileronChordFraction\":" << aileron->ChordFraction;
+    }
+
+    out << "\n}\n";
     std::cout << "\nwrote " << outPath << " (" << unconverged
               << " conditions exported as cycle means)\n";
     return 0;

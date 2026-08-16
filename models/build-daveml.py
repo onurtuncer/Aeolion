@@ -9,6 +9,7 @@ aerodynamics; if a number is wrong, it is wrong in the JSON.
 Emits ANSI/AIAA S-119-2011 DAVE-ML 2.0.1. Inputs, in models/data/:
 
     aero-map.json         aeolion_aero_map        baseline + rate derivatives
+    aero-aileron.json     aeolion_aero_map ... aileron   control increments
     parasite-drag.json    aeolion_parasite_drag   aeroCD0(alpha)
     propulsion-map.json   aeolion_propulsion_map  propCT/propCQ(J)
     propulsion-singlevane.json                    per-vane increments
@@ -242,6 +243,18 @@ def build(args):
     parasite = load(data, "parasite-drag.json", required=False)
     prop = load(data, "propulsion-map.json", required=False)
     vane = load(data, "propulsion-singlevane.json", required=False)
+    # The aileron sweep may live in its own file: the driver can be run
+    # with the block selector so the expensive baseline map is not
+    # regenerated alongside it, and merging two JSONs by hand is exactly
+    # the sort of step that goes wrong without saying so.
+    ailfile = load(data, "aero-aileron.json", required=False)
+    if ailfile and aero is not None and not aero.get("aileron"):
+        aero = dict(aero)
+        aero["aileron"] = ailfile.get("aileron", [])
+        for k in ("aileronMirrorProbeDeg", "aileronTau", "aileronEtaStart",
+                  "aileronChordFraction"):
+            if k in ailfile:
+                aero[k] = ailfile[k]
 
     if aero is None:
         print("note: aero-map.json absent -- emitting the model without aero* tables",
@@ -296,10 +309,13 @@ def build(args):
         "LIMITATION: tables are the ascending-alpha branch; hysteresis is not represented.",
         "LIMITATION: rate derivatives are tapered to zero over alpha 20-40 deg, a declared "
         "assumption, not a computed result.",
-        "INCOMPLETE: aileron increment tables are NOT emitted -- the deflected sweep has "
-        "not been run. The model therefore carries NO ROLL CONTROL INPUT. The underlying "
-        "blocker (a hinge unrepresentable on the coupled path) is fixed; the data is "
-        "simply not generated yet.",
+        ("Aileron increments are present, generated with the flap carried in the section "
+         "and mirrored in deflection on a symmetry the sweep verifies numerically."
+         if (aero or {}).get("aileron") else
+         "INCOMPLETE: aileron increment tables are NOT emitted -- the deflected sweep has "
+         "not been run, so the model carries NO ROLL CONTROL INPUT. The underlying blocker "
+         "(a hinge unrepresentable on the coupled path) is fixed; the data is not generated "
+         "yet."),
         "BLOCKED: fan-on-airframe interaction tables are NOT emitted, pending an "
         "upstream-induction model. The airframe tables are therefore POWER-OFF and "
         "underpredict the separation delay the aft fan provides in transition.",
@@ -400,6 +416,47 @@ def build(args):
                            f"Airframe {comp}, power-off, controls neutral. Carries induced "
                            f"and wing profile drag; parasite drag is aeroCD0."))
 
+        # Aileron increments. Swept one-sided in deflection and mirrored
+        # here on the same symmetry argument used for sideslip: the
+        # configuration is mirror-symmetric about xz, and mirroring maps an
+        # antisymmetric +delta command onto -delta while flipping the
+        # lateral wrench. The generating sweep VERIFIES this rather than
+        # assuming it -- it solves one negative deflection, which
+        # reproduces the mirrored positive one to machine precision.
+        ail = aero.get("aileron", [])
+        if ail:
+            probe = aero.get("aileronMirrorProbeDeg")
+            # The probe row exists only to check the mirror; it must not
+            # also become a breakpoint, or the axis gains a stray point.
+            gen = [r for r in ail if probe is None or abs(r["deltaDeg"] - probe) > 1e-9]
+            pos = uniq([r["deltaDeg"] for r in gen if r["deltaDeg"] > 0])
+            full_deltas = uniq([-x for x in pos] + [0.0] + pos)
+            breakpoints(d, "aileronBp", "aileronDeflection", full_deltas)
+
+            lut = {(r["alphaDeg"], r["deltaDeg"]): r for r in gen}
+            ODD_A = {"dCY", "dCl", "dCn"}
+            for comp in ("dCX", "dCY", "dCZ", "dCl", "dCm", "dCn"):
+                vals = []
+                for a in alphas:
+                    for dlt in full_deltas:
+                        if abs(dlt) < 1e-12:
+                            vals.append(0.0)  # neutral is the reference
+                            continue
+                        row = lut.get((a, abs(dlt)))
+                        if row is None:
+                            vals.append(0.0)
+                            continue
+                        v = row[comp]
+                        if dlt < 0 and comp in ODD_A:
+                            v = -v
+                        vals.append(v)
+                name = "aeroD" + comp[1:]
+                tables.append((name, ["alphaBp", "aileronBp"], vals, name + "Table",
+                               "Aileron increment " + comp[1:] + " from the neutral "
+                               "configuration at matched alpha. The flap is carried in the "
+                               "section, so this attenuates through stall as the sections "
+                               "separate -- an inviscid lattice cannot show that."))
+
         rates = aero.get("rates", [])
         if rates:
             ralphas = uniq([r["alphaDeg"] for r in rates])
@@ -477,7 +534,8 @@ def build(args):
 
     d.comment("Functions binding each table to its breakpoints.")
     axis_var = {"alphaBp": "alphaDeg", "betaBp": "betaDeg", "alphaRateBp": "alphaDeg",
-                "alphaParasiteBp": "alphaDeg", "jBp": "advanceRatio",
+                "alphaParasiteBp": "alphaDeg", "aileronBp": "aileronDeg",
+                "jBp": "advanceRatio",
                 "jVaneBp": "advanceRatio", "vaneBp": "vaneDeflectionDeg"}
     for name, bp_ids, vals, tname, desc in tables:
         simple_function(d, f"{name}Fn", name, [axis_var[b] for b in bp_ids], bp_ids, tname)
@@ -532,6 +590,36 @@ def build(args):
                 {"alphaDeg": near2["alphaDeg"]},
                 {"aeroClp": near2["Clp"]},
                 1e-9))
+    if aero and aero.get("aileron"):
+        gen = [r for r in aero["aileron"] if r["deltaDeg"] > 0]
+        if gen:
+            top = max((r["deltaDeg"] for r in gen))
+            probe = min((r for r in gen if abs(r["deltaDeg"] - top) < 1e-9),
+                        key=lambda r: abs(r["alphaDeg"]))
+            # The expected value is taken from the POSITIVE-deflection row
+            # and negated by hand here, while the table cell is filled by
+            # the assembler's mirroring code. The two are independent, so
+            # this catches a wrong mirror sign -- which no encoding pin
+            # can, since the encoding would faithfully store the error.
+            shots.append((
+                "aileronMirrorAntisymmetry",
+                "Physics pin: the rolling-moment increment is ODD in aileron deflection, "
+                "because mirroring the configuration about its xz-plane maps a +delta "
+                "antisymmetric command onto -delta. The expected value comes from the "
+                "+delta row negated; the table cell comes from the mirroring code.",
+                {"alphaDeg": probe["alphaDeg"], "aileronDeg": -top},
+                {"aeroDCl": -probe["dCl"]},
+                1e-9))
+            shots.append((
+                "aileronRollAuthorityIsReal",
+                "Physics pin: a deflected aileron produces a rolling moment at all. This "
+                "was exactly zero at every attitude before the flap was carried in the "
+                "section, silently, with the solve converging and reporting sensible "
+                "forces.",
+                {"alphaDeg": probe["alphaDeg"], "aileronDeg": top},
+                {"aeroDCl": probe["dCl"]},
+                1e-9))
+
     if parasite:
         pts = sorted(parasite["table"], key=lambda r: r["alphaDeg"])
         top = pts[-1]
@@ -575,7 +663,9 @@ def build(args):
     print(f"wrote {out}: {len(tables)} tables")
     if aero is None:
         print("  (no aero* tables -- aero-map.json was absent)")
-    print("  NOT emitted: aeroDC* (aileron -- deflected sweep not yet run), coupling* (blocked)")
+    if not (aero or {}).get("aileron"):
+        print("  NOT emitted: aeroDC* (aileron -- deflected sweep not yet run)")
+    print("  NOT emitted: coupling* (blocked on the upstream-induction model)")
     return 0
 
 
