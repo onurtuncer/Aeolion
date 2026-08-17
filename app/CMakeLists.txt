@@ -79,3 +79,11 @@ target_link_libraries(aeolion_aileron_effectiveness PRIVATE aeolion aeolion_pane
 # reduced-rate derivatives from the inviscid prepared system.
 add_executable(aeolion_aero_map AeroMapExport.cpp)
 target_link_libraries(aeolion_aero_map PRIVATE aeolion aeolion_panelbuilder)
+
+# The coupling* half of the DAVE-ML flight model: what the aft fan does to
+# the airframe, as increments from the power-off tables. Uses the
+# semi-infinite vortex cylinder of Solver/DiskInduction.h, which -- unlike
+# the momentum-theory slipstream -- has a field UPSTREAM of the disk, which
+# is the half that matters when the fan sits behind the wing.
+add_executable(aeolion_induction_map InductionMapExport.cpp)
+target_link_libraries(aeolion_induction_map PRIVATE aeolion aeolion_panelbuilder)

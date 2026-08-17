@@ -13,17 +13,17 @@ Emits ANSI/AIAA S-119-2011 DAVE-ML 2.0.1. Inputs, in models/data/:
     parasite-drag.json    aeolion_parasite_drag   aeroCD0(alpha)
     propulsion-map.json   aeolion_propulsion_map  propCT/propCQ(J)
     propulsion-singlevane.json                    per-vane increments
+    coupling-map.json     aeolion_induction_map   fan-on-airframe increments
 
-Deliberately NOT emitted, and declared in the file header instead:
+Any block whose JSON is absent is DECLARED absent in the file header
+rather than emitted as zeros, because a zero-valued table is a lie a
+consumer cannot detect.
 
-  * aeroDC* (aileron increments) -- NOT YET SWEPT. The former blocker
-    (a hinge being unrepresentable on the coupled path) was fixed by
-    carrying the flap in StripSection, but aeolion_aero_map does not yet
-    run the deflected conditions, so no aileron data exists to tabulate.
-    Absent tables are declared; zero-valued ones would be a lie.
-  * coupling* (fan-on-airframe) -- BLOCKED on the upstream-induction
-    model. The existing slipstream model returns zero upstream by
-    construction, so it would report a confident zero interaction.
+The fan-on-airframe interaction was long declared blocked on an
+upstream-induction model. That blocker is stale: Solver/DiskInduction.h
+implements the semi-infinite vortex cylinder, which HAS a field upstream
+of the disk -- the half the momentum-theory slipstream lacks, and the
+half that matters when the fan sits behind the wing.
 
 Usage:  python build-daveml.py [--data DIR] [--out FILE]
 """
@@ -260,6 +260,7 @@ def build(args):
     parasite = load(data, "parasite-drag.json", required=False)
     prop = load(data, "propulsion-map.json", required=False)
     vane = load(data, "propulsion-singlevane.json", required=False)
+    coupling = load(data, "coupling-map.json", required=False)
     # The aileron sweep may live in its own file: the driver can be run
     # with the block selector so the expensive baseline map is not
     # regenerated alongside it, and merging two JSONs by hand is exactly
@@ -430,6 +431,26 @@ def build(args):
                                    "from the mixing matrix. The per-vane tables are indexed "
                                    "by this, and the four contributions are summed.")
 
+    if coupling and prop and aero:
+        # The interaction index, computed IN THE FILE from the propulsor's
+        # own thrust so the two halves cannot disagree. No algebraic loop:
+        # the propulsor wrench does not depend on Tc, so thrust is known
+        # before the interaction tables are read.
+        m.variable("propThrustN", "propellerThrust", "N", axis="body",
+                   description="Thrust from the propulsor tables, rho n^2 D^4 CT.",
+                   calc=app("times", ci("airDensityKgpm3"),
+                            app("power", ci("propSpeedRevps"), cn(2)),
+                            app("power", ci("DiskDiameterM"), cn(4)),
+                            ci("propCT")),
+                   is_output=True)
+        m.variable("thrustCoefficient", "thrustCoefficient", "nd", symbol="Tc",
+                   description="T / (qbar S). Indexes the fan-on-airframe interaction "
+                               "tables. Degenerates as V -> 0, hence the declared "
+                               "minimum speed.",
+                   calc=app("divide", ci("propThrustN"),
+                            app("times", ci("qbarPa"), ci("WingAreaM2"))),
+                   is_output=True)
+
     if aero:
         m.variable("pHat", "reducedRollRate", "nd", symbol="phat",
                    calc=app("divide", app("times", ci("rollRateRadps"), ci("WingSpanM")),
@@ -543,6 +564,30 @@ def build(args):
         tables.append(("propCQ", ["jBp"], [by_j[j]["cq"] for j in js], "propCQTable",
                        "Shaft torque coefficient, Q / rho n^2 D^5."))
 
+    if coupling:
+        crows = coupling["rows"]
+        ctcs = uniq([0.0] + [r["Tc"] for r in crows])
+        calphas = uniq([r["alphaDeg"] for r in crows])
+        bp_defs.append(("tcBp", "thrustCoefficient", ctcs))
+        clut = {(r["alphaDeg"], r["Tc"]): r for r in crows}
+        for comp in ("dCX", "dCY", "dCZ", "dCl", "dCm", "dCn"):
+            vals = []
+            for a in calphas:
+                for tc in ctcs:
+                    if tc == 0.0:
+                        vals.append(0.0)  # power-off is the reference
+                        continue
+                    row = clut.get((a, tc))
+                    vals.append(row[comp] if row else 0.0)
+            name = "coupling" + comp[1:]
+            tables.append((name, ["alphaCouplingBp", "tcBp"], vals, f"{name}Table",
+                           f"Fan-on-airframe increment {comp[1:]} from the power-off "
+                           "configuration at matched alpha. The aft fan induces a "
+                           "favourable gradient UPSTREAM of itself, over the wing; the "
+                           "momentum-theory slipstream is identically zero there and "
+                           "would report no interaction at all."))
+        bp_defs.append(("alphaCouplingBp", "angleOfAttack", calphas))
+
     if vane and prop:
         # PER-VANE increments, not per-mode: the mode-sum buildup was
         # measured wrong by up to 33%, per-vane summation to 1.4%.
@@ -612,7 +657,8 @@ def build(args):
               "the superposition measurement forced.")
     axis_var = {"alphaBp": "alphaDeg", "betaBp": "betaDeg", "alphaRateBp": "alphaDeg",
                 "alphaParasiteBp": "alphaDeg", "aileronBp": "aileronDeg",
-                "jBp": "advanceRatio", "jVaneBp": "advanceRatio"}
+                "jBp": "advanceRatio", "jVaneBp": "advanceRatio",
+                "alphaCouplingBp": "alphaDeg", "tcBp": "thrustCoefficient"}
     VANE_POS = ("Bottom", "Left", "Top", "Right")
     for name, bp_ids, vals, tname, desc in tables:
         if "vaneBp" in bp_ids:
@@ -751,7 +797,8 @@ def build(args):
         print("  (no aero* tables -- aero-map.json was absent)")
     if not (aero or {}).get("aileron"):
         print("  NOT emitted: aeroDC* (aileron -- deflected sweep not yet run)")
-    print("  NOT emitted: coupling* (blocked on the upstream-induction model)")
+    if not coupling:
+        print("  NOT emitted: coupling* (no coupling-map.json)")
     return 0
 
 
