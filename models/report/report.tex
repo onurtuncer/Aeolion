@@ -1375,6 +1375,32 @@ inviscid lattice's $84\%$. That decay is precisely the physics the
 inviscid column structurally cannot contain, and it is the answer to the
 question this section opened with.
 
+\paragraph{What the generated sweep then showed.} With the fix in place
+the full $\alpha \times \delta_a$ sweep runs, and its result is worth
+more than the table entries themselves.
+
+\input{tables/aileron}
+
+\noindent
+Roll authority falls to $72\%$ of its attached value by $\alpha =
+20\dg$ and to under $10\%$ by $30\dg$. Adverse yaw moves the other way:
+$|\Delta C_n / \Delta C_l|$ climbs from $0.09$ at zero incidence to
+above unity past stall. \textbf{Beyond about $30\dg$ the aileron is
+predominantly a yaw effector}, which is the classic pre-departure
+signature and precisely the behaviour a departure-susceptible simulator
+must have. A table built from the inviscid lattice would have shown
+roll authority decaying gently and adverse yaw staying small---an
+aircraft that rolls obediently out of a stall.
+
+Two honesties about the deep-stall rows. They are limit-cycle means, so
+the daggered entries are not steady states. And once $|\Delta C_l|$ has
+collapsed to a few thousandths its \emph{sign} is not resolved by this
+method---the sweep shows it changing sign between $30\dg$ and $60\dg$,
+which is consistent with genuine aileron reversal but equally
+consistent with cycle-mean scatter at that amplitude. The model
+therefore carries the values with their uncertainty rather than a claim
+about reversal.
+
 \paragraph{One number worth carrying away.} Equation~\eqref{eq:tau} is
 strongly concave, so the contract's $12\%$-chord aileron is worth
 $\tau = 0.432$, not $0.12$. A linear-in-chord estimate---the intuitive
