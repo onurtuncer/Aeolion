@@ -141,8 +141,11 @@ class Doc:
             self.raw(f"<{tag}{a}>{esc(text)}</{tag}>")
 
     def comment(self, text):
+        # A double hyphen may not appear inside an XML comment, and the
+        # prose in this file uses "--" as an em dash freely. Substitute
+        # here rather than rely on every call site remembering.
         for line in text.strip().split("\n"):
-            self.raw(f"<!-- {line.strip()} -->")
+            self.raw("<!-- " + line.strip().replace("--", "—") + " -->")
 
     def text(self):
         return "\n".join(self.lines) + "\n"
@@ -178,6 +181,8 @@ class Model:
     def variable(self, varID, name, units, *, axis="", sign="", symbol="",
                  initial=None, calc=None, is_output=False, description=""):
         attrs = dict(name=name, varID=varID, units=units)
+        if initial is not None:
+            attrs["initialValue"] = initial
         if axis:
             attrs["axisSystem"] = axis
         if sign:
@@ -187,8 +192,6 @@ class Model:
         self.d.open("variableDef", **attrs)
         if description:
             self.d.leaf("description", description)
-        if initial is not None:
-            self.d.leaf("initialValue", initial)
         if calc is not None:
             self.d.open("calculation")
             self.d.open("math", xmlns="http://www.w3.org/1998/Math/MathML")
@@ -200,7 +203,7 @@ class Model:
         self.d.close("variableDef")
 
 
-def breakpoints(d, bpID, name, values):
+def emit_breakpoints(d, bpID, name, values):
     d.open("breakpointDef", bpID=bpID, name=name)
     d.leaf("bpVals", ", ".join(f"{v:g}" for v in values))
     d.close("breakpointDef")
@@ -226,14 +229,28 @@ def gridded_table(d, name, bp_ids, values, description=""):
 
 
 def simple_function(d, name, out_var, in_vars, bp_ids, table_name, description=""):
-    """A gridded function: independent variables -> one dependent variable."""
+    """A gridded function: independent variables -> one dependent variable.
+
+    The DTD form, which is not the obvious one. independentVarRef carries
+    NO bpID -- the breakpoint association comes from the table's own
+    breakpointRefs, so the ORDER of these must match it. And functionDefn
+    CONTAINS a griddedTableRef element rather than carrying a gtID
+    attribute.
+
+    extrapolate="neither" states the clamping the verifier's lookup
+    already does: a gridded table is defined on its grid, and holding the
+    edge value is a claim the file should make explicitly rather than
+    leave to a consumer's default.
+    """
     d.open("function", name=name)
     if description:
         d.leaf("description", description)
-    for var, bp in zip(in_vars, bp_ids):
-        d.leaf("independentVarRef", varID=var, bpID=bp)
+    for var in in_vars:
+        d.leaf("independentVarRef", varID=var, interpolate="linear", extrapolate="neither")
     d.leaf("dependentVarRef", varID=out_var)
-    d.leaf("functionDefn", gtID=f"{table_name}_data")
+    d.open("functionDefn")
+    d.leaf("griddedTableRef", gtID=f"{table_name}_data")
+    d.close("functionDefn")
     d.close("function")
 
 
@@ -272,58 +289,81 @@ def build(args):
     d.leaf("author", "", name="Caglar Ucler", org="Ozyegin University")
     d.leaf("author", "", name="Ahmet Gunes", org="Istanbul Technical University")
     d.leaf("fileCreationDate", "", date=str(date.today()))
-    d.open("description")
-    d.raw(esc(
+    # The description carries the validity envelope and the declared gaps.
+    # These were once <reference> elements, which the DTD reserves for
+    # bibliography -- refID is an ID and must be unique, and author and date
+    # are required. Prose belongs here.
+    notes = [
         "Tabulated flight model of the Aetherion ducted-fan tail-sitter, generated from "
         "the Aeolion aerodynamic toolkit. Body axes are the contract frame "
         "aetherion_body_frd (x forward, y right, z down), the standard aeronautical body "
         "axis system of ANSI/AIAA R-004-1992. Moments are about the contract's "
         "moment_reference_point. See models/README.md for the normative specification "
-        "and models/report/ for the technical report."))
+        "and models/report/ for the technical report.",
+        "",
+        "VALIDITY. Incompressible, M < 0.3: no Mach dependence exists in the generating "
+        "methods. Single Reynolds number -- every table was generated at V = 25 m/s. "
+        "Propulsor tables are AXIAL INFLOW ONLY, because the rotor-vane machinery is "
+        "axisymmetric end to end; alphaDiskDeg is output as a validity monitor rather "
+        "than faked as a table axis. Powered operation only: the rho n^2 D^4 group "
+        "excludes n -> 0, so windmilling and low-rotor-speed descent are outside the "
+        "envelope.",
+        "",
+        "LIMITATIONS. Post-stall values are limit-cycle means, not steady states. CLmax "
+        "is an upper bound -- bubble bursting is not modelled. The tables are the "
+        "ascending-alpha branch; hysteresis is not represented. Rate derivatives are "
+        "tapered to zero over alpha 20-40 deg, a declared assumption rather than a "
+        "computed result. Parasite drag covers body and duct only -- the wing's profile "
+        "drag is already inside the force tables -- and omits the duct's separated drag "
+        "at incidence, so aeroCD0 is a lower bound at high alpha. The aileron flap model "
+        "is lift-only: no section pitching-moment increment, no gap leakage, no viscous "
+        "decay at large deflection, so tabulated roll authority is an upper bound.",
+    ]
+    if not (aero or {}).get("aileron"):
+        notes.append("")
+        notes.append(
+            "INCOMPLETE: aileron increment tables are absent -- the deflected sweep has "
+            "not been run -- so this model carries NO ROLL CONTROL INPUT.")
+    notes.append("")
+    notes.append(
+        "INCOMPLETE: fan-on-airframe interaction tables (coupling*) are absent, so the "
+        "airframe tables are POWER-OFF and underpredict the separation delay the aft fan "
+        "provides in transition.")
+    d.open("description")
+    for line in notes:
+        d.raw(esc(line))
     d.close("description")
+
+    sources = [
+        ("srcAeroMap", "aero-map.json", "aeolion_aero_map",
+         "Airframe baseline map and reduced-rate derivatives", aero),
+        ("srcAileron", "aero-aileron.json", "aeolion_aero_map (aileron block)",
+         "Aileron increment sweep", ailfile or ((aero or {}).get("aileron") and aero)),
+        ("srcParasite", "parasite-drag.json", "aeolion_parasite_drag",
+         "Body and duct parasite drag, friction buildup plus crossflow branch", parasite),
+        ("srcPropMap", "propulsion-map.json", "aeolion_propulsion_map",
+         "Ducted propulsor over advance ratio", prop),
+        ("srcPropVane", "propulsion-singlevane.json", "aeolion_propulsion_map (single)",
+         "Per-vane control increments", vane),
+    ]
+    present = [(rid, fn, who, what) for rid, fn, who, what, doc in sources if doc]
+    # <reference> is bibliography: refID must be a unique ID, and author,
+    # title and date are required. The sweep JSONs are exactly that -- the
+    # documents this model was generated from -- so they belong here and
+    # the provenance's documentRefs point at them.
+    for rid, fn, who, what in present:
+        d.leaf("reference", "", refID=rid, author=who, title=f"{what} ({fn})",
+               date=str(date.today()))
 
     d.open("provenance", provID="genProv")
     d.leaf("author", "", name="Aeolion", org="models/build-daveml.py")
     d.leaf("creationDate", "", date=str(date.today()))
-    for src, doc in (("aero-map.json", aero), ("parasite-drag.json", parasite),
-                     ("propulsion-map.json", prop), ("propulsion-singlevane.json", vane)):
-        if doc is not None:
-            meta = doc.get("meta", {})
-            d.leaf("documentRef", "", docID=src.replace(".json", ""),
-                   refID=meta.get("designId", "")[:16])
-    d.leaf("description", "Generated from cached solver sweeps; see each documentRef.")
+    for rid, fn, who, what in present:
+        d.leaf("documentRef", "", refID=rid)
+    d.leaf("description", "Generated from cached solver sweeps; see each documentRef. "
+                          "Nothing in the assembler computes aerodynamics.")
     d.close("provenance")
 
-    # The validity envelope and the declared gaps, in the file itself
-    # rather than only in the report.
-    for note in [
-        "VALIDITY: incompressible, M < 0.3. No Mach dependence exists in the generating "
-        "methods.",
-        "VALIDITY: single Reynolds number -- all tables generated at V = 25 m/s.",
-        "VALIDITY: propulsor tables are AXIAL INFLOW ONLY. The rotor-vane machinery is "
-        "axisymmetric end to end, so disk incidence is not representable. alphaDiskDeg is "
-        "output as a validity monitor, never as a table axis.",
-        "VALIDITY: powered operation only; the rho n^2 D^4 group excludes n -> 0.",
-        "LIMITATION: post-stall values are limit-cycle means, not steady states.",
-        "LIMITATION: CLmax is an upper bound -- bubble bursting is not modelled.",
-        "LIMITATION: tables are the ascending-alpha branch; hysteresis is not represented.",
-        "LIMITATION: rate derivatives are tapered to zero over alpha 20-40 deg, a declared "
-        "assumption, not a computed result.",
-        ("Aileron increments are present, generated with the flap carried in the section "
-         "and mirrored in deflection on a symmetry the sweep verifies numerically."
-         if (aero or {}).get("aileron") else
-         "INCOMPLETE: aileron increment tables are NOT emitted -- the deflected sweep has "
-         "not been run, so the model carries NO ROLL CONTROL INPUT. The underlying blocker "
-         "(a hinge unrepresentable on the coupled path) is fixed; the data is not generated "
-         "yet."),
-        "BLOCKED: fan-on-airframe interaction tables are NOT emitted, pending an "
-        "upstream-induction model. The airframe tables are therefore POWER-OFF and "
-        "underpredict the separation delay the aft fan provides in transition.",
-        "LIMITATION: parasite drag covers body and duct only -- the wing's profile drag is "
-        "already inside the force tables. The duct's separated drag at incidence is not "
-        "modelled, so aeroCD0 is a lower bound at high alpha.",
-    ]:
-        d.leaf("reference", "", refID="note", title=note)
     d.close("fileHeader")
 
     # ---------------- inputs ----------------
@@ -373,6 +413,23 @@ def build(args):
                                           app("cos", deg2rad(ci("betaDeg"))))),
                         app("divide", cn(180), "<pi/>")),
                is_output=True)
+    if vane and prop:
+        # Mixing matrix (models/README.md): bottom = R+Y, left = R-P,
+        # top = R-Y, right = R+P. These index the per-vane tables, which
+        # replaced the per-mode ones after the mode-sum buildup was
+        # measured wrong by up to 33%.
+        for pos, expr in (
+            ("Bottom", app("plus", ci("vaneRollDeg"), ci("vaneYawDeg"))),
+            ("Left", app("minus", ci("vaneRollDeg"), ci("vanePitchDeg"))),
+            ("Top", app("minus", ci("vaneRollDeg"), ci("vaneYawDeg"))),
+            ("Right", app("plus", ci("vaneRollDeg"), ci("vanePitchDeg"))),
+        ):
+            m.variable(f"vane{pos}Deg", f"vaneDeflection_{pos}", "deg", axis="body",
+                       calc=expr,
+                       description=f"The {pos.lower()} vane's own total commanded angle, "
+                                   "from the mixing matrix. The per-vane tables are indexed "
+                                   "by this, and the four contributions are summed.")
+
     if aero:
         m.variable("pHat", "reducedRollRate", "nd", symbol="phat",
                    calc=app("divide", app("times", ci("rollRateRadps"), ci("WingSpanM")),
@@ -385,8 +442,8 @@ def build(args):
                             app("times", cn(2), ci("trueAirspeedMps"))))
 
     # ---------------- breakpoints ----------------
-    d.comment("Breakpoint sets, taken from the generated data rather than restated.")
-    tables = []  # (name, [bpIDs], values, out_var, description)
+    tables = []   # (name, [bpIDs], values, out_var, description)
+    bp_defs = []  # (bpID, name, values) -- emitted after every variableDef
 
     if aero:
         base = aero["baseline"]
@@ -395,8 +452,8 @@ def build(args):
         # One-sided beta is mirrored here, using the unpowered airframe's
         # symmetry: CY, Cl, Cn odd in beta; CX, CZ, Cm even.
         full_betas = uniq([-b for b in betas] + betas)
-        breakpoints(d, "alphaBp", "angleOfAttack", alphas)
-        breakpoints(d, "betaBp", "angleOfSideslip", full_betas)
+        bp_defs.append(("alphaBp", "angleOfAttack", alphas))
+        bp_defs.append(("betaBp", "angleOfSideslip", full_betas))
 
         lookup = {(r["alphaDeg"], r["betaDeg"]): r for r in base}
         ODD = {"CY", "Cl", "Cn"}
@@ -431,7 +488,7 @@ def build(args):
             gen = [r for r in ail if probe is None or abs(r["deltaDeg"] - probe) > 1e-9]
             pos = uniq([r["deltaDeg"] for r in gen if r["deltaDeg"] > 0])
             full_deltas = uniq([-x for x in pos] + [0.0] + pos)
-            breakpoints(d, "aileronBp", "aileronDeflection", full_deltas)
+            bp_defs.append(("aileronBp", "aileronDeflection", full_deltas))
 
             lut = {(r["alphaDeg"], r["deltaDeg"]): r for r in gen}
             ODD_A = {"dCY", "dCl", "dCn"}
@@ -460,7 +517,7 @@ def build(args):
         rates = aero.get("rates", [])
         if rates:
             ralphas = uniq([r["alphaDeg"] for r in rates])
-            breakpoints(d, "alphaRateBp", "angleOfAttack", ralphas)
+            bp_defs.append(("alphaRateBp", "angleOfAttack", ralphas))
             for comp in ("CZq", "Cmq", "Clp", "Cnp", "CYp", "Clr", "Cnr", "CYr"):
                 vals = [r[comp] for r in sorted(rates, key=lambda x: x["alphaDeg"])]
                 tables.append((f"aero{comp}", ["alphaRateBp"], vals, f"aero{comp}Table",
@@ -469,7 +526,7 @@ def build(args):
     if parasite:
         pts = parasite["table"]
         palphas = uniq([r["alphaDeg"] for r in pts])
-        breakpoints(d, "alphaParasiteBp", "angleOfAttack", palphas)
+        bp_defs.append(("alphaParasiteBp", "angleOfAttack", palphas))
         vals = [r["CD0"] for r in sorted(pts, key=lambda x: x["alphaDeg"])]
         tables.append(("aeroCD0", ["alphaParasiteBp"], vals, "aeroCD0Table",
                        "Parasite drag of BODY AND DUCT ONLY -- never the wing, whose "
@@ -479,7 +536,7 @@ def build(args):
     if prop:
         rows = [r for r in prop["rows"] if r["mode"] == "baseline"]
         js = uniq([r["J"] for r in rows])
-        breakpoints(d, "jBp", "advanceRatio", js)
+        bp_defs.append(("jBp", "advanceRatio", js))
         by_j = {r["J"]: r for r in rows}
         tables.append(("propCT", ["jBp"], [by_j[j]["ct"] for j in js], "propCTTable",
                        "Thrust coefficient, vanes neutral, T / rho n^2 D^4."))
@@ -492,8 +549,8 @@ def build(args):
         vrows = vane["rows"]
         vjs = uniq([r["J"] for r in vrows])
         vdeltas = uniq([r["deltaDeg"] for r in vrows] + [0.0])
-        breakpoints(d, "jVaneBp", "advanceRatio", vjs)
-        breakpoints(d, "vaneBp", "vaneDeflection", vdeltas)
+        bp_defs.append(("jVaneBp", "advanceRatio", vjs))
+        bp_defs.append(("vaneBp", "vaneDeflection", vdeltas))
         base_by_j = {r["J"]: r for r in prop["rows"] if r["mode"] == "baseline"}
         # One vane's response serves all four positions by the cruciform's
         # rotational symmetry; the reference vane is the starboard one.
@@ -524,20 +581,49 @@ def build(args):
                            f"over command modes, which was measured wrong by up to 33%."))
 
     # ---------------- table + function definitions ----------------
+    # DTD ORDER (DAVEfunc): fileHeader, variableDef+, breakpointDef*,
+    # griddedTableDef*, ungriddedTableDef*, function*, checkData?. Every
+    # variable must therefore be declared before the first breakpoint, so
+    # the table outputs are emitted here rather than beside their tables.
+    d.comment("Output variables the tables drive.")
+    VANE_POS = ("Bottom", "Left", "Top", "Right")
+    for name, bp_ids, vals, tname, desc in tables:
+        if "vaneBp" in bp_ids:
+            for pos in VANE_POS:
+                m.variable(f"{name}{pos}", f"{name}{pos}", "nd", axis="body",
+                           description=f"{desc} Evaluated at the {pos.lower()} vane's angle.")
+            m.variable(f"{name}Total", f"{name}Total", "nd", axis="body", is_output=True,
+                       description=desc + " Summed over the four vanes.",
+                       calc=app("plus", *[ci(f"{name}{pos}") for pos in VANE_POS]))
+            continue
+        m.variable(name, name, "nd", axis="body", is_output=True, description=desc)
+
+    d.comment("Breakpoint sets, taken from the generated data rather than restated.")
+    for bpID, bpname, vals in bp_defs:
+        emit_breakpoints(d, bpID, bpname, vals)
+
     d.comment("Gridded tables.")
     for name, bp_ids, vals, tname, desc in tables:
         gridded_table(d, tname, bp_ids, vals, desc)
 
-    d.comment("Output variables the tables drive.")
-    for name, bp_ids, vals, tname, desc in tables:
-        m.variable(name, name, "nd", axis="body", is_output=True, description=desc)
-
-    d.comment("Functions binding each table to its breakpoints.")
+    d.comment("Functions binding each table to its independent variables. A "
+              "per-vane table is bound FOUR times -- once per vane, at that vane's own "
+              "commanded angle -- and the four outputs are summed, which is the buildup "
+              "the superposition measurement forced.")
     axis_var = {"alphaBp": "alphaDeg", "betaBp": "betaDeg", "alphaRateBp": "alphaDeg",
                 "alphaParasiteBp": "alphaDeg", "aileronBp": "aileronDeg",
-                "jBp": "advanceRatio",
-                "jVaneBp": "advanceRatio", "vaneBp": "vaneDeflectionDeg"}
+                "jBp": "advanceRatio", "jVaneBp": "advanceRatio"}
+    VANE_POS = ("Bottom", "Left", "Top", "Right")
     for name, bp_ids, vals, tname, desc in tables:
+        if "vaneBp" in bp_ids:
+            # One table, four bindings: the same per-vane response evaluated
+            # at each vane's own angle. griddedTableRef is an IDREF, so all
+            # four functions legitimately point at one table.
+            for pos in VANE_POS:
+                axes = ["vane" + pos + "Deg" if b == "vaneBp" else axis_var[b]
+                        for b in bp_ids]
+                simple_function(d, f"{name}{pos}Fn", f"{name}{pos}", axes, bp_ids, tname)
+            continue
         simple_function(d, f"{name}Fn", name, [axis_var[b] for b in bp_ids], bp_ids, tname)
 
     # ---------------- checkData ----------------
@@ -633,7 +719,7 @@ def build(args):
             1e-9))
 
     for name, desc, inputs, outputs, tol in shots:
-        d.open("staticShot", name=name, refID=name)
+        d.open("staticShot", name=name)
         d.leaf("description", desc)
         d.open("checkInputs")
         for var, val in inputs.items():

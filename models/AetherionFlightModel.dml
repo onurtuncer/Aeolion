@@ -5,101 +5,83 @@
     <author name="Onur Tuncer" org="Istanbul Technical University"/>
     <author name="Caglar Ucler" org="Ozyegin University"/>
     <author name="Ahmet Gunes" org="Istanbul Technical University"/>
-    <fileCreationDate date="2026-08-16"/>
+    <fileCreationDate date="2026-08-17"/>
     <description>
       Tabulated flight model of the Aetherion ducted-fan tail-sitter, generated from the Aeolion aerodynamic toolkit. Body axes are the contract frame aetherion_body_frd (x forward, y right, z down), the standard aeronautical body axis system of ANSI/AIAA R-004-1992. Moments are about the contract's moment_reference_point. See models/README.md for the normative specification and models/report/ for the technical report.
+      
+      VALIDITY. Incompressible, M &lt; 0.3: no Mach dependence exists in the generating methods. Single Reynolds number -- every table was generated at V = 25 m/s. Propulsor tables are AXIAL INFLOW ONLY, because the rotor-vane machinery is axisymmetric end to end; alphaDiskDeg is output as a validity monitor rather than faked as a table axis. Powered operation only: the rho n^2 D^4 group excludes n -&gt; 0, so windmilling and low-rotor-speed descent are outside the envelope.
+      
+      LIMITATIONS. Post-stall values are limit-cycle means, not steady states. CLmax is an upper bound -- bubble bursting is not modelled. The tables are the ascending-alpha branch; hysteresis is not represented. Rate derivatives are tapered to zero over alpha 20-40 deg, a declared assumption rather than a computed result. Parasite drag covers body and duct only -- the wing's profile drag is already inside the force tables -- and omits the duct's separated drag at incidence, so aeroCD0 is a lower bound at high alpha. The aileron flap model is lift-only: no section pitching-moment increment, no gap leakage, no viscous decay at large deflection, so tabulated roll authority is an upper bound.
+      
+      INCOMPLETE: fan-on-airframe interaction tables (coupling*) are absent, so the airframe tables are POWER-OFF and underpredict the separation delay the aft fan provides in transition.
     </description>
+    <reference refID="srcAeroMap" author="aeolion_aero_map" title="Airframe baseline map and reduced-rate derivatives (aero-map.json)" date="2026-08-17"/>
+    <reference refID="srcAileron" author="aeolion_aero_map (aileron block)" title="Aileron increment sweep (aero-aileron.json)" date="2026-08-17"/>
+    <reference refID="srcParasite" author="aeolion_parasite_drag" title="Body and duct parasite drag, friction buildup plus crossflow branch (parasite-drag.json)" date="2026-08-17"/>
+    <reference refID="srcPropMap" author="aeolion_propulsion_map" title="Ducted propulsor over advance ratio (propulsion-map.json)" date="2026-08-17"/>
+    <reference refID="srcPropVane" author="aeolion_propulsion_map (single)" title="Per-vane control increments (propulsion-singlevane.json)" date="2026-08-17"/>
     <provenance provID="genProv">
       <author name="Aeolion" org="models/build-daveml.py"/>
-      <creationDate date="2026-08-16"/>
-      <documentRef docID="aero-map" refID="d6d355b0fe61ad04"/>
-      <documentRef docID="parasite-drag" refID="d6d355b0fe61ad04"/>
-      <documentRef docID="propulsion-map" refID="d6d355b0fe61ad04"/>
-      <documentRef docID="propulsion-singlevane" refID="d6d355b0fe61ad04"/>
-      <description>Generated from cached solver sweeps; see each documentRef.</description>
+      <creationDate date="2026-08-17"/>
+      <documentRef refID="srcAeroMap"/>
+      <documentRef refID="srcAileron"/>
+      <documentRef refID="srcParasite"/>
+      <documentRef refID="srcPropMap"/>
+      <documentRef refID="srcPropVane"/>
+      <description>Generated from cached solver sweeps; see each documentRef. Nothing in the assembler computes aerodynamics.</description>
     </provenance>
-    <reference refID="note" title="VALIDITY: incompressible, M &lt; 0.3. No Mach dependence exists in the generating methods."/>
-    <reference refID="note" title="VALIDITY: single Reynolds number -- all tables generated at V = 25 m/s."/>
-    <reference refID="note" title="VALIDITY: propulsor tables are AXIAL INFLOW ONLY. The rotor-vane machinery is axisymmetric end to end, so disk incidence is not representable. alphaDiskDeg is output as a validity monitor, never as a table axis."/>
-    <reference refID="note" title="VALIDITY: powered operation only; the rho n^2 D^4 group excludes n -&gt; 0."/>
-    <reference refID="note" title="LIMITATION: post-stall values are limit-cycle means, not steady states."/>
-    <reference refID="note" title="LIMITATION: CLmax is an upper bound -- bubble bursting is not modelled."/>
-    <reference refID="note" title="LIMITATION: tables are the ascending-alpha branch; hysteresis is not represented."/>
-    <reference refID="note" title="LIMITATION: rate derivatives are tapered to zero over alpha 20-40 deg, a declared assumption, not a computed result."/>
-    <reference refID="note" title="Aileron increments are present, generated with the flap carried in the section and mirrored in deflection on a symmetry the sweep verifies numerically."/>
-    <reference refID="note" title="BLOCKED: fan-on-airframe interaction tables are NOT emitted, pending an upstream-induction model. The airframe tables are therefore POWER-OFF and underpredict the separation delay the aft fan provides in transition."/>
-    <reference refID="note" title="LIMITATION: parasite drag covers body and duct only -- the wing's profile drag is already inside the force tables. The duct's separated drag at incidence is not modelled, so aeroCD0 is a lower bound at high alpha."/>
   </fileHeader>
   <!-- Inputs. varID is namespaced for this file's structure; name is the Annex A standard parameter name. -->
-  <variableDef name="angleOfAttack" varID="alphaDeg" units="deg" axisSystem="body" symbol="α">
-    <initialValue>0.0</initialValue>
+  <variableDef name="angleOfAttack" varID="alphaDeg" units="deg" initialValue="0.0" axisSystem="body" symbol="α">
   </variableDef>
   
-  <variableDef name="angleOfSideslip" varID="betaDeg" units="deg" axisSystem="body" symbol="β">
-    <initialValue>0.0</initialValue>
+  <variableDef name="angleOfSideslip" varID="betaDeg" units="deg" initialValue="0.0" axisSystem="body" symbol="β">
   </variableDef>
   
-  <variableDef name="trueAirspeed" varID="trueAirspeedMps" units="m/s" symbol="V">
-    <initialValue>0.0</initialValue>
+  <variableDef name="trueAirspeed" varID="trueAirspeedMps" units="m/s" initialValue="0.0" symbol="V">
   </variableDef>
   
-  <variableDef name="airDensity" varID="airDensityKgpm3" units="kg/m3" symbol="ρ">
-    <initialValue>0.0</initialValue>
+  <variableDef name="airDensity" varID="airDensityKgpm3" units="kg/m3" initialValue="0.0" symbol="ρ">
   </variableDef>
   
-  <variableDef name="bodyAngularRate_Roll" varID="rollRateRadps" units="rad/s" axisSystem="body" sign="+RWD" symbol="p">
-    <initialValue>0.0</initialValue>
+  <variableDef name="bodyAngularRate_Roll" varID="rollRateRadps" units="rad/s" initialValue="0.0" axisSystem="body" sign="+RWD" symbol="p">
   </variableDef>
   
-  <variableDef name="bodyAngularRate_Pitch" varID="pitchRateRadps" units="rad/s" axisSystem="body" sign="+NU" symbol="q">
-    <initialValue>0.0</initialValue>
+  <variableDef name="bodyAngularRate_Pitch" varID="pitchRateRadps" units="rad/s" initialValue="0.0" axisSystem="body" sign="+NU" symbol="q">
   </variableDef>
   
-  <variableDef name="bodyAngularRate_Yaw" varID="yawRateRadps" units="rad/s" axisSystem="body" sign="+NR" symbol="r">
-    <initialValue>0.0</initialValue>
+  <variableDef name="bodyAngularRate_Yaw" varID="yawRateRadps" units="rad/s" initialValue="0.0" axisSystem="body" sign="+NR" symbol="r">
   </variableDef>
   
-  <variableDef name="propellerSpeed" varID="propSpeedRevps" units="rev/s" symbol="n">
-    <initialValue>0.0</initialValue>
+  <variableDef name="propellerSpeed" varID="propSpeedRevps" units="rev/s" initialValue="0.0" symbol="n">
   </variableDef>
   
-  <variableDef name="aileronDeflection" varID="aileronDeg" units="deg" axisSystem="body" sign="TED" symbol="δa">
-    <initialValue>0.0</initialValue>
+  <variableDef name="aileronDeflection" varID="aileronDeg" units="deg" initialValue="0.0" axisSystem="body" sign="TED" symbol="δa">
   </variableDef>
   
-  <variableDef name="vaneDeflection_Pitch" varID="vanePitchDeg" units="deg" axisSystem="body" symbol="δP">
-    <initialValue>0.0</initialValue>
+  <variableDef name="vaneDeflection_Pitch" varID="vanePitchDeg" units="deg" initialValue="0.0" axisSystem="body" symbol="δP">
   </variableDef>
   
-  <variableDef name="vaneDeflection_Yaw" varID="vaneYawDeg" units="deg" axisSystem="body" symbol="δY">
-    <initialValue>0.0</initialValue>
+  <variableDef name="vaneDeflection_Yaw" varID="vaneYawDeg" units="deg" initialValue="0.0" axisSystem="body" symbol="δY">
   </variableDef>
   
-  <variableDef name="vaneDeflection_Roll" varID="vaneRollDeg" units="deg" axisSystem="body" symbol="δR">
-    <initialValue>0.0</initialValue>
+  <variableDef name="vaneDeflection_Roll" varID="vaneRollDeg" units="deg" initialValue="0.0" axisSystem="body" symbol="δR">
   </variableDef>
   
   <!-- Constants, transcribed from the geometry contract by the assembler. -->
-  <variableDef name="WingAreaM2" varID="WingAreaM2" units="m2">
-    <initialValue>0.188285585</initialValue>
+  <variableDef name="WingAreaM2" varID="WingAreaM2" units="m2" initialValue="0.188285585">
   </variableDef>
-  <variableDef name="WingSpanM" varID="WingSpanM" units="m">
-    <initialValue>1.06287982</initialValue>
+  <variableDef name="WingSpanM" varID="WingSpanM" units="m" initialValue="1.06287982">
   </variableDef>
-  <variableDef name="WingChordM" varID="WingChordM" units="m">
-    <initialValue>0.177146637</initialValue>
+  <variableDef name="WingChordM" varID="WingChordM" units="m" initialValue="0.177146637">
   </variableDef>
-  <variableDef name="XmrpM" varID="XmrpM" units="m">
-    <initialValue>-0.2423</initialValue>
+  <variableDef name="XmrpM" varID="XmrpM" units="m" initialValue="-0.2423">
   </variableDef>
-  <variableDef name="YmrpM" varID="YmrpM" units="m">
-    <initialValue>0</initialValue>
+  <variableDef name="YmrpM" varID="YmrpM" units="m" initialValue="0">
   </variableDef>
-  <variableDef name="ZmrpM" varID="ZmrpM" units="m">
-    <initialValue>0</initialValue>
+  <variableDef name="ZmrpM" varID="ZmrpM" units="m" initialValue="0">
   </variableDef>
-  <variableDef name="DiskDiameterM" varID="DiskDiameterM" units="m">
-    <initialValue>0.203</initialValue>
+  <variableDef name="DiskDiameterM" varID="DiskDiameterM" units="m" initialValue="0.203">
   </variableDef>
   <!-- Derived quantities. alphaDiskDeg and phiWDeg are VALIDITY MONITORS: they index no table, and exist so a consumer can detect that it has left the axial-inflow envelope. -->
   <variableDef name="dynamicPressure" varID="qbarPa" units="Pa" symbol="q">
@@ -125,6 +107,38 @@
     </calculation>
     <isOutput/>
   </variableDef>
+  <variableDef name="vaneDeflection_Bottom" varID="vaneBottomDeg" units="deg" axisSystem="body">
+    <description>The bottom vane's own total commanded angle, from the mixing matrix. The per-vane tables are indexed by this, and the four contributions are summed.</description>
+    <calculation>
+      <math xmlns="http://www.w3.org/1998/Math/MathML">
+        <apply><plus/><ci>vaneRollDeg</ci><ci>vaneYawDeg</ci></apply>
+      </math>
+    </calculation>
+  </variableDef>
+  <variableDef name="vaneDeflection_Left" varID="vaneLeftDeg" units="deg" axisSystem="body">
+    <description>The left vane's own total commanded angle, from the mixing matrix. The per-vane tables are indexed by this, and the four contributions are summed.</description>
+    <calculation>
+      <math xmlns="http://www.w3.org/1998/Math/MathML">
+        <apply><minus/><ci>vaneRollDeg</ci><ci>vanePitchDeg</ci></apply>
+      </math>
+    </calculation>
+  </variableDef>
+  <variableDef name="vaneDeflection_Top" varID="vaneTopDeg" units="deg" axisSystem="body">
+    <description>The top vane's own total commanded angle, from the mixing matrix. The per-vane tables are indexed by this, and the four contributions are summed.</description>
+    <calculation>
+      <math xmlns="http://www.w3.org/1998/Math/MathML">
+        <apply><minus/><ci>vaneRollDeg</ci><ci>vaneYawDeg</ci></apply>
+      </math>
+    </calculation>
+  </variableDef>
+  <variableDef name="vaneDeflection_Right" varID="vaneRightDeg" units="deg" axisSystem="body">
+    <description>The right vane's own total commanded angle, from the mixing matrix. The per-vane tables are indexed by this, and the four contributions are summed.</description>
+    <calculation>
+      <math xmlns="http://www.w3.org/1998/Math/MathML">
+        <apply><plus/><ci>vaneRollDeg</ci><ci>vanePitchDeg</ci></apply>
+      </math>
+    </calculation>
+  </variableDef>
   <variableDef name="reducedRollRate" varID="pHat" units="nd" symbol="phat">
     <calculation>
       <math xmlns="http://www.w3.org/1998/Math/MathML">
@@ -145,6 +159,225 @@
         <apply><divide/><apply><times/><ci>yawRateRadps</ci><ci>WingSpanM</ci></apply><apply><times/><cn>2</cn><ci>trueAirspeedMps</ci></apply></apply>
       </math>
     </calculation>
+  </variableDef>
+  <!-- Output variables the tables drive. -->
+  <variableDef name="aeroCX" varID="aeroCX" units="nd" axisSystem="body">
+    <description>Airframe CX, power-off, controls neutral. Carries induced and wing profile drag; parasite drag is aeroCD0.</description>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="aeroCY" varID="aeroCY" units="nd" axisSystem="body">
+    <description>Airframe CY, power-off, controls neutral. Carries induced and wing profile drag; parasite drag is aeroCD0.</description>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="aeroCZ" varID="aeroCZ" units="nd" axisSystem="body">
+    <description>Airframe CZ, power-off, controls neutral. Carries induced and wing profile drag; parasite drag is aeroCD0.</description>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="aeroCl" varID="aeroCl" units="nd" axisSystem="body">
+    <description>Airframe Cl, power-off, controls neutral. Carries induced and wing profile drag; parasite drag is aeroCD0.</description>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="aeroCm" varID="aeroCm" units="nd" axisSystem="body">
+    <description>Airframe Cm, power-off, controls neutral. Carries induced and wing profile drag; parasite drag is aeroCD0.</description>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="aeroCn" varID="aeroCn" units="nd" axisSystem="body">
+    <description>Airframe Cn, power-off, controls neutral. Carries induced and wing profile drag; parasite drag is aeroCD0.</description>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="aeroDCX" varID="aeroDCX" units="nd" axisSystem="body">
+    <description>Aileron increment CX from the neutral configuration at matched alpha. The flap is carried in the section, so this attenuates through stall as the sections separate -- an inviscid lattice cannot show that.</description>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="aeroDCY" varID="aeroDCY" units="nd" axisSystem="body">
+    <description>Aileron increment CY from the neutral configuration at matched alpha. The flap is carried in the section, so this attenuates through stall as the sections separate -- an inviscid lattice cannot show that.</description>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="aeroDCZ" varID="aeroDCZ" units="nd" axisSystem="body">
+    <description>Aileron increment CZ from the neutral configuration at matched alpha. The flap is carried in the section, so this attenuates through stall as the sections separate -- an inviscid lattice cannot show that.</description>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="aeroDCl" varID="aeroDCl" units="nd" axisSystem="body">
+    <description>Aileron increment Cl from the neutral configuration at matched alpha. The flap is carried in the section, so this attenuates through stall as the sections separate -- an inviscid lattice cannot show that.</description>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="aeroDCm" varID="aeroDCm" units="nd" axisSystem="body">
+    <description>Aileron increment Cm from the neutral configuration at matched alpha. The flap is carried in the section, so this attenuates through stall as the sections separate -- an inviscid lattice cannot show that.</description>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="aeroDCn" varID="aeroDCn" units="nd" axisSystem="body">
+    <description>Aileron increment Cn from the neutral configuration at matched alpha. The flap is carried in the section, so this attenuates through stall as the sections separate -- an inviscid lattice cannot show that.</description>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="aeroCZq" varID="aeroCZq" units="nd" axisSystem="body">
+    <description>Reduced-rate derivative CZq, attached range only.</description>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="aeroCmq" varID="aeroCmq" units="nd" axisSystem="body">
+    <description>Reduced-rate derivative Cmq, attached range only.</description>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="aeroClp" varID="aeroClp" units="nd" axisSystem="body">
+    <description>Reduced-rate derivative Clp, attached range only.</description>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="aeroCnp" varID="aeroCnp" units="nd" axisSystem="body">
+    <description>Reduced-rate derivative Cnp, attached range only.</description>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="aeroCYp" varID="aeroCYp" units="nd" axisSystem="body">
+    <description>Reduced-rate derivative CYp, attached range only.</description>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="aeroClr" varID="aeroClr" units="nd" axisSystem="body">
+    <description>Reduced-rate derivative Clr, attached range only.</description>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="aeroCnr" varID="aeroCnr" units="nd" axisSystem="body">
+    <description>Reduced-rate derivative Cnr, attached range only.</description>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="aeroCYr" varID="aeroCYr" units="nd" axisSystem="body">
+    <description>Reduced-rate derivative CYr, attached range only.</description>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="aeroCD0" varID="aeroCD0" units="nd" axisSystem="body">
+    <description>Parasite drag of BODY AND DUCT ONLY -- never the wing, whose profile drag is already inside the force tables. Friction buildup plus a slender-body crossflow branch.</description>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="propCT" varID="propCT" units="nd" axisSystem="body">
+    <description>Thrust coefficient, vanes neutral, T / rho n^2 D^4.</description>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="propCQ" varID="propCQ" units="nd" axisSystem="body">
+    <description>Shaft torque coefficient, Q / rho n^2 D^5.</description>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="propDCCXvaneBottom" varID="propDCCXvaneBottom" units="nd" axisSystem="body">
+    <description>PER-VANE increment CX from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Evaluated at the bottom vane's angle.</description>
+  </variableDef>
+  <variableDef name="propDCCXvaneLeft" varID="propDCCXvaneLeft" units="nd" axisSystem="body">
+    <description>PER-VANE increment CX from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Evaluated at the left vane's angle.</description>
+  </variableDef>
+  <variableDef name="propDCCXvaneTop" varID="propDCCXvaneTop" units="nd" axisSystem="body">
+    <description>PER-VANE increment CX from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Evaluated at the top vane's angle.</description>
+  </variableDef>
+  <variableDef name="propDCCXvaneRight" varID="propDCCXvaneRight" units="nd" axisSystem="body">
+    <description>PER-VANE increment CX from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Evaluated at the right vane's angle.</description>
+  </variableDef>
+  <variableDef name="propDCCXvaneTotal" varID="propDCCXvaneTotal" units="nd" axisSystem="body">
+    <description>PER-VANE increment CX from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Summed over the four vanes.</description>
+    <calculation>
+      <math xmlns="http://www.w3.org/1998/Math/MathML">
+        <apply><plus/><ci>propDCCXvaneBottom</ci><ci>propDCCXvaneLeft</ci><ci>propDCCXvaneTop</ci><ci>propDCCXvaneRight</ci></apply>
+      </math>
+    </calculation>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="propDCCYvaneBottom" varID="propDCCYvaneBottom" units="nd" axisSystem="body">
+    <description>PER-VANE increment CY from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Evaluated at the bottom vane's angle.</description>
+  </variableDef>
+  <variableDef name="propDCCYvaneLeft" varID="propDCCYvaneLeft" units="nd" axisSystem="body">
+    <description>PER-VANE increment CY from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Evaluated at the left vane's angle.</description>
+  </variableDef>
+  <variableDef name="propDCCYvaneTop" varID="propDCCYvaneTop" units="nd" axisSystem="body">
+    <description>PER-VANE increment CY from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Evaluated at the top vane's angle.</description>
+  </variableDef>
+  <variableDef name="propDCCYvaneRight" varID="propDCCYvaneRight" units="nd" axisSystem="body">
+    <description>PER-VANE increment CY from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Evaluated at the right vane's angle.</description>
+  </variableDef>
+  <variableDef name="propDCCYvaneTotal" varID="propDCCYvaneTotal" units="nd" axisSystem="body">
+    <description>PER-VANE increment CY from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Summed over the four vanes.</description>
+    <calculation>
+      <math xmlns="http://www.w3.org/1998/Math/MathML">
+        <apply><plus/><ci>propDCCYvaneBottom</ci><ci>propDCCYvaneLeft</ci><ci>propDCCYvaneTop</ci><ci>propDCCYvaneRight</ci></apply>
+      </math>
+    </calculation>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="propDCCZvaneBottom" varID="propDCCZvaneBottom" units="nd" axisSystem="body">
+    <description>PER-VANE increment CZ from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Evaluated at the bottom vane's angle.</description>
+  </variableDef>
+  <variableDef name="propDCCZvaneLeft" varID="propDCCZvaneLeft" units="nd" axisSystem="body">
+    <description>PER-VANE increment CZ from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Evaluated at the left vane's angle.</description>
+  </variableDef>
+  <variableDef name="propDCCZvaneTop" varID="propDCCZvaneTop" units="nd" axisSystem="body">
+    <description>PER-VANE increment CZ from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Evaluated at the top vane's angle.</description>
+  </variableDef>
+  <variableDef name="propDCCZvaneRight" varID="propDCCZvaneRight" units="nd" axisSystem="body">
+    <description>PER-VANE increment CZ from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Evaluated at the right vane's angle.</description>
+  </variableDef>
+  <variableDef name="propDCCZvaneTotal" varID="propDCCZvaneTotal" units="nd" axisSystem="body">
+    <description>PER-VANE increment CZ from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Summed over the four vanes.</description>
+    <calculation>
+      <math xmlns="http://www.w3.org/1998/Math/MathML">
+        <apply><plus/><ci>propDCCZvaneBottom</ci><ci>propDCCZvaneLeft</ci><ci>propDCCZvaneTop</ci><ci>propDCCZvaneRight</ci></apply>
+      </math>
+    </calculation>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="propDCClvaneBottom" varID="propDCClvaneBottom" units="nd" axisSystem="body">
+    <description>PER-VANE increment Cl from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Evaluated at the bottom vane's angle.</description>
+  </variableDef>
+  <variableDef name="propDCClvaneLeft" varID="propDCClvaneLeft" units="nd" axisSystem="body">
+    <description>PER-VANE increment Cl from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Evaluated at the left vane's angle.</description>
+  </variableDef>
+  <variableDef name="propDCClvaneTop" varID="propDCClvaneTop" units="nd" axisSystem="body">
+    <description>PER-VANE increment Cl from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Evaluated at the top vane's angle.</description>
+  </variableDef>
+  <variableDef name="propDCClvaneRight" varID="propDCClvaneRight" units="nd" axisSystem="body">
+    <description>PER-VANE increment Cl from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Evaluated at the right vane's angle.</description>
+  </variableDef>
+  <variableDef name="propDCClvaneTotal" varID="propDCClvaneTotal" units="nd" axisSystem="body">
+    <description>PER-VANE increment Cl from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Summed over the four vanes.</description>
+    <calculation>
+      <math xmlns="http://www.w3.org/1998/Math/MathML">
+        <apply><plus/><ci>propDCClvaneBottom</ci><ci>propDCClvaneLeft</ci><ci>propDCClvaneTop</ci><ci>propDCClvaneRight</ci></apply>
+      </math>
+    </calculation>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="propDCCmvaneBottom" varID="propDCCmvaneBottom" units="nd" axisSystem="body">
+    <description>PER-VANE increment Cm from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Evaluated at the bottom vane's angle.</description>
+  </variableDef>
+  <variableDef name="propDCCmvaneLeft" varID="propDCCmvaneLeft" units="nd" axisSystem="body">
+    <description>PER-VANE increment Cm from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Evaluated at the left vane's angle.</description>
+  </variableDef>
+  <variableDef name="propDCCmvaneTop" varID="propDCCmvaneTop" units="nd" axisSystem="body">
+    <description>PER-VANE increment Cm from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Evaluated at the top vane's angle.</description>
+  </variableDef>
+  <variableDef name="propDCCmvaneRight" varID="propDCCmvaneRight" units="nd" axisSystem="body">
+    <description>PER-VANE increment Cm from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Evaluated at the right vane's angle.</description>
+  </variableDef>
+  <variableDef name="propDCCmvaneTotal" varID="propDCCmvaneTotal" units="nd" axisSystem="body">
+    <description>PER-VANE increment Cm from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Summed over the four vanes.</description>
+    <calculation>
+      <math xmlns="http://www.w3.org/1998/Math/MathML">
+        <apply><plus/><ci>propDCCmvaneBottom</ci><ci>propDCCmvaneLeft</ci><ci>propDCCmvaneTop</ci><ci>propDCCmvaneRight</ci></apply>
+      </math>
+    </calculation>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="propDCCnvaneBottom" varID="propDCCnvaneBottom" units="nd" axisSystem="body">
+    <description>PER-VANE increment Cn from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Evaluated at the bottom vane's angle.</description>
+  </variableDef>
+  <variableDef name="propDCCnvaneLeft" varID="propDCCnvaneLeft" units="nd" axisSystem="body">
+    <description>PER-VANE increment Cn from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Evaluated at the left vane's angle.</description>
+  </variableDef>
+  <variableDef name="propDCCnvaneTop" varID="propDCCnvaneTop" units="nd" axisSystem="body">
+    <description>PER-VANE increment Cn from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Evaluated at the top vane's angle.</description>
+  </variableDef>
+  <variableDef name="propDCCnvaneRight" varID="propDCCnvaneRight" units="nd" axisSystem="body">
+    <description>PER-VANE increment Cn from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Evaluated at the right vane's angle.</description>
+  </variableDef>
+  <variableDef name="propDCCnvaneTotal" varID="propDCCnvaneTotal" units="nd" axisSystem="body">
+    <description>PER-VANE increment Cn from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%. Summed over the four vanes.</description>
+    <calculation>
+      <math xmlns="http://www.w3.org/1998/Math/MathML">
+        <apply><plus/><ci>propDCCnvaneBottom</ci><ci>propDCCnvaneLeft</ci><ci>propDCCnvaneTop</ci><ci>propDCCnvaneRight</ci></apply>
+      </math>
+    </calculation>
+    <isOutput/>
   </variableDef>
   <!-- Breakpoint sets, taken from the generated data rather than restated. -->
   <breakpointDef bpID="alphaBp" name="angleOfAttack">
@@ -836,290 +1069,375 @@
       0.000147258892, 0.000368139059, 0.00069827315, 0.000137140402, 0, 0.00023698886, 0.000663350445
     </dataTable>
   </griddedTableDef>
-  <!-- Output variables the tables drive. -->
-  <variableDef name="aeroCX" varID="aeroCX" units="nd" axisSystem="body">
-    <description>Airframe CX, power-off, controls neutral. Carries induced and wing profile drag; parasite drag is aeroCD0.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="aeroCY" varID="aeroCY" units="nd" axisSystem="body">
-    <description>Airframe CY, power-off, controls neutral. Carries induced and wing profile drag; parasite drag is aeroCD0.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="aeroCZ" varID="aeroCZ" units="nd" axisSystem="body">
-    <description>Airframe CZ, power-off, controls neutral. Carries induced and wing profile drag; parasite drag is aeroCD0.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="aeroCl" varID="aeroCl" units="nd" axisSystem="body">
-    <description>Airframe Cl, power-off, controls neutral. Carries induced and wing profile drag; parasite drag is aeroCD0.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="aeroCm" varID="aeroCm" units="nd" axisSystem="body">
-    <description>Airframe Cm, power-off, controls neutral. Carries induced and wing profile drag; parasite drag is aeroCD0.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="aeroCn" varID="aeroCn" units="nd" axisSystem="body">
-    <description>Airframe Cn, power-off, controls neutral. Carries induced and wing profile drag; parasite drag is aeroCD0.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="aeroDCX" varID="aeroDCX" units="nd" axisSystem="body">
-    <description>Aileron increment CX from the neutral configuration at matched alpha. The flap is carried in the section, so this attenuates through stall as the sections separate -- an inviscid lattice cannot show that.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="aeroDCY" varID="aeroDCY" units="nd" axisSystem="body">
-    <description>Aileron increment CY from the neutral configuration at matched alpha. The flap is carried in the section, so this attenuates through stall as the sections separate -- an inviscid lattice cannot show that.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="aeroDCZ" varID="aeroDCZ" units="nd" axisSystem="body">
-    <description>Aileron increment CZ from the neutral configuration at matched alpha. The flap is carried in the section, so this attenuates through stall as the sections separate -- an inviscid lattice cannot show that.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="aeroDCl" varID="aeroDCl" units="nd" axisSystem="body">
-    <description>Aileron increment Cl from the neutral configuration at matched alpha. The flap is carried in the section, so this attenuates through stall as the sections separate -- an inviscid lattice cannot show that.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="aeroDCm" varID="aeroDCm" units="nd" axisSystem="body">
-    <description>Aileron increment Cm from the neutral configuration at matched alpha. The flap is carried in the section, so this attenuates through stall as the sections separate -- an inviscid lattice cannot show that.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="aeroDCn" varID="aeroDCn" units="nd" axisSystem="body">
-    <description>Aileron increment Cn from the neutral configuration at matched alpha. The flap is carried in the section, so this attenuates through stall as the sections separate -- an inviscid lattice cannot show that.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="aeroCZq" varID="aeroCZq" units="nd" axisSystem="body">
-    <description>Reduced-rate derivative CZq, attached range only.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="aeroCmq" varID="aeroCmq" units="nd" axisSystem="body">
-    <description>Reduced-rate derivative Cmq, attached range only.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="aeroClp" varID="aeroClp" units="nd" axisSystem="body">
-    <description>Reduced-rate derivative Clp, attached range only.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="aeroCnp" varID="aeroCnp" units="nd" axisSystem="body">
-    <description>Reduced-rate derivative Cnp, attached range only.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="aeroCYp" varID="aeroCYp" units="nd" axisSystem="body">
-    <description>Reduced-rate derivative CYp, attached range only.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="aeroClr" varID="aeroClr" units="nd" axisSystem="body">
-    <description>Reduced-rate derivative Clr, attached range only.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="aeroCnr" varID="aeroCnr" units="nd" axisSystem="body">
-    <description>Reduced-rate derivative Cnr, attached range only.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="aeroCYr" varID="aeroCYr" units="nd" axisSystem="body">
-    <description>Reduced-rate derivative CYr, attached range only.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="aeroCD0" varID="aeroCD0" units="nd" axisSystem="body">
-    <description>Parasite drag of BODY AND DUCT ONLY -- never the wing, whose profile drag is already inside the force tables. Friction buildup plus a slender-body crossflow branch.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="propCT" varID="propCT" units="nd" axisSystem="body">
-    <description>Thrust coefficient, vanes neutral, T / rho n^2 D^4.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="propCQ" varID="propCQ" units="nd" axisSystem="body">
-    <description>Shaft torque coefficient, Q / rho n^2 D^5.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="propDCCXvane" varID="propDCCXvane" units="nd" axisSystem="body">
-    <description>PER-VANE increment CX from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="propDCCYvane" varID="propDCCYvane" units="nd" axisSystem="body">
-    <description>PER-VANE increment CY from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="propDCCZvane" varID="propDCCZvane" units="nd" axisSystem="body">
-    <description>PER-VANE increment CZ from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="propDCClvane" varID="propDCClvane" units="nd" axisSystem="body">
-    <description>PER-VANE increment Cl from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="propDCCmvane" varID="propDCCmvane" units="nd" axisSystem="body">
-    <description>PER-VANE increment Cm from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%.</description>
-    <isOutput/>
-  </variableDef>
-  <variableDef name="propDCCnvane" varID="propDCCnvane" units="nd" axisSystem="body">
-    <description>PER-VANE increment Cn from one vane's own deflection. Sum over the four vanes at their mixed angles -- NOT a sum over command modes, which was measured wrong by up to 33%.</description>
-    <isOutput/>
-  </variableDef>
-  <!-- Functions binding each table to its breakpoints. -->
+  <!-- Functions binding each table to its independent variables. A per-vane table is bound FOUR times — once per vane, at that vane's own commanded angle — and the four outputs are summed, which is the buildup the superposition measurement forced. -->
   <function name="aeroCXFn">
-    <independentVarRef varID="alphaDeg" bpID="alphaBp"/>
-    <independentVarRef varID="betaDeg" bpID="betaBp"/>
+    <independentVarRef varID="alphaDeg" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="betaDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="aeroCX"/>
-    <functionDefn gtID="aeroCXTable_data"/>
+    <functionDefn>
+      <griddedTableRef gtID="aeroCXTable_data"/>
+    </functionDefn>
   </function>
   <function name="aeroCYFn">
-    <independentVarRef varID="alphaDeg" bpID="alphaBp"/>
-    <independentVarRef varID="betaDeg" bpID="betaBp"/>
+    <independentVarRef varID="alphaDeg" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="betaDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="aeroCY"/>
-    <functionDefn gtID="aeroCYTable_data"/>
+    <functionDefn>
+      <griddedTableRef gtID="aeroCYTable_data"/>
+    </functionDefn>
   </function>
   <function name="aeroCZFn">
-    <independentVarRef varID="alphaDeg" bpID="alphaBp"/>
-    <independentVarRef varID="betaDeg" bpID="betaBp"/>
+    <independentVarRef varID="alphaDeg" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="betaDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="aeroCZ"/>
-    <functionDefn gtID="aeroCZTable_data"/>
+    <functionDefn>
+      <griddedTableRef gtID="aeroCZTable_data"/>
+    </functionDefn>
   </function>
   <function name="aeroClFn">
-    <independentVarRef varID="alphaDeg" bpID="alphaBp"/>
-    <independentVarRef varID="betaDeg" bpID="betaBp"/>
+    <independentVarRef varID="alphaDeg" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="betaDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="aeroCl"/>
-    <functionDefn gtID="aeroClTable_data"/>
+    <functionDefn>
+      <griddedTableRef gtID="aeroClTable_data"/>
+    </functionDefn>
   </function>
   <function name="aeroCmFn">
-    <independentVarRef varID="alphaDeg" bpID="alphaBp"/>
-    <independentVarRef varID="betaDeg" bpID="betaBp"/>
+    <independentVarRef varID="alphaDeg" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="betaDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="aeroCm"/>
-    <functionDefn gtID="aeroCmTable_data"/>
+    <functionDefn>
+      <griddedTableRef gtID="aeroCmTable_data"/>
+    </functionDefn>
   </function>
   <function name="aeroCnFn">
-    <independentVarRef varID="alphaDeg" bpID="alphaBp"/>
-    <independentVarRef varID="betaDeg" bpID="betaBp"/>
+    <independentVarRef varID="alphaDeg" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="betaDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="aeroCn"/>
-    <functionDefn gtID="aeroCnTable_data"/>
+    <functionDefn>
+      <griddedTableRef gtID="aeroCnTable_data"/>
+    </functionDefn>
   </function>
   <function name="aeroDCXFn">
-    <independentVarRef varID="alphaDeg" bpID="alphaBp"/>
-    <independentVarRef varID="aileronDeg" bpID="aileronBp"/>
+    <independentVarRef varID="alphaDeg" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="aileronDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="aeroDCX"/>
-    <functionDefn gtID="aeroDCXTable_data"/>
+    <functionDefn>
+      <griddedTableRef gtID="aeroDCXTable_data"/>
+    </functionDefn>
   </function>
   <function name="aeroDCYFn">
-    <independentVarRef varID="alphaDeg" bpID="alphaBp"/>
-    <independentVarRef varID="aileronDeg" bpID="aileronBp"/>
+    <independentVarRef varID="alphaDeg" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="aileronDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="aeroDCY"/>
-    <functionDefn gtID="aeroDCYTable_data"/>
+    <functionDefn>
+      <griddedTableRef gtID="aeroDCYTable_data"/>
+    </functionDefn>
   </function>
   <function name="aeroDCZFn">
-    <independentVarRef varID="alphaDeg" bpID="alphaBp"/>
-    <independentVarRef varID="aileronDeg" bpID="aileronBp"/>
+    <independentVarRef varID="alphaDeg" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="aileronDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="aeroDCZ"/>
-    <functionDefn gtID="aeroDCZTable_data"/>
+    <functionDefn>
+      <griddedTableRef gtID="aeroDCZTable_data"/>
+    </functionDefn>
   </function>
   <function name="aeroDClFn">
-    <independentVarRef varID="alphaDeg" bpID="alphaBp"/>
-    <independentVarRef varID="aileronDeg" bpID="aileronBp"/>
+    <independentVarRef varID="alphaDeg" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="aileronDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="aeroDCl"/>
-    <functionDefn gtID="aeroDClTable_data"/>
+    <functionDefn>
+      <griddedTableRef gtID="aeroDClTable_data"/>
+    </functionDefn>
   </function>
   <function name="aeroDCmFn">
-    <independentVarRef varID="alphaDeg" bpID="alphaBp"/>
-    <independentVarRef varID="aileronDeg" bpID="aileronBp"/>
+    <independentVarRef varID="alphaDeg" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="aileronDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="aeroDCm"/>
-    <functionDefn gtID="aeroDCmTable_data"/>
+    <functionDefn>
+      <griddedTableRef gtID="aeroDCmTable_data"/>
+    </functionDefn>
   </function>
   <function name="aeroDCnFn">
-    <independentVarRef varID="alphaDeg" bpID="alphaBp"/>
-    <independentVarRef varID="aileronDeg" bpID="aileronBp"/>
+    <independentVarRef varID="alphaDeg" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="aileronDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="aeroDCn"/>
-    <functionDefn gtID="aeroDCnTable_data"/>
+    <functionDefn>
+      <griddedTableRef gtID="aeroDCnTable_data"/>
+    </functionDefn>
   </function>
   <function name="aeroCZqFn">
-    <independentVarRef varID="alphaDeg" bpID="alphaRateBp"/>
+    <independentVarRef varID="alphaDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="aeroCZq"/>
-    <functionDefn gtID="aeroCZqTable_data"/>
+    <functionDefn>
+      <griddedTableRef gtID="aeroCZqTable_data"/>
+    </functionDefn>
   </function>
   <function name="aeroCmqFn">
-    <independentVarRef varID="alphaDeg" bpID="alphaRateBp"/>
+    <independentVarRef varID="alphaDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="aeroCmq"/>
-    <functionDefn gtID="aeroCmqTable_data"/>
+    <functionDefn>
+      <griddedTableRef gtID="aeroCmqTable_data"/>
+    </functionDefn>
   </function>
   <function name="aeroClpFn">
-    <independentVarRef varID="alphaDeg" bpID="alphaRateBp"/>
+    <independentVarRef varID="alphaDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="aeroClp"/>
-    <functionDefn gtID="aeroClpTable_data"/>
+    <functionDefn>
+      <griddedTableRef gtID="aeroClpTable_data"/>
+    </functionDefn>
   </function>
   <function name="aeroCnpFn">
-    <independentVarRef varID="alphaDeg" bpID="alphaRateBp"/>
+    <independentVarRef varID="alphaDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="aeroCnp"/>
-    <functionDefn gtID="aeroCnpTable_data"/>
+    <functionDefn>
+      <griddedTableRef gtID="aeroCnpTable_data"/>
+    </functionDefn>
   </function>
   <function name="aeroCYpFn">
-    <independentVarRef varID="alphaDeg" bpID="alphaRateBp"/>
+    <independentVarRef varID="alphaDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="aeroCYp"/>
-    <functionDefn gtID="aeroCYpTable_data"/>
+    <functionDefn>
+      <griddedTableRef gtID="aeroCYpTable_data"/>
+    </functionDefn>
   </function>
   <function name="aeroClrFn">
-    <independentVarRef varID="alphaDeg" bpID="alphaRateBp"/>
+    <independentVarRef varID="alphaDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="aeroClr"/>
-    <functionDefn gtID="aeroClrTable_data"/>
+    <functionDefn>
+      <griddedTableRef gtID="aeroClrTable_data"/>
+    </functionDefn>
   </function>
   <function name="aeroCnrFn">
-    <independentVarRef varID="alphaDeg" bpID="alphaRateBp"/>
+    <independentVarRef varID="alphaDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="aeroCnr"/>
-    <functionDefn gtID="aeroCnrTable_data"/>
+    <functionDefn>
+      <griddedTableRef gtID="aeroCnrTable_data"/>
+    </functionDefn>
   </function>
   <function name="aeroCYrFn">
-    <independentVarRef varID="alphaDeg" bpID="alphaRateBp"/>
+    <independentVarRef varID="alphaDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="aeroCYr"/>
-    <functionDefn gtID="aeroCYrTable_data"/>
+    <functionDefn>
+      <griddedTableRef gtID="aeroCYrTable_data"/>
+    </functionDefn>
   </function>
   <function name="aeroCD0Fn">
-    <independentVarRef varID="alphaDeg" bpID="alphaParasiteBp"/>
+    <independentVarRef varID="alphaDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="aeroCD0"/>
-    <functionDefn gtID="aeroCD0Table_data"/>
+    <functionDefn>
+      <griddedTableRef gtID="aeroCD0Table_data"/>
+    </functionDefn>
   </function>
   <function name="propCTFn">
-    <independentVarRef varID="advanceRatio" bpID="jBp"/>
+    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propCT"/>
-    <functionDefn gtID="propCTTable_data"/>
+    <functionDefn>
+      <griddedTableRef gtID="propCTTable_data"/>
+    </functionDefn>
   </function>
   <function name="propCQFn">
-    <independentVarRef varID="advanceRatio" bpID="jBp"/>
+    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propCQ"/>
-    <functionDefn gtID="propCQTable_data"/>
+    <functionDefn>
+      <griddedTableRef gtID="propCQTable_data"/>
+    </functionDefn>
   </function>
-  <function name="propDCCXvaneFn">
-    <independentVarRef varID="advanceRatio" bpID="jVaneBp"/>
-    <independentVarRef varID="vaneDeflectionDeg" bpID="vaneBp"/>
-    <dependentVarRef varID="propDCCXvane"/>
-    <functionDefn gtID="propDCCXvaneTable_data"/>
+  <function name="propDCCXvaneBottomFn">
+    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="vaneBottomDeg" interpolate="linear" extrapolate="neither"/>
+    <dependentVarRef varID="propDCCXvaneBottom"/>
+    <functionDefn>
+      <griddedTableRef gtID="propDCCXvaneTable_data"/>
+    </functionDefn>
   </function>
-  <function name="propDCCYvaneFn">
-    <independentVarRef varID="advanceRatio" bpID="jVaneBp"/>
-    <independentVarRef varID="vaneDeflectionDeg" bpID="vaneBp"/>
-    <dependentVarRef varID="propDCCYvane"/>
-    <functionDefn gtID="propDCCYvaneTable_data"/>
+  <function name="propDCCXvaneLeftFn">
+    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="vaneLeftDeg" interpolate="linear" extrapolate="neither"/>
+    <dependentVarRef varID="propDCCXvaneLeft"/>
+    <functionDefn>
+      <griddedTableRef gtID="propDCCXvaneTable_data"/>
+    </functionDefn>
   </function>
-  <function name="propDCCZvaneFn">
-    <independentVarRef varID="advanceRatio" bpID="jVaneBp"/>
-    <independentVarRef varID="vaneDeflectionDeg" bpID="vaneBp"/>
-    <dependentVarRef varID="propDCCZvane"/>
-    <functionDefn gtID="propDCCZvaneTable_data"/>
+  <function name="propDCCXvaneTopFn">
+    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="vaneTopDeg" interpolate="linear" extrapolate="neither"/>
+    <dependentVarRef varID="propDCCXvaneTop"/>
+    <functionDefn>
+      <griddedTableRef gtID="propDCCXvaneTable_data"/>
+    </functionDefn>
   </function>
-  <function name="propDCClvaneFn">
-    <independentVarRef varID="advanceRatio" bpID="jVaneBp"/>
-    <independentVarRef varID="vaneDeflectionDeg" bpID="vaneBp"/>
-    <dependentVarRef varID="propDCClvane"/>
-    <functionDefn gtID="propDCClvaneTable_data"/>
+  <function name="propDCCXvaneRightFn">
+    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="vaneRightDeg" interpolate="linear" extrapolate="neither"/>
+    <dependentVarRef varID="propDCCXvaneRight"/>
+    <functionDefn>
+      <griddedTableRef gtID="propDCCXvaneTable_data"/>
+    </functionDefn>
   </function>
-  <function name="propDCCmvaneFn">
-    <independentVarRef varID="advanceRatio" bpID="jVaneBp"/>
-    <independentVarRef varID="vaneDeflectionDeg" bpID="vaneBp"/>
-    <dependentVarRef varID="propDCCmvane"/>
-    <functionDefn gtID="propDCCmvaneTable_data"/>
+  <function name="propDCCYvaneBottomFn">
+    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="vaneBottomDeg" interpolate="linear" extrapolate="neither"/>
+    <dependentVarRef varID="propDCCYvaneBottom"/>
+    <functionDefn>
+      <griddedTableRef gtID="propDCCYvaneTable_data"/>
+    </functionDefn>
   </function>
-  <function name="propDCCnvaneFn">
-    <independentVarRef varID="advanceRatio" bpID="jVaneBp"/>
-    <independentVarRef varID="vaneDeflectionDeg" bpID="vaneBp"/>
-    <dependentVarRef varID="propDCCnvane"/>
-    <functionDefn gtID="propDCCnvaneTable_data"/>
+  <function name="propDCCYvaneLeftFn">
+    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="vaneLeftDeg" interpolate="linear" extrapolate="neither"/>
+    <dependentVarRef varID="propDCCYvaneLeft"/>
+    <functionDefn>
+      <griddedTableRef gtID="propDCCYvaneTable_data"/>
+    </functionDefn>
+  </function>
+  <function name="propDCCYvaneTopFn">
+    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="vaneTopDeg" interpolate="linear" extrapolate="neither"/>
+    <dependentVarRef varID="propDCCYvaneTop"/>
+    <functionDefn>
+      <griddedTableRef gtID="propDCCYvaneTable_data"/>
+    </functionDefn>
+  </function>
+  <function name="propDCCYvaneRightFn">
+    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="vaneRightDeg" interpolate="linear" extrapolate="neither"/>
+    <dependentVarRef varID="propDCCYvaneRight"/>
+    <functionDefn>
+      <griddedTableRef gtID="propDCCYvaneTable_data"/>
+    </functionDefn>
+  </function>
+  <function name="propDCCZvaneBottomFn">
+    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="vaneBottomDeg" interpolate="linear" extrapolate="neither"/>
+    <dependentVarRef varID="propDCCZvaneBottom"/>
+    <functionDefn>
+      <griddedTableRef gtID="propDCCZvaneTable_data"/>
+    </functionDefn>
+  </function>
+  <function name="propDCCZvaneLeftFn">
+    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="vaneLeftDeg" interpolate="linear" extrapolate="neither"/>
+    <dependentVarRef varID="propDCCZvaneLeft"/>
+    <functionDefn>
+      <griddedTableRef gtID="propDCCZvaneTable_data"/>
+    </functionDefn>
+  </function>
+  <function name="propDCCZvaneTopFn">
+    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="vaneTopDeg" interpolate="linear" extrapolate="neither"/>
+    <dependentVarRef varID="propDCCZvaneTop"/>
+    <functionDefn>
+      <griddedTableRef gtID="propDCCZvaneTable_data"/>
+    </functionDefn>
+  </function>
+  <function name="propDCCZvaneRightFn">
+    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="vaneRightDeg" interpolate="linear" extrapolate="neither"/>
+    <dependentVarRef varID="propDCCZvaneRight"/>
+    <functionDefn>
+      <griddedTableRef gtID="propDCCZvaneTable_data"/>
+    </functionDefn>
+  </function>
+  <function name="propDCClvaneBottomFn">
+    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="vaneBottomDeg" interpolate="linear" extrapolate="neither"/>
+    <dependentVarRef varID="propDCClvaneBottom"/>
+    <functionDefn>
+      <griddedTableRef gtID="propDCClvaneTable_data"/>
+    </functionDefn>
+  </function>
+  <function name="propDCClvaneLeftFn">
+    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="vaneLeftDeg" interpolate="linear" extrapolate="neither"/>
+    <dependentVarRef varID="propDCClvaneLeft"/>
+    <functionDefn>
+      <griddedTableRef gtID="propDCClvaneTable_data"/>
+    </functionDefn>
+  </function>
+  <function name="propDCClvaneTopFn">
+    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="vaneTopDeg" interpolate="linear" extrapolate="neither"/>
+    <dependentVarRef varID="propDCClvaneTop"/>
+    <functionDefn>
+      <griddedTableRef gtID="propDCClvaneTable_data"/>
+    </functionDefn>
+  </function>
+  <function name="propDCClvaneRightFn">
+    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="vaneRightDeg" interpolate="linear" extrapolate="neither"/>
+    <dependentVarRef varID="propDCClvaneRight"/>
+    <functionDefn>
+      <griddedTableRef gtID="propDCClvaneTable_data"/>
+    </functionDefn>
+  </function>
+  <function name="propDCCmvaneBottomFn">
+    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="vaneBottomDeg" interpolate="linear" extrapolate="neither"/>
+    <dependentVarRef varID="propDCCmvaneBottom"/>
+    <functionDefn>
+      <griddedTableRef gtID="propDCCmvaneTable_data"/>
+    </functionDefn>
+  </function>
+  <function name="propDCCmvaneLeftFn">
+    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="vaneLeftDeg" interpolate="linear" extrapolate="neither"/>
+    <dependentVarRef varID="propDCCmvaneLeft"/>
+    <functionDefn>
+      <griddedTableRef gtID="propDCCmvaneTable_data"/>
+    </functionDefn>
+  </function>
+  <function name="propDCCmvaneTopFn">
+    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="vaneTopDeg" interpolate="linear" extrapolate="neither"/>
+    <dependentVarRef varID="propDCCmvaneTop"/>
+    <functionDefn>
+      <griddedTableRef gtID="propDCCmvaneTable_data"/>
+    </functionDefn>
+  </function>
+  <function name="propDCCmvaneRightFn">
+    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="vaneRightDeg" interpolate="linear" extrapolate="neither"/>
+    <dependentVarRef varID="propDCCmvaneRight"/>
+    <functionDefn>
+      <griddedTableRef gtID="propDCCmvaneTable_data"/>
+    </functionDefn>
+  </function>
+  <function name="propDCCnvaneBottomFn">
+    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="vaneBottomDeg" interpolate="linear" extrapolate="neither"/>
+    <dependentVarRef varID="propDCCnvaneBottom"/>
+    <functionDefn>
+      <griddedTableRef gtID="propDCCnvaneTable_data"/>
+    </functionDefn>
+  </function>
+  <function name="propDCCnvaneLeftFn">
+    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="vaneLeftDeg" interpolate="linear" extrapolate="neither"/>
+    <dependentVarRef varID="propDCCnvaneLeft"/>
+    <functionDefn>
+      <griddedTableRef gtID="propDCCnvaneTable_data"/>
+    </functionDefn>
+  </function>
+  <function name="propDCCnvaneTopFn">
+    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="vaneTopDeg" interpolate="linear" extrapolate="neither"/>
+    <dependentVarRef varID="propDCCnvaneTop"/>
+    <functionDefn>
+      <griddedTableRef gtID="propDCCnvaneTable_data"/>
+    </functionDefn>
+  </function>
+  <function name="propDCCnvaneRightFn">
+    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="vaneRightDeg" interpolate="linear" extrapolate="neither"/>
+    <dependentVarRef varID="propDCCnvaneRight"/>
+    <functionDefn>
+      <griddedTableRef gtID="propDCCnvaneTable_data"/>
+    </functionDefn>
   </function>
   <!-- Verification data. Encoding shots pin the table encoding; the physics pins come from independent paths (see each description). -->
   <checkData>
-    <staticShot name="aeroEncodingAtBreakpoint" refID="aeroEncodingAtBreakpoint">
+    <staticShot name="aeroEncodingAtBreakpoint">
       <description>Encoding pin (circular by construction, and only checks the encoding): at an exact breakpoint the gridded lookup must return the stored value.</description>
       <checkInputs>
         <signal>
@@ -1148,7 +1466,7 @@
         </signal>
       </checkOutputs>
     </staticShot>
-    <staticShot name="lateralSymmetryAtZeroSideslip" refID="lateralSymmetryAtZeroSideslip">
+    <staticShot name="lateralSymmetryAtZeroSideslip">
       <description>Physics pin: a symmetric configuration at beta = 0 carries no side force, rolling moment or yawing moment. Catches a sign error in the beta mirroring, which the encoding pin cannot see.</description>
       <checkInputs>
         <signal>
@@ -1183,7 +1501,7 @@
         </signal>
       </checkOutputs>
     </staticShot>
-    <staticShot name="rollDampingSign" refID="rollDampingSign">
+    <staticShot name="rollDampingSign">
       <description>Physics pin from an INDEPENDENT path: roll damping is negative and sits near the textbook Cl_p = -0.45 for this AR = 6 wing -- the value TestBodyAxes and TestSolverCore pin in the solver. A frame error returns +0.45: the right magnitude with the wrong sign, i.e. roll ANTI-damping.</description>
       <checkInputs>
         <signal>
@@ -1201,7 +1519,7 @@
         </signal>
       </checkOutputs>
     </staticShot>
-    <staticShot name="aileronMirrorAntisymmetry" refID="aileronMirrorAntisymmetry">
+    <staticShot name="aileronMirrorAntisymmetry">
       <description>Physics pin: the rolling-moment increment is ODD in aileron deflection, because mirroring the configuration about its xz-plane maps a +delta antisymmetric command onto -delta. The expected value comes from the +delta row negated; the table cell comes from the mirroring code.</description>
       <checkInputs>
         <signal>
@@ -1224,7 +1542,7 @@
         </signal>
       </checkOutputs>
     </staticShot>
-    <staticShot name="aileronRollAuthorityIsReal" refID="aileronRollAuthorityIsReal">
+    <staticShot name="aileronRollAuthorityIsReal">
       <description>Physics pin: a deflected aileron produces a rolling moment at all. This was exactly zero at every attitude before the flap was carried in the section, silently, with the solve converging and reporting sensible forces.</description>
       <checkInputs>
         <signal>
@@ -1247,7 +1565,7 @@
         </signal>
       </checkOutputs>
     </staticShot>
-    <staticShot name="parasiteCrossflowDominates" refID="parasiteCrossflowDominates">
+    <staticShot name="parasiteCrossflowDominates">
       <description>Physics pin: at 90 degrees the body's crossflow drag dominates the friction term by more than an order of magnitude. A model carrying parasite drag as a constant fails this by a factor of ~17.</description>
       <checkInputs>
         <signal>
