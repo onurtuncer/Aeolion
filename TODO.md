@@ -562,29 +562,24 @@ it -- post-stall numbers unchanged). New suite: `TestBodyAxes` (30th).
    proves vane-to-vane interference is negligible, so the failure is
    purely per-vane nonlinearity. **Per-vane summation verified at 1.4%
    worst case, and needs 7 tables instead of 21.**
-2. **`aeroDC*` (aileron): the hinge was unrepresentable -- now FIXED.**
+2. **`aeroDC*` (aileron): unrepresentable, then fixed, then swept.**
    `MinRowsToResolveHinge = 2` collides with `SolveViscousCoupled`'s
-   one-row-per-strip contract, so a deflection through the
-   table-generating path was EXACTLY ZERO at every attitude, silently,
-   with the solve converging and reporting sensible forces.
-   FIXED 2026-08-16 by carrying the flap in the SECTION rather than the
-   panel geometry: `Geometry::FlapEffectiveness` (thin-airfoil tau) plus
-   `StripSection::{FlapChordFraction, FlapDeflectionDeg,
-   EffectiveAlpha0Deg()}`, with every section model reading the accessor.
-   Additive -- no flap set returns `Alpha0Deg` exactly, so existing
-   consumers are bit-identical.
-   VALIDATED: at alpha=0 the coupled solve reproduces the RESOLVED-HINGE
-   8-row lattice to 1.4%, then attenuates monotonically with separation
-   (0.89 at 6 deg, 0.47 at 20), leaving ~12% of attached roll authority
-   at alpha=30 against the inviscid lattice's ~84%. tau is strongly
-   concave: the 12%-chord aileron is worth 0.432, not 0.12.
-   `TestFlapSection` (31st suite) pins it. NOTE the original "coupled = 0"
-   reading was itself partly wrong -- it used `res.Base.Croll`, which the
-   coupled solve never populates; the hinge finding stands on the
-   single-row INVISCID column.
-   STILL TO DO: `aeolion_aero_map` does not yet sweep deflected
-   conditions, so the tables are absent for want of data, not for want of
-   a method.
+   one-row-per-strip contract, so a deflection was EXACTLY ZERO at every
+   attitude -- silently, the solve converging and reporting sensible
+   forces. FIXED by carrying the flap in the SECTION
+   (`Geometry::FlapEffectiveness` + `StripSection::EffectiveAlpha0Deg()`);
+   additive, existing consumers bit-identical. SWEPT 2026-08-17, 100
+   conditions, tables now in the model.
+   VALIDATED to 1.4% at alpha=0 against the RESOLVED-HINGE 8-row lattice.
+   MIRROR EXACT at all 25 alphas (odd components 0%, even 2.6e-5%).
+   **PHYSICS: past ~30 deg the aileron is predominantly a YAW effector**
+   -- authority falls under 10% while |dCn/dCl| climbs from 0.09 to above
+   1. The classic pre-departure signature, and the thing an
+   inviscid-sourced table would have hidden entirely.
+   Sign of dCl past collapse is UNRESOLVED (reversal or cycle-mean
+   scatter -- the model carries uncertainty, not a claim). Flap model is
+   lift-only, so tabulated authority is an upper bound.
+
 3. **Parasite drag cannot be a constant.** friction CD0 = 0.0106 (body
    0.00521 ~ duct 0.00507 -- the duct's short chord raises its Cf),
    crossflow branch 0.185, so **CD0(90 deg) = 0.195, 17.5x friction**. A

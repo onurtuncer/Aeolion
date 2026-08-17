@@ -6,10 +6,9 @@ propulsor with its vane cruciform, and the fan-on-airframe interaction
 increments. Generated, never hand-edited; committed alongside its source
 JSONs (the house pattern used for paper figures).
 
-**Status (2026-08-14):** specification agreed; sweep drivers and the
-assembler are the open work items. The interaction (`coupling*`) tables
-are additionally blocked on the upstream-induction model (see Open
-items). Nothing in this folder is consumable yet.
+**Status (2026-08-17):** pipeline complete end to end — four generators, assembler, and an in-repo verifier running as `TestDaveMLModel`. 29 tables, 200 checks. The `coupling*` interaction tables remain blocked on the upstream-induction model (see Open items); everything else is generated.
+Regenerate with `python models/build-daveml.py`; check with
+`python models/verify-daveml.py` (or `ctest -R TestDaveMLModel`).
 
 ---
 
@@ -392,34 +391,39 @@ coarsening here if taken).
       (semi-infinite vortex cylinder, the fan-induction paper's work
       item). `SlipstreamField` returns zero upstream by construction
       and must not be used for this.
-- [x] ~~BLOCKER: `aeroDC*` (aileron) tables cannot be generated~~ —
-      FIXED 2026-08-16, solver-side. A deflected strip now carries the
-      flap in its SECTION description (`StripSection::FlapChordFraction`
-      / `FlapDeflectionDeg`), shifting the zero-lift angle by the
-      thin-airfoil increment -tau*delta, tau from
-      `Geometry::FlapEffectiveness`. The lattice geometry is still
-      unchanged (one chordwise row cannot hold a hinge) but the section
-      model, the AUTHORITY on cl in the coupled solve, now knows the flap
-      is down. Additive: `EffectiveAlpha0Deg()` returns `Alpha0Deg`
-      exactly when no flap is set, so every existing consumer is
-      bit-identical.
-      VALIDATED, not asserted: at alpha=0 the coupled solve reproduces
-      the RESOLVED-HINGE 8-row lattice to **1.4%** (-0.00938 vs
-      -0.00925) — an independent geometric representation of the same
-      flap. The ratio then falls monotonically with separation (0.89 at
-      6 deg, 0.71 at 12, 0.47 at 20), and only ~12% of attached roll
-      authority survives at alpha=30 against the inviscid lattice's ~84%.
-      That decay is the physics the inviscid column cannot contain.
-      tau is strongly concave: the 12%-chord aileron is worth **0.432**,
-      not 0.12 — a linear-in-chord guess underestimates roll authority
-      3.5x. `TestFlapSection` (31st suite) pins the exact limits (tau=1
-      at a LE hinge, tau=0 at zero chord), the textbook half/quarter-
-      chord values, the additive inertness, that a deflection produces a
-      rolling moment at all, and that authority decays through stall.
-      NOTE the earlier "coupled = 0 at every attitude" reading was itself
-      partly wrong: it used `res.Base.Croll`, which the coupled solve
-      never populates. The hinge finding stands on the single-row
-      INVISCID column. Coefficients now go through `Solver/BodyAxes.h`.
+- [x] ~~`aeroDC*` (aileron) tables~~ — DONE 2026-08-17. Two fixes, in
+      order. FIRST the blocker: a hinge cannot live on one chordwise row
+      (`MinRowsToResolveHinge = 2` vs the coupling's one-row-per-strip
+      contract), so a deflection was EXACTLY ZERO at every attitude,
+      silently. Fixed by carrying the flap in the SECTION —
+      `Geometry::FlapEffectiveness` (thin-airfoil tau) +
+      `StripSection::{FlapChordFraction, FlapDeflectionDeg,
+      EffectiveAlpha0Deg()}`. Additive, so existing consumers are
+      bit-identical. THEN the sweep: `aeolion_aero_map ... aileron`
+      writes `models/data/aero-aileron.json`, 100 conditions over 25
+      alphas.
+      VALIDATED at alpha=0 against the RESOLVED-HINGE 8-row lattice to
+      **1.4%** — an independent geometric representation of the same
+      flap. MIRROR EXACT: the negative-deflection probe reproduces the
+      mirrored positive row at all 25 alphas, odd components to 0%, even
+      to 2.6e-5%, so the one-sided sweep costs nothing.
+      PHYSICS WORTH KNOWING: roll authority falls to 72% by alpha=20 and
+      under 10% by 30, while |dCn/dCl| climbs 0.09 → above 1. **Past
+      ~30 deg the aileron is predominantly a YAW effector** — the classic
+      pre-departure signature. An inviscid-sourced table would have shown
+      gentle decay and small adverse yaw: an aircraft that rolls
+      obediently out of a stall.
+      tau is strongly concave — the 12%-chord aileron is worth **0.432**,
+      not 0.12 (linear guess understates 3.5x). `TestFlapSection` (31st
+      suite) pins the exact limits, textbook half/quarter-chord values,
+      additive inertness, and the stall decay.
+      CAVEATS: deep-stall rows are limit-cycle means; once |dCl| collapses
+      its SIGN is unresolved (sweep shows a change between 30 and 60 deg,
+      consistent with real aileron reversal OR cycle-mean scatter — the
+      model carries the uncertainty, not a reversal claim). The flap
+      model is LIFT-ONLY: no section cm increment, no gap leakage, no
+      viscous decay at large deflection, so tabulated authority is an
+      upper bound.
 - [x] ~~Simultaneous-command superposition~~ — MEASURED 2026-08-15;
       mode-sum rejected, per-vane summation adopted and verified (above).
 - [x] ~~Vane-mode azimuth error at φ_w = 45°~~ — moot: the propulsor
