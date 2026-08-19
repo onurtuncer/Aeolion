@@ -258,22 +258,84 @@ int main(int argc, char** argv) {
            " chordwise row -- see AileronEffectivenessExport.cpp); parasite drag"
            " (aeolion_parasite_drag)\"},\n";
 
-    // --- rate derivatives, inviscid, beta = 0 --------------------------------
+    // --- rate derivatives ----------------------------------------------------
+    // TWO SETS, because neither alone covers the envelope honestly.
+    //
+    // The INVISCID set (central differences on the prepared system) is the
+    // path Part I validated and TestBodyAxes pins against the textbook
+    // Cl_p = -0.45. It is exact where the flow is attached and meaningless
+    // past separation, since the lattice contains no stall.
+    //
+    // The COUPLED set differences the Level-2 solve, so the section model's
+    // post-stall lift slope enters. That matters more than it sounds: past
+    // stall dcl/dalpha goes NEGATIVE, which can drive Cl_p POSITIVE -- roll
+    // ANTI-damping, i.e. autorotation, the mechanism of a spin. A table that
+    // tapered the attached value to zero would miss that; one that clamped
+    // at its last attached value (which is what an alphaRateBp ending at 20
+    // silently does) would grant a simulator full attached roll damping at
+    // 90 degrees. Both are worse than measuring.
+    //
+    // Post-stall the coupled solve returns a limit-cycle mean, so a
+    // derivative differenced across it is only meaningful if the signal
+    // exceeds the cycle's own width. The rate step is therefore enlarged
+    // past stall, and each row carries the cycle fluctuation of its own
+    // perturbed solves so the assembler can tell a resolved derivative from
+    // one lost in the cycle.
     out << "\"rates\":[\n";
     bool firstRate = true;
     for (const double alphaDeg : BuildAlphaGrid()) {
-        if (alphaDeg > RateDerivativeMaxAlphaDeg + 1e-9) break;
         S::FreestreamConditions base = fc;
         base.alphaDeg = alphaDeg;
         base.betaDeg = 0.0;
-        const S::BodyAxisRateDerivatives d =
-            S::ComputeBodyAxisRateDerivatives(prepared, base, ref);
+
+        const bool attached = alphaDeg <= RateDerivativeMaxAlphaDeg + 1e-9;
+        S::BodyAxisRateDerivatives inv;
+        if (attached) inv = S::ComputeBodyAxisRateDerivatives(prepared, base, ref);
+
+        // Coupled roll damping, the derivative whose SIGN carries the
+        // physics. A bigger step past stall so the difference clears the
+        // cycle width; the attached range keeps the small step so the two
+        // sets are comparable there.
+        const double step = attached ? 0.05 : 0.40;
+        const double q = 0.5 * Rho * flightSpeed * flightSpeed;
+        const double reduce = ref.Span / (2.0 * flightSpeed);
+
+        const auto solveAtRate = [&](double p) {
+            S::FreestreamConditions fcp = base;
+            fcp.p = p;
+            S::ViscousCouplingOptions opts = coupling;
+            return S::SolveViscousCoupled(wing, strips, fcp, ref, trail, model, opts, sources);
+        };
+        const auto rp = solveAtRate(+step);
+        const auto rm = solveAtRate(-step);
+        const S::BodyAxisCoefficients wp = S::BodyAxisFromCoupled(rp, q, ref);
+        const S::BodyAxisCoefficients wm = S::BodyAxisFromCoupled(rm, q, ref);
+        // FRAME, and the trap this very measurement walked into. Cl and p
+        // BOTH flip under the solver->contract rotation, so the DERIVATIVE
+        // is invariant -- but only if both sides are in the same frame.
+        // Here the moment is already FRD (BodyAxisFromCoupled) while the
+        // rate was set on FreestreamConditions in the SOLVER frame, so
+        // exactly one flip is outstanding and the quotient needs negating.
+        // Caught because the attached range must reproduce the inviscid
+        // Cl_p = -0.45 and instead read +0.54: right magnitude, wrong sign,
+        // which is the same failure Solver/BodyAxes.h was written about.
+        const double clpCoupled = -(wp.Cl - wm.Cl) / (2.0 * step * reduce);
+        const double cnpCoupled = -(wp.Cn - wm.Cn) / (2.0 * step * reduce);
+        const double fluct = std::max(rp.CycleFluctuation(), rm.CycleFluctuation());
+
         if (!firstRate) out << ",\n";
         firstRate = false;
-        out << R"( {"alphaDeg":)" << alphaDeg << R"(,"CZq":)" << d.CZq << R"(,"Cmq":)" << d.Cmq
-            << R"(,"Clp":)" << d.Clp << R"(,"Cnp":)" << d.Cnp << R"(,"CYp":)" << d.CYp
-            << R"(,"Clr":)" << d.Clr << R"(,"Cnr":)" << d.Cnr << R"(,"CYr":)" << d.CYr << '}';
+        out << R"( {"alphaDeg":)" << alphaDeg << R"(,"attached":)" << (attached ? "true" : "false")
+            << R"(,"CZq":)" << inv.CZq << R"(,"Cmq":)" << inv.Cmq << R"(,"Clp":)" << inv.Clp
+            << R"(,"Cnp":)" << inv.Cnp << R"(,"CYp":)" << inv.CYp << R"(,"Clr":)" << inv.Clr
+            << R"(,"Cnr":)" << inv.Cnr << R"(,"CYr":)" << inv.CYr
+            << R"(,"ClpCoupled":)" << clpCoupled << R"(,"CnpCoupled":)" << cnpCoupled
+            << R"(,"rateStep":)" << step << R"(,"cycleFluctuation":)" << fluct
+            << R"(,"converged":)" << ((rp.Converged && rm.Converged) ? "true" : "false") << '}';
         out.flush();
+        std::cout << "rates alpha=" << alphaDeg << "  Clp_inv=" << (attached ? inv.Clp : 0.0)
+                  << "  Clp_coupled=" << clpCoupled << "  fluct=" << fluct
+                  << ((rp.Converged && rm.Converged) ? "" : "  (cycle-mean)") << std::endl;
     }
     out << "\n],\n\"baseline\":[\n";
 
