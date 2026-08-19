@@ -6,7 +6,7 @@ propulsor with its vane cruciform, and the fan-on-airframe interaction
 increments. Generated, never hand-edited; committed alongside its source
 JSONs (the house pattern used for paper figures).
 
-**Status (2026-08-17):** pipeline complete end to end — four generators, assembler, and an in-repo verifier running as `TestDaveMLModel`. 29 tables, 200 checks. The `coupling*` interaction tables remain blocked on the upstream-induction model (see Open items); everything else is generated.
+**Status (2026-08-19):** COMPLETE end to end — five generators, assembler, and an in-repo verifier running as `TestDaveMLModel` with DTD validation. 35 tables, 407 checks, validates against DAVEfunc.dtd 2.0.1. Every table family is generated; nothing remains blocked.
 Regenerate with `python models/build-daveml.py`; check with
 `python models/verify-daveml.py` (or `ctest -R TestDaveMLModel`).
 
@@ -375,7 +375,7 @@ coarsening here if taken).
       standard name (mapping table above). Remaining: confirm the
       spellings against the published standard text rather than the
       reference docs' examples, and settle the vane names.
-- [ ] **Validate against the `DAVEfunc` DTD** in CI.
+- [x] ~~Validate against the `DAVEfunc` DTD in CI~~ — DONE 2026-08-19; `verify-daveml.py` runs xmllint when present. It found six classes of real deviation on first run (see the technical report).
 - [x] ~~`aeroCD0` parasite-drag driver~~ — DONE 2026-08-15,
       `app/ParasiteDragExport.cpp`. Body+duct wetted areas from the
       contract through `DragEstimate` (previously never called by
@@ -387,10 +387,32 @@ coarsening here if taken).
       of parasite drag at 90°. Excludes the wing by construction.
       Reflected in Part I §Parasite drag and Part II §The parasite
       branch.
-- [ ] **`coupling*` tables blocked on the upstream-induction model**
-      (semi-infinite vortex cylinder, the fan-induction paper's work
-      item). `SlipstreamField` returns zero upstream by construction
-      and must not be used for this.
+- [x] ~~`coupling*` tables blocked on the upstream-induction model~~ —
+      DONE 2026-08-19. The blocker was **STALE**: `DiskInduction.h`
+      already implemented the semi-infinite vortex cylinder (pinned by
+      `TestDiskInduction`, already used by the attachment sweep), so no
+      new physics was needed — only `app/InductionMapExport.cpp`.
+      MEASURED, 125 conditions (25 α × 5 Tc): below α=14 both solves
+      converge and the fan adds **2–4% lift**, growing smoothly with Tc —
+      solid. From 16 the increment jumps to **7–9%, peaking at α=20**,
+      just past CLmax(18), then decays and **reverses sign by 90°**
+      (plate broadside: the axial induction is perpendicular to the
+      freestream, so it reduces effective incidence).
+      CAVEAT stated in all three documents: the step at 16 coincides
+      exactly with limit-cycle onset in BOTH solves (residuals 1e-4 →
+      0.2–0.6), so post-stall increments are differences of two cycle
+      means and the step size is confounded. What survives is the
+      ORDERING — clean monotone Tc scaling (ratios 1.49/1.49/1.49 at
+      α=20), which scatter would not produce. Real thrust-ordered effect;
+      attribution to separation delay is consistent but NOT established.
+      SIMILARITY justifying the single-speed sweep: 4(A/S)(1+vi/V)(vi/V)
+      = Tc, so vi/V depends on Tc alone and the coefficient increments
+      are speed-independent. Induced velocities satisfy momentum theory
+      to every printed digit.
+- [ ] **Report powered vs power-off SEPARATION POINTS directly** — the
+      coupled solve already computes f per strip, so the fan-induction
+      question can be answered outright instead of inferred from a lift
+      increment taken across two limit cycles. The proper close of 3b.
 - [x] ~~`aeroDC*` (aileron) tables~~ — DONE 2026-08-17. Two fixes, in
       order. FIRST the blocker: a hinge cannot live on one chordwise row
       (`MinRowsToResolveHinge = 2` vs the coupling's one-row-per-strip
