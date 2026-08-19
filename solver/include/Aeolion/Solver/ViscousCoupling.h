@@ -295,6 +295,30 @@ struct ViscousCoupledResult {
     int Iterations = 0;
     bool Converged = false;
     double MaxResidual = 0.0;
+
+    /**
+     * The limit cycle's SPREAD, alongside the mean the loads already
+     * report. Deep post-stall solves do not converge to a steady state;
+     * they enter a cycle whose mean is reproducible (independent iteration
+     * paths agree to four digits) but whose instantaneous state is not.
+     * The reported loads are that mean, so a consumer needs to know how
+     * wide the cycle was in order to know how much to trust them.
+     *
+     * The sampled quantity is the sectional-lift sum
+     * sum(c_i w_i cl_i) = CL*S over the averaging window, a direct
+     * load-level measure. CycleSamples is zero for any solve that
+     * converged before the window opened -- so a converged condition
+     * honestly reports no fluctuation rather than a small fabricated one.
+     */
+    double CycleMeanClS = 0.0;
+    double CycleRmsClS = 0.0;
+    int CycleSamples = 0;
+
+    /** Relative cycle fluctuation, RMS/|mean|; zero when converged. */
+    [[nodiscard]] double CycleFluctuation() const {
+        if (CycleSamples < 2 || std::fabs(CycleMeanClS) < Math::Tiny) return 0.0;
+        return CycleRmsClS / std::fabs(CycleMeanClS);
+    }
 };
 
 /**
@@ -440,6 +464,7 @@ struct ViscousCoupledResult {
     std::vector<double> gammaMeanSum(n, 0.0);
     int gammaMeanCount = 0;
     bool finalSweep = false;
+    double cycleSumSq = 0.0; // second moment of the sectional-lift sum
     for (res.Iterations = 1; res.Iterations <= options.MaxIterations; ++res.Iterations) {
         updateSources();
         res.MaxResidual = 0.0;
@@ -608,6 +633,19 @@ struct ViscousCoupledResult {
         if (2 * res.Iterations > options.MaxIterations) {
             for (std::size_t i = 0; i < n; ++i) gammaMeanSum[i] += gamma[i];
             ++gammaMeanCount;
+            // The SPREAD of the limit cycle, alongside its mean. The
+            // sectional-lift sum sum(c_i w_i cl_i) is CL*S, so its
+            // relative RMS over the averaging window is a direct,
+            // load-level measure of how much the cycle moves -- which is
+            // exactly what a consumer of a cycle-MEAN table needs in
+            // order to know how much to trust it. Cheap: the cl values
+            // are already in hand.
+            double clS = 0.0;
+            for (std::size_t i = 0; i < n; ++i)
+                clS += strips[i].Chord * strips[i].Width * res.Strips[i].cl;
+            res.CycleMeanClS += clS;
+            cycleSumSq += clS * clS;
+            ++res.CycleSamples;
         }
         if (res.Iterations == options.MaxIterations - 1 && gammaMeanCount > 0) {
             // Within the caps: a convex mix of capped iterates.
@@ -615,6 +653,16 @@ struct ViscousCoupledResult {
                 gamma[i] = gammaMeanSum[i] / static_cast<double>(gammaMeanCount);
             finalSweep = true;
         }
+    }
+
+    // Finalise the cycle statistics: mean and RMS about it, of the
+    // sectional-lift sum sampled over the averaging window.
+    if (res.CycleSamples > 0) {
+        const double nSamp = static_cast<double>(res.CycleSamples);
+        res.CycleMeanClS /= nSamp;
+        const double variance =
+            std::max(cycleSumSq / nSamp - res.CycleMeanClS * res.CycleMeanClS, 0.0);
+        res.CycleRmsClS = std::sqrt(variance);
     }
 
     // --- loads under the converged circulation ------------------------------

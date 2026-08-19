@@ -13,7 +13,7 @@
       
       LIMITATIONS. Post-stall values are limit-cycle means, not steady states. CLmax is an upper bound -- bubble bursting is not modelled. The tables are the ascending-alpha branch; hysteresis is not represented. Rate derivatives are tapered to zero over alpha 20-40 deg, a declared assumption rather than a computed result. Parasite drag covers body and duct only -- the wing's profile drag is already inside the force tables -- and omits the duct's separated drag at incidence, so aeroCD0 is a lower bound at high alpha. The aileron flap model is lift-only: no section pitching-moment increment, no gap leakage, no viscous decay at large deflection, so tabulated roll authority is an upper bound.
       
-      INCOMPLETE: fan-on-airframe interaction tables (coupling*) are absent, so the airframe tables are POWER-OFF and underpredict the separation delay the aft fan provides in transition.
+      INTERACTION VALIDITY. The fan-on-airframe tables (coupling*) were swept at ZERO SIDESLIP and are indexed by alpha and Tc only, but the buildup applies them at every beta. Their beta dependence is therefore unmeasured, not established as weak. They are also uniform-disk-loading and swirl-free, and past alpha 16 they are differences of two limit-cycle means: the effect is thrust-ordered and real, but its attribution to delayed separation is consistent with the data rather than established by it.
     </description>
     <reference refID="srcAeroMap" author="aeolion_aero_map" title="Airframe baseline map and reduced-rate derivatives (aero-map.json)" date="2026-08-19"/>
     <reference refID="srcAileron" author="aeolion_aero_map (aileron block)" title="Aileron increment sweep (aero-aileron.json)" date="2026-08-19"/>

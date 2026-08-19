@@ -326,10 +326,20 @@ def build(args):
             "INCOMPLETE: aileron increment tables are absent -- the deflected sweep has "
             "not been run -- so this model carries NO ROLL CONTROL INPUT.")
     notes.append("")
-    notes.append(
-        "INCOMPLETE: fan-on-airframe interaction tables (coupling*) are absent, so the "
-        "airframe tables are POWER-OFF and underpredict the separation delay the aft fan "
-        "provides in transition.")
+    if coupling:
+        notes.append(
+            "INTERACTION VALIDITY. The fan-on-airframe tables (coupling*) were swept at "
+            "ZERO SIDESLIP and are indexed by alpha and Tc only, but the buildup applies "
+            "them at every beta. Their beta dependence is therefore unmeasured, not "
+            "established as weak. They are also uniform-disk-loading and swirl-free, and "
+            "past alpha 16 they are differences of two limit-cycle means: the effect is "
+            "thrust-ordered and real, but its attribution to delayed separation is "
+            "consistent with the data rather than established by it.")
+    else:
+        notes.append(
+            "INCOMPLETE: fan-on-airframe interaction tables (coupling*) are absent, so the "
+            "airframe tables are POWER-OFF and underpredict the separation delay the aft "
+            "fan provides in transition.")
     d.open("description")
     for line in notes:
         d.raw(esc(line))
