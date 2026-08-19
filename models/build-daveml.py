@@ -310,6 +310,17 @@ def build(args):
         "excludes n -> 0, so windmilling and low-rotor-speed descent are outside the "
         "envelope.",
         "",
+        "RATE DERIVATIVES. Measured at two perturbation amplitudes a factor of nine "
+        "apart. The attached range and deep stall agree to four digits; roughly 20-30 "
+        "degrees does not, differing by up to 196% with the SIGN not surviving. Across "
+        "that band a linear rate derivative is structurally invalid -- the response is "
+        "nonlinear over the perturbation range -- so those breakpoints are ABSENT rather "
+        "than tapered, clamped or filled with a measured number, all of which would be "
+        "fabrications. A lookup interpolates across the gap. The longitudinal pair (CZq, "
+        "Cmq) additionally comes from the inviscid path and is a FLOOR: a pitch rate acts "
+        "through the chordwise arm between the bound line and the moment reference point, "
+        "which is zero on this configuration.",
+        "",
         "LIMITATIONS. Post-stall values are limit-cycle means, not steady states. CLmax "
         "is an upper bound -- bubble bursting is not modelled. The tables are the "
         "ascending-alpha branch; hysteresis is not represented. Rate derivatives are "
@@ -547,12 +558,43 @@ def build(args):
 
         rates = aero.get("rates", [])
         if rates:
-            ralphas = uniq([r["alphaDeg"] for r in rates])
-            bp_defs.append(("alphaRateBp", "angleOfAttack", ralphas))
-            for comp in ("CZq", "Cmq", "Clp", "Cnp", "CYp", "Clr", "Cnr", "CYr"):
-                vals = [r[comp] for r in sorted(rates, key=lambda x: x["alphaDeg"])]
-                tables.append((f"aero{comp}", ["alphaRateBp"], vals, f"aero{comp}Table",
-                               f"Reduced-rate derivative {comp}, attached range only."))
+            rates = sorted(rates, key=lambda r: r["alphaDeg"])
+            # LINEARITY. A rate derivative is a linearization, and across
+            # the stall band that linearization fails outright: measured at
+            # two roll-rate amplitudes a factor of nine apart, the attached
+            # range and deep stall agree to four digits while roughly
+            # 20-30 degrees disagrees by up to 196% and the SIGN does not
+            # survive. In that band no single linear coefficient represents
+            # the response, so a taper, a clamp and a measured value are
+            # equally fabrications.
+            #
+            # The rows that failed the check are therefore DROPPED from the
+            # breakpoint axis rather than smoothed over. A gridded lookup
+            # interpolates across the gap, which is an honest admission
+            # that nothing was measured there -- and the file header says
+            # so, so a consumer is not left to infer it from a suspiciously
+            # straight segment.
+            usable = [r for r in rates if r.get("linearizable", True)]
+            dropped = [r["alphaDeg"] for r in rates if not r.get("linearizable", True)]
+            if dropped:
+                print(f"  rate derivatives: {len(dropped)} non-linearizable row(s) dropped "
+                      f"(alpha {min(dropped):g}..{max(dropped):g})")
+            if usable:
+                ralphas = uniq([r["alphaDeg"] for r in usable])
+                bp_defs.append(("alphaRateBp", "angleOfAttack", ralphas))
+                for comp in ("CZq", "Cmq", "Clp", "Cnp", "CYp", "Clr", "Cnr", "CYr"):
+                    vals = [r[comp] for r in usable]
+                    longitudinal = comp in ("CZq", "Cmq")
+                    note = (" From the INVISCID path and a floor: a pitch rate acts through "
+                            "the chordwise arm between the bound line and the reference "
+                            "point, which is zero here, so the coupled path returns nothing "
+                            "and the chordwise load redistribution is absent by construction."
+                            if longitudinal else
+                            " From the COUPLED path, which carries the section model's "
+                            "post-stall lift slope.")
+                    tables.append((f"aero{comp}", ["alphaRateBp"], vals, f"aero{comp}Table",
+                                   f"Reduced-rate derivative {comp}." + note +
+                                   " Rows where the linearization failed are absent."))
 
     if parasite:
         pts = parasite["table"]

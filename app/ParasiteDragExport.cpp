@@ -42,11 +42,17 @@
 //      the crossflow term at 90 degrees is several times the friction
 //      term.
 //
-// NOT covered, and stated rather than hidden: the duct's own separated
-// drag at incidence (an annular ring at 90 degrees is a bluff body, but
-// the slender-body crossflow form does not apply to it), and any
-// interference between the body wake and the wing. Both make this an
-// UNDER-estimate at high alpha.
+//   3. Duct crossflow branch -- the annular shroud is a bluff body at
+//      incidence too, and the slender-body form of (2) does not describe
+//      it, so it carries its own term on the ring's SIDE-PROJECTED area.
+//      A bluff-body estimate rather than a computation, sharing the
+//      crossflow coefficient and finite-length factor with the body
+//      rather than claiming independent knowledge of an annulus.
+//
+// NOT covered, and stated rather than hidden: any interference between
+// the body wake and the wing, and the duct's internal-flow losses. Both
+// still make this an UNDER-estimate at high alpha, though far less so
+// than while the duct was absent from the crossflow term entirely.
 //
 // Usage:
 //   aeolion_parasite_drag <handoff.json> <out.json> [Vinf] [laminarFraction]
@@ -196,6 +202,41 @@ int main(int argc, char** argv) {
     // The crossflow coefficient, referred to the same Sref.
     const double crossflowCoeff = CrossflowEta * CylinderCrossflowCd * (body.Splan / Sref);
 
+    // --- the duct's own separated drag at incidence ------------------------------
+    // The slender-body crossflow form above is a BODY-of-revolution result and
+    // does not describe an annular ring meeting the flow edge-on. Leaving the
+    // duct out of the incidence-dependent term therefore made aeroCD0 a
+    // declared LOWER bound at high alpha, which is the wrong direction to be
+    // wrong in for a vehicle that spends its transition there.
+    //
+    // The ring is treated as what it is: a short annular shroud whose
+    // projected area normal to the crossflow grows with incidence. Seen from
+    // the side it presents two wall sections, each of chord `ductChord` and
+    // height equal to the wall thickness, plus the annulus's own frontal
+    // blockage as the flow turns across it. The area that matters for
+    // crossflow is the SIDE-PROJECTED area of the ring,
+    //
+    //     S_ring = 2 * ductChord * (Douter - Dinner) / 2 * 2  ... two walls
+    //            = 2 * ductChord * (Douter - Dinner)
+    //
+    // carried at a bluff-body crossflow coefficient. A short ring is not a
+    // long cylinder, so the finite-length factor is lower than the body's;
+    // Hoerner's short-cylinder data put a length-to-diameter of order one
+    // near 0.6-0.7 of the infinite value, and 0.65 is used, the same figure
+    // the slender body carries.
+    //
+    // This is a bluff-body ESTIMATE, not a computation, and it is stated as
+    // one: it shares the crossflow coefficient and the finite-length factor
+    // with the body term rather than claiming independent knowledge of an
+    // annulus. What it buys is that aeroCD0 stops being a declared lower
+    // bound at the attitudes the vehicle actually transits through.
+    const double ductCrossflowArea =
+        contract.Duct.IsStated
+            ? 2.0 * contract.Duct.Chord * (contract.Duct.OuterDiameter - contract.Duct.InnerDiameter)
+            : 0.0;
+    const double ductCrossflowCoeff =
+        CrossflowEta * CylinderCrossflowCd * (ductCrossflowArea / Sref);
+
     std::ofstream out(outPath);
     if (!out) {
         std::cerr << "cannot open " << outPath << " for writing\n";
@@ -210,7 +251,7 @@ int main(int argc, char** argv) {
         << ",\"bodySplan\":" << body.Splan << ",\"bodyFineness\":" << fineness
         << ",\"ductSwet\":" << ductSwet << ",\"ductThicknessRatio\":" << ductTc
         << ",\"crossflowEta\":" << CrossflowEta << ",\"crossflowCdc\":" << CylinderCrossflowCd
-        << ",\"crossflowCoeff\":" << crossflowCoeff << ",\"CD0friction\":" << buildup.CD0
+        << ",\"crossflowCoeff\":" << crossflowCoeff << ",\"ductCrossflowCoeff\":" << ductCrossflowCoeff << ",\"ductCrossflowArea\":" << ductCrossflowArea << ",\"CD0friction\":" << buildup.CD0
         << ",\"miscFraction\":" << buildup.MiscFraction
         << ",\"excludes\":\"wing (its profile drag is already inside the coupled"
            " solve's force tables); duct separated drag at incidence; body-wake"
@@ -233,9 +274,11 @@ int main(int argc, char** argv) {
         // sin^3, and |sin| so the branch is even about zero incidence:
         // crossflow drag does not know the sign of alpha.
         const double crossflow = crossflowCoeff * std::fabs(s * s * s);
+        const double ductCrossflow = ductCrossflowCoeff * std::fabs(s * s * s);
         if (i) out << ",\n";
         out << R"( {"alphaDeg":)" << alphas[i] << R"(,"CD0friction":)" << buildup.CD0
-            << R"(,"CD0crossflow":)" << crossflow << R"(,"CD0":)" << (buildup.CD0 + crossflow)
+            << R"(,"CD0crossflow":)" << crossflow << R"(,"CD0ductCrossflow":)" << ductCrossflow
+            << R"(,"CD0":)" << (buildup.CD0 + crossflow + ductCrossflow)
             << '}';
     }
     out << "\n]}\n";

@@ -11,6 +11,8 @@
       
       VALIDITY. Incompressible, M &lt; 0.3: no Mach dependence exists in the generating methods. Single Reynolds number -- every table was generated at V = 25 m/s. Propulsor tables are AXIAL INFLOW ONLY, because the rotor-vane machinery is axisymmetric end to end; alphaDiskDeg is output as a validity monitor rather than faked as a table axis. Powered operation only: the rho n^2 D^4 group excludes n -&gt; 0, so windmilling and low-rotor-speed descent are outside the envelope.
       
+      RATE DERIVATIVES. Measured at two perturbation amplitudes a factor of nine apart. The attached range and deep stall agree to four digits; roughly 20-30 degrees does not, differing by up to 196% with the SIGN not surviving. Across that band a linear rate derivative is structurally invalid -- the response is nonlinear over the perturbation range -- so those breakpoints are ABSENT rather than tapered, clamped or filled with a measured number, all of which would be fabrications. A lookup interpolates across the gap. The longitudinal pair (CZq, Cmq) additionally comes from the inviscid path and is a FLOOR: a pitch rate acts through the chordwise arm between the bound line and the moment reference point, which is zero on this configuration.
+      
       LIMITATIONS. Post-stall values are limit-cycle means, not steady states. CLmax is an upper bound -- bubble bursting is not modelled. The tables are the ascending-alpha branch; hysteresis is not represented. Rate derivatives are tapered to zero over alpha 20-40 deg, a declared assumption rather than a computed result. Parasite drag covers body and duct only -- the wing's profile drag is already inside the force tables -- and omits the duct's separated drag at incidence, so aeroCD0 is a lower bound at high alpha. The aileron flap model is lift-only: no section pitching-moment increment, no gap leakage, no viscous decay at large deflection, so tabulated roll authority is an upper bound.
       
       INTERACTION VALIDITY. The fan-on-airframe tables (coupling*) were swept at ZERO SIDESLIP and are indexed by alpha and Tc only, but the buildup applies them at every beta. Their beta dependence is therefore unmeasured, not established as weak. They are also uniform-disk-loading and swirl-free, and past alpha 16 they are differences of two limit-cycle means: the effect is thrust-ordered and real, but its attribution to delayed separation is consistent with the data rather than established by it.
@@ -228,35 +230,35 @@
     <isOutput/>
   </variableDef>
   <variableDef name="aeroCZq" varID="aeroCZq" units="nd" axisSystem="body">
-    <description>Reduced-rate derivative CZq, attached range only.</description>
+    <description>Reduced-rate derivative CZq. From the INVISCID path and a floor: a pitch rate acts through the chordwise arm between the bound line and the reference point, which is zero here, so the coupled path returns nothing and the chordwise load redistribution is absent by construction. Rows where the linearization failed are absent.</description>
     <isOutput/>
   </variableDef>
   <variableDef name="aeroCmq" varID="aeroCmq" units="nd" axisSystem="body">
-    <description>Reduced-rate derivative Cmq, attached range only.</description>
+    <description>Reduced-rate derivative Cmq. From the INVISCID path and a floor: a pitch rate acts through the chordwise arm between the bound line and the reference point, which is zero here, so the coupled path returns nothing and the chordwise load redistribution is absent by construction. Rows where the linearization failed are absent.</description>
     <isOutput/>
   </variableDef>
   <variableDef name="aeroClp" varID="aeroClp" units="nd" axisSystem="body">
-    <description>Reduced-rate derivative Clp, attached range only.</description>
+    <description>Reduced-rate derivative Clp. From the COUPLED path, which carries the section model's post-stall lift slope. Rows where the linearization failed are absent.</description>
     <isOutput/>
   </variableDef>
   <variableDef name="aeroCnp" varID="aeroCnp" units="nd" axisSystem="body">
-    <description>Reduced-rate derivative Cnp, attached range only.</description>
+    <description>Reduced-rate derivative Cnp. From the COUPLED path, which carries the section model's post-stall lift slope. Rows where the linearization failed are absent.</description>
     <isOutput/>
   </variableDef>
   <variableDef name="aeroCYp" varID="aeroCYp" units="nd" axisSystem="body">
-    <description>Reduced-rate derivative CYp, attached range only.</description>
+    <description>Reduced-rate derivative CYp. From the COUPLED path, which carries the section model's post-stall lift slope. Rows where the linearization failed are absent.</description>
     <isOutput/>
   </variableDef>
   <variableDef name="aeroClr" varID="aeroClr" units="nd" axisSystem="body">
-    <description>Reduced-rate derivative Clr, attached range only.</description>
+    <description>Reduced-rate derivative Clr. From the COUPLED path, which carries the section model's post-stall lift slope. Rows where the linearization failed are absent.</description>
     <isOutput/>
   </variableDef>
   <variableDef name="aeroCnr" varID="aeroCnr" units="nd" axisSystem="body">
-    <description>Reduced-rate derivative Cnr, attached range only.</description>
+    <description>Reduced-rate derivative Cnr. From the COUPLED path, which carries the section model's post-stall lift slope. Rows where the linearization failed are absent.</description>
     <isOutput/>
   </variableDef>
   <variableDef name="aeroCYr" varID="aeroCYr" units="nd" axisSystem="body">
-    <description>Reduced-rate derivative CYr, attached range only.</description>
+    <description>Reduced-rate derivative CYr. From the COUPLED path, which carries the section model's post-stall lift slope. Rows where the linearization failed are absent.</description>
     <isOutput/>
   </variableDef>
   <variableDef name="aeroCD0" varID="aeroCD0" units="nd" axisSystem="body">
@@ -940,7 +942,7 @@
     </dataTable>
   </griddedTableDef>
   <griddedTableDef name="aeroCZqTable" gtID="aeroCZqTable_data">
-    <description>Reduced-rate derivative CZq, attached range only.</description>
+    <description>Reduced-rate derivative CZq. From the INVISCID path and a floor: a pitch rate acts through the chordwise arm between the bound line and the reference point, which is zero here, so the coupled path returns nothing and the chordwise load redistribution is absent by construction. Rows where the linearization failed are absent.</description>
     <breakpointRefs>
       <bpRef bpID="alphaRateBp"/>
     </breakpointRefs>
@@ -950,7 +952,7 @@
     </dataTable>
   </griddedTableDef>
   <griddedTableDef name="aeroCmqTable" gtID="aeroCmqTable_data">
-    <description>Reduced-rate derivative Cmq, attached range only.</description>
+    <description>Reduced-rate derivative Cmq. From the INVISCID path and a floor: a pitch rate acts through the chordwise arm between the bound line and the reference point, which is zero here, so the coupled path returns nothing and the chordwise load redistribution is absent by construction. Rows where the linearization failed are absent.</description>
     <breakpointRefs>
       <bpRef bpID="alphaRateBp"/>
     </breakpointRefs>
@@ -960,7 +962,7 @@
     </dataTable>
   </griddedTableDef>
   <griddedTableDef name="aeroClpTable" gtID="aeroClpTable_data">
-    <description>Reduced-rate derivative Clp, attached range only.</description>
+    <description>Reduced-rate derivative Clp. From the COUPLED path, which carries the section model's post-stall lift slope. Rows where the linearization failed are absent.</description>
     <breakpointRefs>
       <bpRef bpID="alphaRateBp"/>
     </breakpointRefs>
@@ -970,7 +972,7 @@
     </dataTable>
   </griddedTableDef>
   <griddedTableDef name="aeroCnpTable" gtID="aeroCnpTable_data">
-    <description>Reduced-rate derivative Cnp, attached range only.</description>
+    <description>Reduced-rate derivative Cnp. From the COUPLED path, which carries the section model's post-stall lift slope. Rows where the linearization failed are absent.</description>
     <breakpointRefs>
       <bpRef bpID="alphaRateBp"/>
     </breakpointRefs>
@@ -980,7 +982,7 @@
     </dataTable>
   </griddedTableDef>
   <griddedTableDef name="aeroCYpTable" gtID="aeroCYpTable_data">
-    <description>Reduced-rate derivative CYp, attached range only.</description>
+    <description>Reduced-rate derivative CYp. From the COUPLED path, which carries the section model's post-stall lift slope. Rows where the linearization failed are absent.</description>
     <breakpointRefs>
       <bpRef bpID="alphaRateBp"/>
     </breakpointRefs>
@@ -990,7 +992,7 @@
     </dataTable>
   </griddedTableDef>
   <griddedTableDef name="aeroClrTable" gtID="aeroClrTable_data">
-    <description>Reduced-rate derivative Clr, attached range only.</description>
+    <description>Reduced-rate derivative Clr. From the COUPLED path, which carries the section model's post-stall lift slope. Rows where the linearization failed are absent.</description>
     <breakpointRefs>
       <bpRef bpID="alphaRateBp"/>
     </breakpointRefs>
@@ -1000,7 +1002,7 @@
     </dataTable>
   </griddedTableDef>
   <griddedTableDef name="aeroCnrTable" gtID="aeroCnrTable_data">
-    <description>Reduced-rate derivative Cnr, attached range only.</description>
+    <description>Reduced-rate derivative Cnr. From the COUPLED path, which carries the section model's post-stall lift slope. Rows where the linearization failed are absent.</description>
     <breakpointRefs>
       <bpRef bpID="alphaRateBp"/>
     </breakpointRefs>
@@ -1010,7 +1012,7 @@
     </dataTable>
   </griddedTableDef>
   <griddedTableDef name="aeroCYrTable" gtID="aeroCYrTable_data">
-    <description>Reduced-rate derivative CYr, attached range only.</description>
+    <description>Reduced-rate derivative CYr. From the COUPLED path, which carries the section model's post-stall lift slope. Rows where the linearization failed are absent.</description>
     <breakpointRefs>
       <bpRef bpID="alphaRateBp"/>
     </breakpointRefs>
@@ -1025,10 +1027,10 @@
       <bpRef bpID="alphaParasiteBp"/>
     </breakpointRefs>
     <dataTable>
-      0.010645459, 0.0105905792, 0.0105827229, 0.0105905792, 0.010645459, 0.0107938129, 0.0110809529, 0.0115504985,
-      0.0122438418, 0.0131996373, 0.0144533222, 0.016036672, 0.0179773971, 0.0202987841, 0.0230193865, 0.0261527681,
-      0.0336860221, 0.0454596243, 0.0596697218, 0.0759287212, 0.0936683477, 0.130630987, 0.163946021, 0.18711266,
-      0.195409117
+      0.0106495694, 0.010591094, 0.0105827229, 0.010591094, 0.0106495694, 0.0108076434, 0.0111135968, 0.0116139069,
+      0.0123526778, 0.0133710968, 0.0147069228, 0.0163940132, 0.0184618941, 0.0209353777, 0.0238342333, 0.0271729132,
+      0.0351997439, 0.0477447494, 0.0628858885, 0.080210173, 0.099112095, 0.138496517, 0.173994342, 0.198678853,
+      0.207518892
     </dataTable>
   </griddedTableDef>
   <griddedTableDef name="propCTTable" gtID="propCTTable_data">
@@ -1842,7 +1844,7 @@
         <signal>
           <signalName>aeroCD0</signalName>
           <signalUnits>nd</signalUnits>
-          <signalValue>0.195409117</signalValue>
+          <signalValue>0.207518892</signalValue>
           <tol>1e-09</tol>
         </signal>
       </checkOutputs>

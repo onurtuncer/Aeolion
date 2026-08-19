@@ -1,28 +1,41 @@
 // TestRollDamping.cpp -- roll damping through and beyond the stall, and
 // the frame discipline a coupled rate derivative demands.
 //
-// This suite exists because of a measured result that a flight model had
-// been getting actively wrong. Roll damping is not a constant that fades
-// past stall: on the studied configuration Cl_p collapses through the
-// stall, CROSSES ZERO and goes POSITIVE over a narrow window near
-// alpha = 24-26 degrees, then recovers and grows again in the plate
-// regime. Positive Cl_p is roll ANTI-damping -- autorotation, the
-// mechanism of a spin departure.
+// WHAT IS ESTABLISHED, and what is not. The mechanism below is real and
+// is what this suite pins: the sign of Cl_p follows the sign of the
+// section lift slope, so a section past stall -- where dcl/dalpha is
+// negative -- produces roll ANTI-damping, which is autorotation.
 //
-// Both of the obvious table schedules destroy that. Tapering the attached
-// value to zero reports 0 where the truth is +0.11. Ending the
-// breakpoint axis at the attached limit -- which silently CLAMPS, and is
-// what the model actually did -- reports -0.44 there: a sign error in the
-// most flight-critical region there is.
+// Whether the studied configuration actually exhibits that at a given
+// incidence is a SEPARATE question, and the answer measured so far is
+// "not resolved". Differencing the coupled solve at two roll-rate
+// amplitudes a factor of nine apart:
 //
-// The mechanism is general, so it is what gets pinned here rather than
-// one configuration's numbers. A wing rolls; the down-going semi-span
-// gains local incidence and the up-going loses it. While the section lift
-// slope is POSITIVE the down-going side gains lift and the roll is
-// opposed -- damping. Once the section lift slope goes NEGATIVE past
-// stall, the same kinematics ADD to the roll. So the sign of Cl_p follows
-// the sign of dcl/dalpha, and a test can drive that directly with a
-// synthetic polar instead of standing up the whole anchored pipeline.
+//   alpha        0..18      20      22      24      26     45..90
+//   small step  -0.545..  -0.311  -0.258  +0.112  +0.025  -0.257..
+//               -0.374                                    -0.425
+//   large step  -0.545..  -0.168  -0.087  -0.159  -0.194  -0.256..
+//               -0.374                                    -0.425
+//
+// The attached range agrees to four digits across that amplitude change,
+// and so does deep stall past about 45 degrees. Between roughly 20 and 30
+// the two disagree by up to 196% and the SIGN does not survive. So in
+// that band Cl_p is not a derivative at all: the response is nonlinear
+// over the perturbation range, and no single linear coefficient
+// represents it. A first pass reported the small-amplitude sign reversal
+// as a finding; it is not one, and the correction is recorded here rather
+// than quietly dropped.
+//
+// The consequence for a tabulated model is stronger than "the taper is
+// wrong". Across the stall band a linear rate derivative is structurally
+// invalid, so a taper, a clamp and a measured value are all equally
+// fabrications. The two well-defined ranges are tabulated and the band
+// between them is declared.
+//
+// The mechanism test below is therefore driven with SYNTHETIC polars of
+// chosen slope rather than with a configuration's stalled sections: that
+// isolates the physics from the amplitude question and keeps the guard
+// meaningful whatever section model is mounted.
 #include "Aeolion/Solver/BodyAxes.h"
 #include "Aeolion/Solver/Solver.h"
 #include "Aeolion/Solver/ViscousCoupling.h"

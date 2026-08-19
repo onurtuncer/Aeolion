@@ -397,6 +397,35 @@ int main(int argc, char** argv) {
         cpl.Cmq = diff(Axis::Pitch, chordReduce, false, [](const auto& w) { return w.Cm; });
         cpl.CZq = diff(Axis::Pitch, chordReduce, true, [](const auto& w) { return w.CZ; });
 
+        // LINEARITY, checked rather than assumed. A rate derivative is a
+        // linearization, and past stall that linearization can simply fail
+        // -- the section response is not linear over the perturbation
+        // range, so the quotient depends on how hard the aircraft is
+        // pushed. MEASURED: attached and deep-stall roll damping agree to
+        // four digits across a ninefold amplitude change, while between
+        // roughly 20 and 30 degrees the two differ by up to 196% and the
+        // SIGN does not survive. A first pass reported that small-amplitude
+        // sign reversal as autorotation; it is not established, and the
+        // guard against repeating the mistake is to carry both amplitudes.
+        //
+        // Only ROLL is re-measured, because it is the derivative whose
+        // sign was in question and because the cost is two extra solves
+        // per attitude rather than six. The flag it produces is reported
+        // for the whole lateral set, which shares the mechanism.
+        const double clpCoarse = cpl.Clp;
+        double clpFine = clpCoarse;
+        {
+            const double fineStep = stepRoll / 4.0;
+            const auto rp = solveAtRate(Axis::Roll, +fineStep);
+            const auto rm = solveAtRate(Axis::Roll, -fineStep);
+            clpFine = -(S::BodyAxisFromCoupled(rp, q, ref).Cl -
+                        S::BodyAxisFromCoupled(rm, q, ref).Cl) /
+                      (2.0 * fineStep * spanReduce);
+        }
+        const double spread =
+            std::fabs(clpCoarse - clpFine) / std::max(std::fabs(clpCoarse), 1e-9);
+        const bool linearizable = spread < 0.10;
+
         if (!firstRate) out << ",\n";
         firstRate = false;
         out << R"( {"alphaDeg":)" << alphaDeg << R"(,"attached":)" << (attached ? "true" : "false")
@@ -405,7 +434,10 @@ int main(int argc, char** argv) {
             << R"(,"Cnr":)" << cpl.Cnr << R"(,"CYr":)" << cpl.CYr
             << R"(,"CZqInviscid":)" << inv.CZq << R"(,"CmqInviscid":)" << inv.Cmq
             << R"(,"ClpInviscid":)" << inv.Clp << R"(,"CnpInviscid":)" << inv.Cnp
-            << R"(,"rateStepRoll":)" << stepRoll << R"(,"rateStepPitch":)" << stepPitch << R"(,"cycleFluctuation":)" << fluct << '}';
+            << R"(,"rateStepRoll":)" << stepRoll << R"(,"rateStepPitch":)" << stepPitch << R"(,"cycleFluctuation":)" << fluct
+            << R"(,"ClpFineStep":)" << clpFine
+            << R"(,"linearitySpread":)" << spread
+            << R"(,"linearizable":)" << (linearizable ? "true" : "false") << '}';
         out.flush();
         std::cout << "rates alpha=" << alphaDeg << "  Clp=" << cpl.Clp << " (inv "
                   << (attached ? inv.Clp : 0.0) << ")  Cmq=" << cpl.Cmq << "  Cnr=" << cpl.Cnr
