@@ -200,6 +200,61 @@ void TestZeroSlopeGivesNegligibleDamping() {
           "a zero section lift slope should give negligible roll damping, got " << flat);
 }
 
+void TestPitchRateReachesTheCoupledSolve() {
+    // Does a PITCH rate move the coupled solve at all? Roll and yaw rates
+    // give a spanwise-VARYING incidence, which a single-row strip method
+    // sees directly. A pitch rate instead gives a UNIFORM incidence change
+    // proportional to the chordwise offset between the bound line and the
+    // moment reference point -- so with the reference point ON the bound
+    // line it must produce nothing, and with the reference point offset it
+    // must produce a large response. Both halves are checked, because the
+    // first is the trap: a fixture that happens to reference about its own
+    // quarter chord reports zero pitch response and looks broken.
+    const Fixture f = MakeWing();
+
+    ViscousCouplingOptions options;
+    options.Relaxation = 0.05;
+    options.AndersonDepth = 0;
+    options.MaxIterations = 400;
+    const double q = 0.5 * Rho * Vinf * Vinf;
+    const double chordReduce = f.Ref.Chord / (2.0 * Vinf);
+    const double step = 0.01 / chordReduce; // a 0.01 reduced-rate perturbation
+
+    const auto czAt = [&](double pitchRate, const Vec3& refPoint) {
+        FreestreamConditions fc;
+        fc.Vinf = Vinf;
+        fc.rho = Rho;
+        fc.alphaDeg = 2.0;
+        fc.q = pitchRate;
+        fc.RefPoint = refPoint;
+        return BodyAxisFromCoupled(
+            SolveViscousCoupled(f.Panels, f.Strips, fc, f.Ref, 50.0 * Span,
+                                LinearPolar(2.0 * std::numbers::pi), options),
+            q, f.Ref).CZ;
+    };
+
+    // Reference point ON the bound line: no chordwise arm, no response.
+    const Vec3 onLine(0.0, 0.0, 0.0);
+    const double czqOnLine =
+        -(czAt(+step, onLine) - czAt(-step, onLine)) / (2.0 * step * chordReduce);
+
+    // Reference point offset a chord aft: a real arm, a real response.
+    const Vec3 offset(Chord, 0.0, 0.0);
+    const double czqOffset =
+        -(czAt(+step, offset) - czAt(-step, offset)) / (2.0 * step * chordReduce);
+
+    std::cout << "CZ_q on the bound line = " << czqOnLine << ", offset one chord = "
+              << czqOffset << "\n";
+
+    CHECK(std::fabs(czqOnLine) < 0.5,
+          "with the reference point ON the bound line a single-row strip method must show "
+          "essentially no pitch-rate response -- the arm is zero. Got " << czqOnLine);
+    CHECK(std::fabs(czqOffset) > 2.0,
+          "with the reference point offset a chord the pitch-rate response must be large; "
+          "a near-zero value means body rates are not reaching the coupled strip "
+          "velocities at all. Got " << czqOffset);
+}
+
 // --- 3. the frame trap, explicitly --------------------------------------------
 
 void TestFrameFlipWouldBeCaught() {
@@ -248,6 +303,7 @@ int main() {
     TestAttachedDampingMatchesTheInviscidAnchor();
     TestNegativeSectionSlopeReversesRollDamping();
     TestZeroSlopeGivesNegligibleDamping();
+    TestPitchRateReachesTheCoupledSolve();
     TestFrameFlipWouldBeCaught();
 
     if (failures == 0) {

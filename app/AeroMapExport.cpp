@@ -296,46 +296,120 @@ int main(int argc, char** argv) {
         // physics. A bigger step past stall so the difference clears the
         // cycle width; the attached range keeps the small step so the two
         // sets are comparable there.
-        const double step = attached ? 0.05 : 0.40;
+// WHICH PATH IS AUTHORITATIVE, PER DERIVATIVE. Not a preference -- a
+        // structural property of a single-row strip method, measured rather than
+        // assumed (TestRollDamping::TestPitchRateReachesTheCoupledSolve).
+        //
+        // A roll or yaw rate gives a spanwise-VARYING incidence, which a strip
+        // method sees directly at its bound line. Those derivatives are taken
+        // from the COUPLED solve, and they are the ones that carry the physics
+        // the inviscid path structurally cannot: past stall the section lift
+        // slope goes negative and Cl_p REVERSES SIGN near alpha 24-26, which is
+        // autorotation.
+        //
+        // A pitch rate instead gives a UNIFORM incidence change proportional to
+        // the chordwise arm between the bound line and the reference point. The
+        // contract's moment reference point sits essentially ON the wing's
+        // quarter chord, so that arm is zero and the coupled CZ_q and Cm_q come
+        // out at ~0.08 and ~0.11 against inviscid -4.04 and 0.003. That is
+        // CORRECT for a single-row lattice, not a defect: with the reference
+        // point moved one chord aft the same solve returns CZ_q = -9.2. The
+        // inviscid path is nonzero here only because its control points sit a
+        // half chord behind its bound vortices, so it retains a crude image of
+        // the chordwise load redistribution a pitch rate causes.
+        //
+        // So the longitudinal pair is taken from the INVISCID path and is a
+        // FLOOR, exactly as Part I says of Cm_q: the chordwise redistribution
+        // that supplies most of a real wing's pitch damping is absent by
+        // construction, and recovering it needs a chordwise-resolved lattice
+        // that this coupling's one-row-per-strip contract forbids.
+        //
+        // STEP SIZING, per axis, and this matters more than it looks.
+        // A fixed rate step in rad/s does NOT give comparable perturbations
+        // across axes, because the reduced rates divide by different
+        // lengths: b/2V is six times c/2V here. MEASURED with a common
+        // 0.05 rad/s step: roll came out clean (-0.543 against the
+        // inviscid -0.455) while CZ_q read +0.055 against an inviscid
+        // -3.83 -- a factor of seventy and the wrong sign.
+        //
+        // The reason is not the frame but the signal-to-noise. Roll and
+        // yaw derivatives are differenced about a baseline that symmetry
+        // pins at ZERO, so even a tiny perturbation is clean. The pitch
+        // derivatives ride on CZ ~ -0.3 and Cm ~ -0.01, so a 3.5e-4 change
+        // in reduced rate moves them by well under a percent -- inside the
+        // coupled solve's own convergence noise.
+        //
+        // So the step is chosen to deliver the SAME reduced-rate
+        // perturbation on every axis, which is the quantity the derivative
+        // is taken with respect to in the first place.
+        const double targetReduced = attached ? 0.01 : 0.04;
         const double q = 0.5 * Rho * flightSpeed * flightSpeed;
-        const double reduce = ref.Span / (2.0 * flightSpeed);
+        const double spanReduce = ref.Span / (2.0 * flightSpeed);
+        const double chordReduce = ref.Chord / (2.0 * flightSpeed);
+        const double stepRoll = targetReduced / spanReduce;
+        const double stepPitch = targetReduced / chordReduce;
 
-        const auto solveAtRate = [&](double p) {
+        // Perturb each body rate in turn. All six reduced-rate derivatives
+        // are measured across the WHOLE alpha grid, not only where the
+        // inviscid path is valid -- otherwise the breakpoint axis ends at
+        // the attached limit and a gridded lookup silently CLAMPS, handing
+        // a consumer attached-flow damping at 90 degrees.
+        enum class Axis { Roll, Pitch, Yaw };
+        const auto solveAtRate = [&](Axis axis, double rate) {
             S::FreestreamConditions fcp = base;
-            fcp.p = p;
+            if (axis == Axis::Roll) fcp.p = rate;
+            else if (axis == Axis::Pitch) fcp.q = rate;
+            else fcp.r = rate;
             S::ViscousCouplingOptions opts = coupling;
             return S::SolveViscousCoupled(wing, strips, fcp, ref, trail, model, opts, sources);
         };
-        const auto rp = solveAtRate(+step);
-        const auto rm = solveAtRate(-step);
-        const S::BodyAxisCoefficients wp = S::BodyAxisFromCoupled(rp, q, ref);
-        const S::BodyAxisCoefficients wm = S::BodyAxisFromCoupled(rm, q, ref);
-        // FRAME, and the trap this very measurement walked into. Cl and p
-        // BOTH flip under the solver->contract rotation, so the DERIVATIVE
-        // is invariant -- but only if both sides are in the same frame.
-        // Here the moment is already FRD (BodyAxisFromCoupled) while the
-        // rate was set on FreestreamConditions in the SOLVER frame, so
-        // exactly one flip is outstanding and the quotient needs negating.
-        // Caught because the attached range must reproduce the inviscid
-        // Cl_p = -0.45 and instead read +0.54: right magnitude, wrong sign,
-        // which is the same failure Solver/BodyAxes.h was written about.
-        const double clpCoupled = -(wp.Cl - wm.Cl) / (2.0 * step * reduce);
-        const double cnpCoupled = -(wp.Cn - wm.Cn) / (2.0 * step * reduce);
-        const double fluct = std::max(rp.CycleFluctuation(), rm.CycleFluctuation());
+
+        double fluct = 0.0;
+        // FRAME, and the trap this very measurement walked into. A moment
+        // and its rate BOTH flip under the solver->contract rotation, so
+        // the derivative is invariant -- but only when both sides are in
+        // the same frame. Here the moment is already FRD
+        // (BodyAxisFromCoupled) while the rate was set on
+        // FreestreamConditions in the SOLVER frame, so exactly one flip is
+        // outstanding for the x/z-axis rates (p, r) and the quotient needs
+        // negating. The pitch rate q is invariant, so its derivatives do
+        // NOT. Caught because the attached range must reproduce the
+        // inviscid Cl_p = -0.45 and instead read +0.54: right magnitude,
+        // wrong sign, the failure Solver/BodyAxes.h was written about.
+        const auto diff = [&](Axis axis, double reduce, bool flip, auto&& take) {
+            const double step = (axis == Axis::Pitch) ? stepPitch : stepRoll;
+            const auto rp = solveAtRate(axis, +step);
+            const auto rm = solveAtRate(axis, -step);
+            fluct = std::max({fluct, rp.CycleFluctuation(), rm.CycleFluctuation()});
+            const double d = (take(S::BodyAxisFromCoupled(rp, q, ref)) -
+                              take(S::BodyAxisFromCoupled(rm, q, ref))) /
+                             (2.0 * step * reduce);
+            return flip ? -d : d;
+        };
+
+        S::BodyAxisRateDerivatives cpl;
+        cpl.Clp = diff(Axis::Roll, spanReduce, true, [](const auto& w) { return w.Cl; });
+        cpl.Cnp = diff(Axis::Roll, spanReduce, true, [](const auto& w) { return w.Cn; });
+        cpl.CYp = diff(Axis::Roll, spanReduce, false, [](const auto& w) { return w.CY; });
+        cpl.Clr = diff(Axis::Yaw, spanReduce, true, [](const auto& w) { return w.Cl; });
+        cpl.Cnr = diff(Axis::Yaw, spanReduce, true, [](const auto& w) { return w.Cn; });
+        cpl.CYr = diff(Axis::Yaw, spanReduce, false, [](const auto& w) { return w.CY; });
+        cpl.Cmq = diff(Axis::Pitch, chordReduce, false, [](const auto& w) { return w.Cm; });
+        cpl.CZq = diff(Axis::Pitch, chordReduce, true, [](const auto& w) { return w.CZ; });
 
         if (!firstRate) out << ",\n";
         firstRate = false;
         out << R"( {"alphaDeg":)" << alphaDeg << R"(,"attached":)" << (attached ? "true" : "false")
-            << R"(,"CZq":)" << inv.CZq << R"(,"Cmq":)" << inv.Cmq << R"(,"Clp":)" << inv.Clp
-            << R"(,"Cnp":)" << inv.Cnp << R"(,"CYp":)" << inv.CYp << R"(,"Clr":)" << inv.Clr
-            << R"(,"Cnr":)" << inv.Cnr << R"(,"CYr":)" << inv.CYr
-            << R"(,"ClpCoupled":)" << clpCoupled << R"(,"CnpCoupled":)" << cnpCoupled
-            << R"(,"rateStep":)" << step << R"(,"cycleFluctuation":)" << fluct
-            << R"(,"converged":)" << ((rp.Converged && rm.Converged) ? "true" : "false") << '}';
+            << R"(,"CZq":)" << cpl.CZq << R"(,"Cmq":)" << cpl.Cmq << R"(,"Clp":)" << cpl.Clp
+            << R"(,"Cnp":)" << cpl.Cnp << R"(,"CYp":)" << cpl.CYp << R"(,"Clr":)" << cpl.Clr
+            << R"(,"Cnr":)" << cpl.Cnr << R"(,"CYr":)" << cpl.CYr
+            << R"(,"CZqInviscid":)" << inv.CZq << R"(,"CmqInviscid":)" << inv.Cmq
+            << R"(,"ClpInviscid":)" << inv.Clp << R"(,"CnpInviscid":)" << inv.Cnp
+            << R"(,"rateStepRoll":)" << stepRoll << R"(,"rateStepPitch":)" << stepPitch << R"(,"cycleFluctuation":)" << fluct << '}';
         out.flush();
-        std::cout << "rates alpha=" << alphaDeg << "  Clp_inv=" << (attached ? inv.Clp : 0.0)
-                  << "  Clp_coupled=" << clpCoupled << "  fluct=" << fluct
-                  << ((rp.Converged && rm.Converged) ? "" : "  (cycle-mean)") << std::endl;
+        std::cout << "rates alpha=" << alphaDeg << "  Clp=" << cpl.Clp << " (inv "
+                  << (attached ? inv.Clp : 0.0) << ")  Cmq=" << cpl.Cmq << "  Cnr=" << cpl.Cnr
+                  << "  fluct=" << fluct << std::endl;
     }
     out << "\n],\n\"baseline\":[\n";
 

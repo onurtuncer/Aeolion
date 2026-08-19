@@ -141,6 +141,23 @@ struct StripSection {
         return Alpha0Deg +
                Geometry::FlapZeroLiftShift(1.0 - FlapChordFraction, FlapDeflectionDeg);
     }
+
+    /**
+     * The flap's own quarter-chord moment increment. The zero-lift shift
+     * above is thin-airfoil theory's LIFT result; this is its companion,
+     * and leaving it out is not neutral -- the flap's load acts aft of
+     * the quarter chord, so a lift-only flap model silently loses a
+     * nose-down couple that grows with deflection.
+     *
+     * Added to the section model's own cm rather than replacing it: the
+     * section knows its camber, the flap is a change to that camber, and
+     * the two superpose in thin-airfoil theory because it is linear.
+     */
+    [[nodiscard]] double FlapSectionCm() const {
+        if (FlapDeflectionDeg == 0.0 || FlapChordFraction <= 0.0) return 0.0;
+        return Geometry::FlapMomentIncrement(1.0 - FlapChordFraction,
+                                             Math::DegToRad(FlapDeflectionDeg));
+    }
 };
 
 /** What a section model answers with, at one (alpha_eff, Re, Ma) state. */
@@ -699,9 +716,14 @@ struct ViscousCoupledResult {
         // edge (at -ChordDir) toward LiftDir, so the axis is
         // LiftDir x ChordDir (for a wing at x-aft/z-up: z x x = +y, the
         // standard pitch axis). A couple is position-independent, so no arm.
+        // The section's own cm PLUS the flap's increment. Both are
+        // quarter-chord couples and thin-airfoil theory is linear, so
+        // they superpose; a strip with no flap contributes exactly what
+        // it did before.
+        const double sectionCm = state.cm + strip.FlapSectionCm();
         res.SectionMoment =
             res.SectionMoment + Cross(strip.LiftDir, strip.ChordDir) *
-                                    (q * strip.Chord * strip.Chord * strip.Width * state.cm);
+                                    (q * strip.Chord * strip.Chord * strip.Width * sectionCm);
 
         StationResult sr;
         sr.y = mid.y;

@@ -70,4 +70,41 @@ namespace Aeolion::Geometry {
     return -FlapEffectiveness(hingeChordFraction) * deflection;
 }
 
+
+/**
+ * The section pitching-moment increment about the QUARTER CHORD from
+ * deflecting a plain flap, in the same angular unit convention as
+ * thin-airfoil theory (deflection in RADIANS):
+ *
+ *     delta_cm_c/4 = -(delta/2) * sin(theta_h) * (1 - cos(theta_h))
+ *
+ * This is the companion of FlapEffectiveness and comes from the same
+ * place -- the Glauert coefficients of the flap's camber slope. Writing
+ * the flap as dz/dx = -delta aft of the hinge gives
+ * A1 = (2 delta / pi) sin(theta_h) and A2 = (delta / pi) sin(2 theta_h),
+ * and cm_c/4 = (pi/4)(A2 - A1) reduces to the expression above.
+ *
+ * Sign: trailing edge DOWN adds aft camber, so the moment is NOSE DOWN,
+ * which is why the result is negative for positive deflection.
+ *
+ * Both limits vanish, and both are worth stating because they make the
+ * formula checkable by inspection. A flap hinged at the leading edge is
+ * the whole section rotating, which adds incidence but no camber, so it
+ * produces no quarter-chord moment. A flap of zero chord does nothing at
+ * all. The maximum lies in between -- near the hinge position where the
+ * added camber is most lopsided about the quarter chord.
+ *
+ * Omitting this term is not neutral. The flap's load acts aft of the
+ * quarter chord, so the increment is a nose-down couple that a lift-only
+ * flap model simply loses; on the contract's 12%-chord aileron at 10
+ * degrees it is delta_cm = -0.100 against delta_cl = 0.476, i.e. the
+ * increment acts about 0.21 chords aft of the quarter chord.
+ */
+[[nodiscard]] inline double FlapMomentIncrement(double hingeChordFraction,
+                                                double deflectionRad) {
+    const double xh = std::clamp(hingeChordFraction, 0.0, 1.0);
+    const double thetaH = std::acos(1.0 - 2.0 * xh);
+    return -Math::Half * deflectionRad * std::sin(thetaH) * (1.0 - std::cos(thetaH));
+}
+
 } // namespace Aeolion::Geometry
