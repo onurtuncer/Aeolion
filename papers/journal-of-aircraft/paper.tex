@@ -1141,6 +1141,72 @@ is a conceptual-design estimate, with a conventional accuracy of
 $\pm 10$--$20\%$ for a clean configuration; it is reported here to
 complete the polar, not as a validated prediction.
 
+\subsection{The aft fan, and what it does to the attached envelope}
+\label{sec:faninduction}
+
+Everything above is power-off, and on this configuration that is a
+choice worth defending rather than assuming. The aircraft carries a
+ducted fan \emph{aft} of the wing---the duct leading edge lies about a
+fifth of a chord behind the wing trailing edge---so the fan does not
+blow the wing. A reader may therefore reasonably expect the power-off
+envelope to be the envelope. It is not quite, and the reason is worth
+recording in the paper that defines the envelope.
+
+A loaded disk induces flow ahead of itself. The axial induction rises
+from zero far upstream to $v_i$ in the disk plane, so the wing sits in an
+\emph{accelerating} stream: a favourable pressure gradient, which is
+precisely the condition that delays separation. The geometry makes this
+more than incidental here---the disk radius is $0.19$ of the semi-span,
+against a worst separation station at $|2y/b| \approx 0.15$--$0.23$
+(Section~\ref{sec:separation-results}). The fan sits over the span that
+sheds first.
+
+The effect is not computable from a momentum-theory slipstream, which
+returns identically zero ahead of the disk by construction and would
+report exactly zero interaction---an artifact indistinguishable from a
+physical null. A uniformly loaded actuator disk is, however, exactly
+equivalent to a semi-infinite cylindrical vortex sheet, whose field is
+computable everywhere including upstream. Treating the ducted fan as the
+annulus it is (two superposed cylinders, shedding at both edges) and
+adding that field to the coupled solve gives, over the attached range of
+this paper's matrix,
+
+\begin{table}[tb]
+  \centering
+  \caption{Fan-induced lift increment over the attached range, as a
+    percentage of the power-off $C_L$, against thrust coefficient
+    $T_c = T/\bar q S$. Both the powered and power-off solves converge to
+    residuals below $10^{-4}$ throughout this range.}
+  \label{tab:faninduction}
+  \begin{tabular}{rrrrr}
+    \hline
+    $\alpha$ [deg] & $T_c = 1$ & $T_c = 2$ & $T_c = 4$ & $T_c = 8$ \\
+    \hline
+    0  & 2.4\% & 3.8\% & 5.9\% & 8.9\% \\
+    4  & 1.7\% & 2.7\% & 4.2\% & 6.4\% \\
+    8  & 1.5\% & 2.4\% & 3.7\% & 5.5\% \\
+    12 & 1.5\% & 2.3\% & 3.6\% & 5.4\% \\
+    \hline
+  \end{tabular}
+\end{table}
+
+Two things follow. The increment is real but modest in attached flow---a
+few percent, growing with thrust and only weakly with incidence---so the
+attached envelope reported here is not materially displaced by power, and
+the coefficients of Section~\ref{sec:coefficients} stand as stated. And
+the increment is largest at low incidence, where the fan's induced
+velocity is the largest fraction of a lightly loaded stream, rather than
+near the separation boundary where a delay would matter most.
+
+Whether the fan moves the separation \emph{boundary}---the quantity this
+paper exists to locate---is not answered by a lift increment, and is
+deliberately not claimed here. The apparatus to answer it directly is
+already in place: the march of Section~\ref{sec:separation} computes a
+separation point on every strip, so the powered and power-off separation
+locations can be compared rather than inferred. That measurement, and
+the post-stall behaviour where the interaction grows several-fold, belong
+to Part~II and to the fan-induction study respectively.
+
 \subsection{The skin-flow portrait}
 
 \begin{figure}[tb]

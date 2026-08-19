@@ -399,6 +399,84 @@ and neither is any interference between the body wake and the wing.
 Both omissions push the same way, so Eq.~\eqref{eq:cd-total} is a lower
 bound on parasite drag at high incidence.
 
+\subsection{The aft fan across the separation boundary}
+\label{sec:faninduction}
+
+The map above is power-off. That is the right baseline, but on this
+configuration it is not the whole aircraft, and the omission is largest
+in exactly the regime this paper describes.
+
+The ducted fan sits aft of the wing, so it does not blow it; what it does
+is induce an accelerating stream \emph{ahead} of itself, over the wing---a
+favourable gradient, and therefore a separation-delaying one. Part~I
+records the effect over the attached range, where it is a few percent of
+$C_L$ and both solves converge cleanly. Across the separation boundary it
+is several times larger. Modelling the fan as the annular actuator disk
+it is, equivalent to a pair of semi-infinite cylindrical vortex sheets,
+and adding that field to the same coupled solve gives the lift increments
+of Table~\ref{tab:faninductionp2}.
+
+\begin{table}[tb]
+  \centering
+  \caption{Fan-induced lift increment as a percentage of the power-off
+    $C_L$ at $T_c = 2$, through and beyond the stall. Rows at
+    $\alpha \geq 16^\circ$ are limit-cycle means in both the powered and
+    power-off solves.}
+  \label{tab:faninductionp2}
+  \begin{tabular}{rrl}
+    \hline
+    $\alpha$ [deg] & $\Delta C_L / C_L$ & \\
+    \hline
+    12 & 2.3\% & converged \\
+    14 & 2.4\% & converged \\
+    16 & 7.5\% & cycle mean \\
+    20 & 8.8\% & cycle mean \\
+    26 & 7.5\% & cycle mean \\
+    35 & 6.9\% & cycle mean \\
+    50 & 4.7\% & cycle mean \\
+    70 & 1.8\% & cycle mean \\
+    90 & $-5.2$\% & cycle mean \\
+    \hline
+  \end{tabular}
+\end{table}
+
+The shape is physically coherent. The increment peaks at
+$\alpha = 20^\circ$, immediately past the map's own $C_{L,\max}$ at
+$18^\circ$, which is where a delayed separation should pay most. It then
+decays as the wing becomes a fully separated plate with less and less
+attachment left to preserve, and it \emph{reverses sign} by $90^\circ$:
+with the plate broadside the fan's axial induction is perpendicular to
+the free stream, so it slightly reduces the effective incidence rather
+than energising an attached layer. A model that simply scaled the
+power-off loads by a thrust-dependent factor would get that reversal
+wrong.
+
+\paragraph{What the step at $16^\circ$ does and does not show.} The
+increment jumps roughly threefold between $14^\circ$ and $16^\circ$, and
+it is tempting to read that as the separation-delay signature. The
+defensible claim is weaker. The step coincides exactly with the onset of
+limit-cycle behaviour in \emph{both} solves---residuals rise from
+$10^{-4}$ to $0.2$--$0.6$---so every increment beyond it is a difference
+of two cycle means, and the size of the step cannot be separated from the
+change in the character of the solution.
+
+What survives is the ordering. At every post-stall attitude the increment
+scales cleanly and monotonically with thrust; at $\alpha = 20^\circ$ the
+ratios between successive $T_c$ levels are $1.49$, $1.49$ and $1.49$.
+Cycle-mean scatter does not do that. There is therefore a real,
+thrust-ordered fan effect in the stalled regime, and attributing it
+specifically to delayed separation is consistent with these data without
+being established by them.
+
+The direct measurement is available and is stated here as the next step
+rather than performed: the coupled solve computes a separation point on
+every strip, so the powered and power-off separation locations can be
+compared outright, instead of inferring a delay from a lift increment
+taken across two limit cycles. Until that is done, the honest summary is
+that power adds several percent of lift through the stall in a
+thrust-ordered way, and that its mechanism is consistent with---but not
+proven to be---the separation delay the geometry suggests.
+
 \section{Validation and the remaining tiers}
 \label{sec:outlook}
 
