@@ -284,6 +284,11 @@ int main(int argc, char** argv) {
     out << "\"rates\":[\n";
     bool firstRate = true;
     for (const double alphaDeg : BuildAlphaGrid()) {
+        // The rate block belongs with the baseline map, not with a control
+        // sweep: six coupled solves per attitude, and a blocks=aileron run
+        // exports none of them. Without this guard such a run spends an
+        // hour recomputing derivatives it will discard.
+        if (!wantBaseline) break;
         S::FreestreamConditions base = fc;
         base.alphaDeg = alphaDeg;
         base.betaDeg = 0.0;

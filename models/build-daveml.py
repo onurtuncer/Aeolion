@@ -10,6 +10,7 @@ Emits ANSI/AIAA S-119-2011 DAVE-ML 2.0.1. Inputs, in models/data/:
 
     aero-map.json         aeolion_aero_map        baseline + rate derivatives
     aero-aileron.json     aeolion_aero_map ... aileron   control increments
+    aero-rates.json       aeolion_aero_map ... baseline  rate derivatives
     parasite-drag.json    aeolion_parasite_drag   aeroCD0(alpha)
     propulsion-map.json   aeolion_propulsion_map  propCT/propCQ(J)
     propulsion-singlevane.json                    per-vane increments
@@ -266,6 +267,14 @@ def build(args):
     # regenerated alongside it, and merging two JSONs by hand is exactly
     # the sort of step that goes wrong without saying so.
     ailfile = load(data, "aero-aileron.json", required=False)
+    # The rate derivatives may also live in their own file: the driver's
+    # block selector means a rate sweep and a baseline map can legitimately
+    # be separate runs, and hand-merging two sweep JSONs is exactly the
+    # step that goes wrong without announcing it.
+    ratefile = load(data, "aero-rates.json", required=False)
+    if ratefile and ratefile.get("rates") and aero is not None:
+        aero = dict(aero)
+        aero["rates"] = ratefile["rates"]
     if ailfile and aero is not None and not aero.get("aileron"):
         aero = dict(aero)
         aero["aileron"] = ailfile.get("aileron", [])
