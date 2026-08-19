@@ -75,7 +75,7 @@ is reached by $\alpha \approx 55$--$65^\circ$, the computed
 $C_N(90^\circ) = 1.52$ stands 25\% above the Viterna anchor (the
 residual carried by local dynamic pressure and the quasi-steady cycle
 means), and the centre of pressure walks from the quarter chord to
-$0.52\,c$ at $90^\circ$, on Rayleigh's mid-chord value. Two properties
+$0.52\,c$ at $90^\circ$, on Rayleigh's mid-chord value. Three properties
 of the coupling itself are established on the way: collocation strip
 coupling on a densely panelled wing possesses spanwise-checkerboard
 spurious equilibria that plain damped iteration suppresses, and its
@@ -391,13 +391,85 @@ Two boundaries on the statement. First, this is a
 \emph{section-level} Viterna comparison of
 Section~\ref{sec:map}: that anchor concerns the wing section's deep-stall
 drag, and the body's crossflow wake is a separate contribution to a
-separate quantity. Second, the estimate is deliberately incomplete in one
-direction only. The duct's own separated drag at incidence is not
-modelled --- an annular ring at $90^\circ$ is a bluff body, but the
-slender-body form of Eq.~\eqref{eq:crossflow} does not apply to it ---
-and neither is any interference between the body wake and the wing.
-Both omissions push the same way, so Eq.~\eqref{eq:cd-total} is a lower
-bound on parasite drag at high incidence.
+separate quantity. Second, the ducted shroud is a bluff body at incidence
+too, and the slender-body form of Eq.~\eqref{eq:crossflow} does not
+describe an annular ring meeting the flow edge-on, so the ring carries a
+term of its own on its side-projected area. That is a bluff-body
+estimate rather than a computation --- it borrows the crossflow
+coefficient and the finite-length factor from the body rather than
+claiming independent knowledge of an annulus --- and it raises
+$C_{D_0}(90^\circ)$ from $0.195$ to $0.208$. What remains unmodelled is
+the interference between the body wake and the wing, so
+Eq.~\eqref{eq:cd-total} is still a lower bound at high incidence, though
+by less than while the duct was absent from the crossflow term entirely.
+
+\subsection{Rate derivatives do not exist across the stall band}
+\label{sec:ratelinearity}
+
+A tabulated flight model carries stability derivatives, and the natural
+assumption is that they exist everywhere the coefficients do. On this
+configuration they do not, and the failure is confined to precisely the
+band a tail-sitter transits.
+
+A rate derivative is a linearization. Whether the linearization holds is
+testable at the cost of one extra pair of solves: difference the coupled
+solve at two perturbation amplitudes and see whether the quotient is the
+same. Doing so for roll damping at amplitudes a factor of four apart
+gives Table~\ref{tab:ratelinearity}.
+
+\begin{table}[tb]
+  \centering
+  \caption{Roll damping differenced at two roll-rate amplitudes. The
+    spread is the relative difference between them.}
+  \label{tab:ratelinearity}
+  \begin{tabular}{rrrr}
+    \hline
+    $\alpha$ [deg] & coarse step & fine step & spread \\
+    \hline
+    0  & $-0.545$ & $-0.545$ & 0.0\% \\
+    12 & $-0.517$ & $-0.517$ & 0.0\% \\
+    18 & $-0.374$ & $-0.374$ & 0.0\% \\
+    20 & $-0.168$ & $+0.255$ & 252\% \\
+    24 & $-0.159$ & $+0.063$ & 140\% \\
+    30 & $-0.086$ & $-0.115$ & 34\% \\
+    35 & $-0.129$ & $-0.193$ & 49\% \\
+    40 & $-0.233$ & $-0.234$ & 0.6\% \\
+    60 & $-0.329$ & $-0.329$ & 0.0\% \\
+    90 & $-0.425$ & $-0.425$ & 0.0\% \\
+    \hline
+  \end{tabular}
+\end{table}
+
+The separation is sharp. Either the two amplitudes agree to a tenth of a
+percent, or they disagree by tens to hundreds of percent; nothing sits in
+between. That the boundary is this clean argues the band is a property of
+the flow rather than of the tolerance chosen to detect it. Below
+$18^\circ$ and above $40^\circ$ roll damping is a well-defined
+derivative; between $20^\circ$ and $35^\circ$ it is not one at all.
+
+The most direct statement of that is the row at $\alpha = 20^\circ$,
+where the coarse step returns $-0.168$ and the fine step $+0.255$: the
+\emph{sign} is set by the perturbation amplitude alone. A single-amplitude
+measurement in that band will report roll anti-damping or roll damping
+according to how hard the aircraft was pushed, and either result looks
+perfectly respectable in isolation. The physical reading is that sections
+are crossing into and out of stall over the perturbation, so the response
+is not merely nonlinear but non-smooth at the scale of the difference.
+
+The consequence for a tabulated model is stronger than a caveat. Across
+that band a taper to zero, a hold at the last attached value, and a
+directly measured number are equally fabrications, because the quantity
+being tabulated does not exist. The honest treatment is to carry the two
+well-defined ranges and leave the band empty, which is what the flight
+model derived from this work does --- its breakpoint axis simply omits
+those attitudes, and a lookup interpolates across a gap that the model's
+own header explains.
+
+This is a third property of the coupling itself, alongside the spurious
+spanwise equilibria and the iteration-path independence of the cycle
+means, and it is arguably the most consequential of the three: the other
+two concern how faithfully a number is computed, while this one concerns
+whether the number is defined.
 
 \subsection{The aft fan across the separation boundary}
 \label{sec:faninduction}

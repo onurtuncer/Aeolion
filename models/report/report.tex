@@ -992,19 +992,61 @@ mid-chord---a metric the model was never fitted to. $C_{L\max}$ is an
 \emph{upper bound}: bubble bursting is not modelled, so the usable
 incidence limit may be lower than the tabulated stall.
 
-\paragraph{Rate derivatives past stall.}
+\paragraph{Rate derivatives past stall: the quantity does not exist.}
 \label{sec:ratetaper}
-The derivatives are computed by finite difference on the attached solve
-and have no meaning once the flow separates. Both available
-treatments---holding the last attached value, or zeroing
-discontinuously---are wrong; the model applies a linear taper
-\begin{equation}
-C_{(\cdot)}(\alpha) \;\longrightarrow\; C_{(\cdot)}(\alpha)\cdot
-\max\!\left(0,\ \min\!\left(1,\ \frac{40\dg - \alpha}{20\dg}\right)\right),
-\end{equation}
-which is the conservative choice in the sense that it does not grant a
-simulator attached-flow damping in deep stall. This is a declared
-assumption, not a computed result.
+This began as a declared assumption---the derivatives were to be tapered
+linearly to zero over $\alpha \in [20\dg, 40\dg]$, on the reasoning that
+holding the last attached value or zeroing discontinuously were both
+worse. Measurement replaced the assumption with something firmer, and
+the taper was never right.
+
+A rate derivative is a linearization, and whether it holds is testable
+for the price of one extra pair of solves: difference the coupled solve
+at two perturbation amplitudes and compare. Doing so for roll damping
+gives a sharp verdict.
+
+\begin{table}[htbp]
+\centering
+\caption{Roll damping differenced at two roll-rate amplitudes. Either
+the two agree to a tenth of a percent, or they disagree by tens to
+hundreds---nothing sits between.}
+\label{tab:ratelinearity}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+$\alpha$ [deg] & coarse & fine & spread \\
+\midrule
+0 & $-0.545$ & $-0.545$ & 0.0\% \\
+18 & $-0.374$ & $-0.374$ & 0.0\% \\
+20 & $-0.168$ & $+0.255$ & 252\% \\
+24 & $-0.159$ & $+0.063$ & 140\% \\
+30 & $-0.086$ & $-0.115$ & 34\% \\
+35 & $-0.129$ & $-0.193$ & 49\% \\
+40 & $-0.233$ & $-0.234$ & 0.6\% \\
+90 & $-0.425$ & $-0.425$ & 0.0\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Below $18\dg$ and above $40\dg$ the derivative is well defined. Between
+$20\dg$ and $35\dg$ it is not one at all: at $\alpha = 20\dg$ the coarse
+step returns $-0.168$ and the fine step $+0.255$, so the \emph{sign} is
+set by the perturbation amplitude alone. Sections are crossing into and
+out of stall across the perturbation, making the response non-smooth at
+the scale of the difference rather than merely nonlinear.
+
+So a taper, a hold, and a directly measured number are equally
+fabrications there, because the tabulated quantity does not exist. The
+model carries the two well-defined ranges and \emph{omits} the six
+breakpoints between them: \varid{alphaRateBp} has 19 entries rather than
+25, a lookup interpolates across the gap, and the file header says why.
+That the boundary is so clean---0.1\% on one side, tens of percent on
+the other---argues the band belongs to the flow rather than to the
+tolerance chosen to detect it.
+
+An earlier pass reported a sign reversal near $\alpha = 24$--$26\dg$ as
+autorotation, from a single amplitude. It was not a property of the
+aircraft but of how hard it was pushed, and the correction is recorded
+here rather than quietly dropped.
 
 \subsection{\varid{prop*}: rotor, duct, and vanes}
 
@@ -1465,6 +1507,25 @@ consistent with cycle-mean scatter at that amplitude. The model
 therefore carries the values with their uncertainty rather than a claim
 about reversal.
 
+\paragraph{The moment the lift shift leaves behind.} Equation
+\eqref{eq:tau} is thin-airfoil theory's \emph{lift} result, and taking it
+alone is not neutral. The same Glauert coefficients give the flap's
+quarter-chord moment,
+\begin{equation}
+\Delta c_{m,c/4} = -\tfrac{1}{2}\,\delta\,\sin\theta_h\,
+                    (1 - \cos\theta_h),
+\label{eq:flapcm}
+\end{equation}
+which vanishes at both limits for reasons worth stating: a flap hinged at
+the leading edge is the whole section rotating, adding incidence but no
+camber, and a flap of zero chord does nothing. In between it does not
+vanish. For the contract's $12\%$ aileron at $10\dg$ it is
+$\Delta c_m = -0.100$ against $\Delta c_l = 0.474$, so the flap's load
+acts $0.21$ chords \emph{aft} of the quarter chord---a nose-down couple
+that a lift-only flap model simply loses. It is added to the section
+model's own $c_m$ rather than replacing it, since the section knows its
+camber, the flap changes that camber, and thin-airfoil theory is linear.
+
 \paragraph{One number worth carrying away.} Equation~\eqref{eq:tau} is
 strongly concave, so the contract's $12\%$-chord aileron is worth
 $\tau = 0.432$, not $0.12$. A linear-in-chord estimate---the intuitive
@@ -1499,6 +1560,24 @@ the configuration's $C_N(90\dg) = 1.52$ the parasite branch is a $13\%$
 addition: not dominant, but far outside the tolerance any other number
 here is quoted to. This is the measurement that converted
 \varid{aeroCD0} from a constant into a table.
+
+\paragraph{The duct's own separated drag.} The crossflow branch above is
+a slender-body result and does not describe an annular ring meeting the
+flow edge-on, so the shroud originally sat outside the incidence-dependent
+term altogether and \varid{aeroCD0} was a declared lower bound at high
+incidence---the wrong direction to be wrong in for a vehicle that
+transits there. The ring now carries a term of its own on its
+side-projected area, $2\,c_{\mathrm{duct}}(D_o - D_i) = 0.0029$~m$^2$,
+which raises $C_{D_0}(90\dg)$ from $0.195$ to $0.208$.
+
+That is deliberately a bluff-body \emph{estimate} and not a computation:
+it borrows the crossflow coefficient and the finite-length factor from
+the body rather than claiming independent knowledge of an annulus. The
+ring is small, so the term is modest---a $6\%$ rise---but the tabulation
+no longer omits an entire component from the branch that dominates at
+transition attitudes. What remains unmodelled is the interference
+between the body wake and the wing, so the estimate is still a lower
+bound, by less than before.
 
 \subsection{Vane-mode superposition: measured, and partly false}
 \label{sec:superposition}
@@ -1761,11 +1840,17 @@ decay of effectiveness at large deflection---all of which reduce real
 control power, so the tabulated authority is an upper bound.
 \item \textbf{Parasite drag is a conceptual-design estimate}
 (Sections~\ref{sec:drag} and~\ref{sec:parasiteresults}), carrying the
-conventional $\pm10$--$20\%$ accuracy of a component buildup. It is
-moreover incomplete in one direction only: the duct's own separated drag
-at incidence and any body-wake/wing interference are not modelled, and
-both omissions push the same way, so \varid{aeroCD0} is a lower bound at
-high incidence.
+conventional $\pm10$--$20\%$ accuracy of a component buildup. The duct's
+separated drag at incidence is now included as a bluff-body estimate on
+the ring's side-projected area, raising $C_{D_0}(90\dg)$ from $0.195$ to
+$0.208$; what remains unmodelled is the interference between the body
+wake and the wing, so \varid{aeroCD0} is still a lower bound at high
+incidence, by less than before.
+\item \textbf{Rate derivatives are absent across
+$\alpha \in [20\dg, 35\dg]$} (Section~\ref{sec:ratetaper}), because
+measurement at two perturbation amplitudes shows no linear coefficient
+exists there. The breakpoint axis omits those attitudes rather than
+tapering, holding or fabricating a value.
 \item \textbf{Post-stall values are cycle means} with uncertainty bounds,
 not steady states.
 \item \textbf{$C_{L\max}$ is an upper bound}: bubble bursting is not
@@ -1774,8 +1859,6 @@ modelled.
 branch. Static hysteresis is a known feature of this regime and a static
 gridded table cannot express it; representation is deferred to a
 dedicated study.
-\item \textbf{Rate derivatives are tapered, not computed, past
-$\alpha = 20\dg$} (Section~\ref{sec:ratetaper}).
 \item \textbf{Vane mode superposition} is spot-checked, not tabulated
 pairwise.
 \end{enumerate}
@@ -1793,13 +1876,15 @@ Annex A counterpart.
 build step, so that structural conformance is checked by a tool rather
 than by reading.
 \item Generate the airframe map (\varid{aero*}) and assemble the file.
-\item Extend the parasite estimate with the duct's separated drag at
-incidence, the one contribution the slender-body form of
-Eq.~\eqref{eq:cd0} cannot supply.
+\item Model the interference between the body wake and the wing, the
+last contribution keeping \varid{aeroCD0} a lower bound at high
+incidence.
 \item Report the powered and power-off SEPARATION POINTS directly, which the coupled solve already computes per strip, instead of inferring the fan's separation delay from a lift increment taken across two limit cycles.
-\item Extend the flap model with the section pitching-moment increment,
-which thin-airfoil theory also supplies and which the present lift-only
-treatment omits.
+\item Extend the flap model with gap leakage and the viscous decay of
+effectiveness at large deflection. The section pitching-moment
+increment is now carried (Section~\ref{sec:aileron}); these two remain,
+and both reduce real control power, so tabulated authority stays an
+upper bound.
 \item Measure and record vane-mode superposition error at soft-limit
 corners.
 \item Determine the sensitivity of the propulsor tables to the vane
