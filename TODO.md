@@ -82,10 +82,12 @@ consumer trusting something that is not there.
   doubling). At 80–90° the sign reverses, corroborated independently by
   `dCZ` reversing across the same two attitudes. Pinned by
   `TestSeparationDelay`. Data: `separation-map.json` (force-added).
-  **Carried forward:** f is evaluated at the cycle-mean circulation and
-  f is nonlinear, so f(γ̄) ≠ mean f(γ) — the same approximation the
-  load tables make, stated in Part II, and **not bounded**. Bounding it
-  is a real open item.
+  **Carried forward — now closed:** f(γ̄) ≠ mean f(γ) is bounded and
+  negligible, 1e-15 to 1e-10 against f of 0.7–0.86. The cycle is wide in
+  circulation and nearly stationary in the local incidence f is posed in.
+  `ViscousCoupledResult` now carries per-strip incidence mean+variance so
+  any consumer evaluating something nonlinear at the mean can estimate
+  its own error. **But see B5**, which bounding it uncovered.
 - [x] **B2. Duct separated drag at incidence** — DONE: the ring carries
   a bluff-body crossflow term on its side-projected area, CD0(90°)
   0.195 → 0.208. Only body-wake/wing interference now keeps `aeroCD0` a
@@ -100,6 +102,23 @@ consumer trusting something that is not there.
   lift result only. The same theory supplies the moment. Gap leakage and
   viscous decay at large deflection are separate omissions; all three
   push the tabulated authority the same way, upward.
+- [ ] **B5. The alpha grid is a continuation path, and the path
+  sensitivity is the size of the signal.** Found 2026-08-20 while closing
+  B1's carried-forward item. Every solve warm-starts from the preceding
+  incidence, so *which* attitudes are run is part of the specification of
+  a post-stall condition, not just the order of computation. Arriving at
+  α = 20, Tc = 0.5 from 16 rather than 18 moves fMean 0.7189 → 0.7061:
+  both in 1000-iteration cycles, differing only in history, by **0.013
+  against a fan effect of 0.018 at that condition**. Two consequences.
+  (a) B1's increments difference powered against power-off at a common
+  attitude on a common grid, so they are internally consistent — but
+  whether the path dependence *cancels* in the difference is **untested**,
+  and settling it needs a second full sweep on a different alpha grid
+  (~2 h). (b) It narrows D2: cycle means are iteration-path independent
+  *at fixed continuation*; warm-start history matters more than the
+  relaxation does. Documented on the alpha selector in
+  `InductionMapExport.cpp` so the next subset run does not repeat it.
+
 - [ ] **B4. Hysteresis.** The maps are the ascending-α branch by
   construction (warm-start continuation up each column). Whether the
   descending branch differs materially decides whether a static gridded
@@ -212,7 +231,7 @@ Short index. Full detail lives where the work does.
 | Reduced-rate derivatives: the factor is 2V/ℓ, and inverting it is wrong by ~2000 | `StabilityDerivatives.h`, `TestSolverCore` |
 | Camber double-count: strip frames must be the **true chord frame** | `ViscousCoupling.h` — bit this repo twice |
 | Spanwise-checkerboard spurious equilibria; plain damped iteration suppresses them | `PostStallSweepExport.cpp` |
-| Deep-stall limit-cycle means are iteration-path independent | Part II |
+| Deep-stall limit-cycle means are iteration-path independent **at fixed continuation** — warm-start history matters more than relaxation (B5) | Part II |
 | A rate derivative does **not** follow the wrench frame rule | `Solver/BodyAxes.h`, `TestBodyAxes` |
 | `SolveViscousCoupled` never populates coefficient members — read the dimensional fields | `Solver/BodyAxes.h` — bit this repo twice |
 | Vane mode-sum buildup is wrong (33%); per-vane summation verified (1.4%) | `models/README.md`, `PropulsionMapExport.cpp` |
