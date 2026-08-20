@@ -83,6 +83,39 @@ constexpr int BodySectors = 16; // the measured value; see AttachmentSweepExport
 
 // The model's alphaBp: 2 degrees through the stall break, coarsening in
 // the plate regime where the loading varies slowly with attitude.
+// An explicit comma-separated alpha list overrides the grid.
+//
+// This is not only a cost control. The sweep is a CONTINUATION -- each solve
+// warm-starts from the preceding alpha (see the loop below) -- so the list is
+// walked in the order given, and the order is part of what gets computed. Two
+// consequences, one intended and one to guard against:
+//
+//   * A DESCENDING list yields the DESCENDING branch. That is the hysteresis
+//     measurement (TODO B4): the shipped map is the ascending branch by
+//     construction, and whether the descending branch differs materially
+//     decides whether a static gridded table can represent this vehicle near
+//     stall at all. No solver change is needed to ask the question -- reverse
+//     the list.
+//
+//   * A SUBSET of the ascending grid is not the ascending grid. Measured on
+//     the induction map: dropping intermediate attitudes moved a span-mean
+//     separation point by 0.013 against a signal of 0.018, and reversed a
+//     sign at one condition. Sound for exploring, unsound for reproducing a
+//     row of a shipped table. The canonical write-up is in models/README.md
+//     under the declared limits, and in doc/theory.rst.
+std::vector<double> ParseAlphaList(const std::string& spec) {
+    std::vector<double> alphas;
+    std::size_t pos = 0;
+    while (pos < spec.size()) {
+        const std::size_t comma = spec.find(',', pos);
+        const std::string tok = spec.substr(pos, comma - pos);
+        if (!tok.empty()) alphas.push_back(std::atof(tok.c_str()));
+        if (comma == std::string::npos) break;
+        pos = comma + 1;
+    }
+    return alphas;
+}
+
 std::vector<double> BuildAlphaGrid() {
     std::vector<double> alphas;
     for (double a = -4.0; a <= 26.0 + 1e-9; a += 2.0) alphas.push_back(a);
@@ -164,6 +197,8 @@ int main(int argc, char** argv) {
     // needs regenerating alongside the aileron sweep, so they are
     // selectable: "all" | "baseline" | "aileron".
     const std::string blocks = (argc > 7) ? argv[7] : "all";
+    const std::vector<double> alphaGrid =
+        (argc > 8) ? ParseAlphaList(argv[8]) : BuildAlphaGrid();
     const bool wantBaseline = (blocks == "all" || blocks == "baseline");
     const bool wantAileron = (blocks == "all" || blocks == "aileron");
     if (!wantBaseline && !wantAileron) {
@@ -283,7 +318,7 @@ int main(int argc, char** argv) {
     // one lost in the cycle.
     out << "\"rates\":[\n";
     bool firstRate = true;
-    for (const double alphaDeg : BuildAlphaGrid()) {
+    for (const double alphaDeg : alphaGrid) {
         // The rate block belongs with the baseline map, not with a control
         // sweep: six coupled solves per attitude, and a blocks=aileron run
         // exports none of them. Without this guard such a run spends an
@@ -457,11 +492,13 @@ int main(int argc, char** argv) {
     for (const double betaDeg : Betas) {
         if (!wantBaseline) break;
         if (betaFiltered && std::fabs(betaDeg - betaOnly) > 1e-9) continue;
-        // Warm-start continuation UP each alpha column: the map is the
-        // ASCENDING branch, deliberately (hysteresis is a separate study,
-        // not an accident of cold starts landing either side of the fold).
+        // Warm-start continuation along the alpha column, in the order the
+        // grid supplies. With the default grid that is UP, so the shipped map
+        // is the ASCENDING branch deliberately -- not an accident of cold
+        // starts landing either side of the fold. Pass a descending list to
+        // compute the other branch; see ParseAlphaList above.
         std::vector<double> warmStart;
-        for (const double alphaDeg : BuildAlphaGrid()) {
+        for (const double alphaDeg : alphaGrid) {
             fc.alphaDeg = alphaDeg;
             fc.betaDeg = betaDeg;
             S::ViscousCouplingOptions opts = coupling;
@@ -550,7 +587,7 @@ int main(int argc, char** argv) {
         const double q = 0.5 * Rho * flightSpeed * flightSpeed;
         bool firstAil = true;
         fc.betaDeg = 0.0;
-        for (const double alphaDeg : BuildAlphaGrid()) {
+        for (const double alphaDeg : alphaGrid) {
             fc.alphaDeg = alphaDeg;
             S::BodyAxisCoefficients neutral;
             for (Chain& chain : chains) {
