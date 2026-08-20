@@ -89,6 +89,41 @@ constexpr int BodySectors = 16;
 // roughly equal increments of effect.
 const double ThrustCoefficients[] = {0.5, 1.0, 2.0, 4.0, 8.0};
 
+// An explicit comma-separated alpha list overrides the grid, so a question
+// about a handful of attitudes costs minutes rather than the two hours the
+// full map takes, and a targeted rerun is a flag rather than an edit to this
+// function -- which is how a "temporary" narrowing gets committed by accident.
+//
+// READ THIS BEFORE TRUSTING A SUBSET.  The alpha grid is a CONTINUATION PATH,
+// not a set of independent conditions: each solve is warm-started from the
+// previous alpha up its own Tc column (chain.Warm below).  Changing which
+// alphas run therefore changes the states they are started from, and post-
+// stall that can change the ANSWER and not just the cost.
+//
+// Measured, on the first use of this flag.  Running {16, 20, 26, 30, 40}
+// reproduced the full grid EXACTLY at alpha 16 -- same convergence behaviour,
+// fMean equal to four digits -- and then disagreed at alpha 20, Tc = 0.5:
+// 0.7061 against the map's 0.7189.  Both sat in a 1000-iteration limit cycle;
+// the cycle MEANS differ, because one arrived from alpha 18 and the other from
+// alpha 16.  Note the size of that: 0.013 in f, against a fan effect at the
+// same condition of 0.018.  The path sensitivity is the same order as the
+// signal, so it cannot be waved away as noise.
+//
+// So a subset is sound for exploring, and unsound for reproducing a row of a
+// shipped map.  Anything that has to match the map must run the whole grid.
+std::vector<double> ParseAlphaList(const std::string& spec) {
+    std::vector<double> alphas;
+    std::size_t pos = 0;
+    while (pos < spec.size()) {
+        const std::size_t comma = spec.find(',', pos);
+        const std::string tok = spec.substr(pos, comma - pos);
+        if (!tok.empty()) alphas.push_back(std::atof(tok.c_str()));
+        if (comma == std::string::npos) break;
+        pos = comma + 1;
+    }
+    return alphas;
+}
+
 std::vector<double> BuildAlphaGrid() {
     std::vector<double> alphas;
     for (double a = -4.0; a <= 26.0 + 1e-9; a += 2.0) alphas.push_back(a);
@@ -153,6 +188,8 @@ int main(int argc, char** argv) {
     const double flightSpeed = (argc > 3) ? std::atof(argv[3]) : FlightSpeed;
     const double relaxation = (argc > 4) ? std::atof(argv[4]) : 0.05;
     const int maxIterations = (argc > 5) ? std::atoi(argv[5]) : 1000;
+    const std::vector<double> alphaGrid =
+        (argc > 6) ? ParseAlphaList(argv[6]) : BuildAlphaGrid();
 
     Geometry::HandoffContract contract;
     try {
@@ -256,10 +293,10 @@ int main(int argc, char** argv) {
 
     bool first = true;
     int unconverged = 0;
-    for (const double alphaDeg : BuildAlphaGrid()) {
+    for (const double alphaDeg : alphaGrid) {
         fc.alphaDeg = alphaDeg;
         S::BodyAxisCoefficients off;
-        double offFMean = 1.0, offFMin = 1.0;
+        double offFMean = 1.0, offFMin = 1.0, offFCorr = 0.0;
         for (Chain& chain : chains) {
             const double thrust = chain.Tc * qS;
             const S::ActuatorDisk disk = MakeFanDisk(contract, thrust, Rho, flightSpeed);
@@ -310,6 +347,39 @@ int main(int argc, char** argv) {
             }
             const double fMean = (wSum > 0.0) ? fSum / wSum : 1.0;
 
+            // How big is the error just made?  fMean evaluates f on the
+            // CYCLE-MEAN incidence, but f is nonlinear, so f(alphabar) is not
+            // the mean of f(alpha).  Part II states that approximation; this
+            // bounds it.  Expanding f about the cycle mean, the leading error
+            // is second order in the cycle width:
+            //
+            //     mean f(alpha) - f(alphabar)  ~=  f''(alphabar) * Var(alpha) / 2
+            //
+            // and the solve now carries Var(alpha) per strip, so f'' by central
+            // difference on the same table finishes it.  Reported alongside
+            // fMean rather than folded into it: the correction is an estimate of
+            // a discretisation error, not a better value, and a consumer that
+            // silently received a corrected number could not tell how far it had
+            // been moved.  Zero for converged conditions, where the cycle -- and
+            // so the question -- does not exist.
+            double fCorr = 0.0;
+            if (!res.CycleVarAlphaEffDeg.empty() && wSum > 0.0) {
+                const double h = 0.5; // degrees; the tables are on a 2-degree grid
+                double corrSum = 0.0;
+                for (std::size_t i = 0; i < strips.size() && i < res.Strips.size(); ++i) {
+                    const double var = res.CycleVarAlphaEffDeg[i];
+                    if (var <= 0.0 || !anchored.SeparationPoint) continue;
+                    const double a =
+                        res.CycleMeanAlphaEffDeg[i] - strips[i].EffectiveAlpha0Deg();
+                    const double fm = anchored.SeparationPoint(strips[i].Eta, a - h);
+                    const double f0 = anchored.SeparationPoint(strips[i].Eta, a);
+                    const double fp = anchored.SeparationPoint(strips[i].Eta, a + h);
+                    const double d2 = (fp - 2.0 * f0 + fm) / (h * h);
+                    corrSum += 0.5 * d2 * var * strips[i].Width;
+                }
+                fCorr = corrSum / wSum;
+            }
+
             // How these two may be read.  The LOCATIONS are the measurement:
             // powered f exceeds power-off f at all 115 conditions from alpha
             // -4 to 70, monotonically in Tc at each of them, peaking at alpha 30
@@ -355,6 +425,7 @@ int main(int argc, char** argv) {
                 off = w;
                 offFMean = fMean;
                 offFMin = fMin;
+                offFCorr = fCorr;
                 continue;
             }
             if (!res.Converged) ++unconverged;
@@ -370,6 +441,8 @@ int main(int argc, char** argv) {
                 << R"(,"fMeanOff":)" << offFMean << R"(,"fMinOff":)" << offFMin
                 << R"(,"dFMean":)" << (fMean - offFMean)
                 << R"(,"dFMin":)" << (fMin - offFMin)
+                << R"(,"fCorr":)" << fCorr << R"(,"fCorrOff":)" << offFCorr
+                << R"(,"dFMeanCorr":)" << ((fMean + fCorr) - (offFMean + offFCorr))
                 << R"(,"iterations":)" << res.Iterations << R"(,"residual":)"
                 << res.MaxResidual
                 << R"(,"cycleFluctuation":)" << res.CycleFluctuation()

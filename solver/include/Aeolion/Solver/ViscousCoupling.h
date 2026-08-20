@@ -331,6 +331,22 @@ struct ViscousCoupledResult {
     double CycleRmsClS = 0.0;
     int CycleSamples = 0;
 
+    /**
+     * Per-strip local incidence over the same window: its mean, and its
+     * VARIANCE about that mean.
+     *
+     * These exist for one purpose. Anything a consumer evaluates on the
+     * cycle mean -- a separation point f(alpha), a section cl -- is a
+     * NONLINEAR function of a fluctuating argument, so evaluating it at
+     * the mean is not the mean of it: g(alphabar) != mean g(alpha). The
+     * gap is second order in the cycle width, g''(alphabar)*Var/2, so a
+     * consumer holding the variance can estimate the error it is making
+     * instead of merely declaring it. Empty for a solve that converged
+     * before the window opened, where the question does not arise.
+     */
+    std::vector<double> CycleMeanAlphaEffDeg;
+    std::vector<double> CycleVarAlphaEffDeg;
+
     /** Relative cycle fluctuation, RMS/|mean|; zero when converged. */
     [[nodiscard]] double CycleFluctuation() const {
         if (CycleSamples < 2 || std::fabs(CycleMeanClS) < Math::Tiny) return 0.0;
@@ -479,6 +495,7 @@ struct ViscousCoupledResult {
     // keeps the cycle's mismatch: the mean is reported, not declared
     // converged.
     std::vector<double> gammaMeanSum(n, 0.0);
+    std::vector<double> alphaSum(n, 0.0), alphaSumSq(n, 0.0);
     int gammaMeanCount = 0;
     bool finalSweep = false;
     double cycleSumSq = 0.0; // second moment of the sectional-lift sum
@@ -658,8 +675,12 @@ struct ViscousCoupledResult {
             // order to know how much to trust it. Cheap: the cl values
             // are already in hand.
             double clS = 0.0;
-            for (std::size_t i = 0; i < n; ++i)
+            for (std::size_t i = 0; i < n; ++i) {
                 clS += strips[i].Chord * strips[i].Width * res.Strips[i].cl;
+                const double aEff = res.Strips[i].alphaEffDeg;
+                alphaSum[i] += aEff;
+                alphaSumSq[i] += aEff * aEff;
+            }
             res.CycleMeanClS += clS;
             cycleSumSq += clS * clS;
             ++res.CycleSamples;
@@ -680,6 +701,13 @@ struct ViscousCoupledResult {
         const double variance =
             std::max(cycleSumSq / nSamp - res.CycleMeanClS * res.CycleMeanClS, 0.0);
         res.CycleRmsClS = std::sqrt(variance);
+        res.CycleMeanAlphaEffDeg.resize(n);
+        res.CycleVarAlphaEffDeg.resize(n);
+        for (std::size_t i = 0; i < n; ++i) {
+            const double m = alphaSum[i] / nSamp;
+            res.CycleMeanAlphaEffDeg[i] = m;
+            res.CycleVarAlphaEffDeg[i] = std::max(alphaSumSq[i] / nSamp - m * m, 0.0);
+        }
     }
 
     // --- loads under the converged circulation ------------------------------
