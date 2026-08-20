@@ -64,13 +64,28 @@ consumer trusting something that is not there.
 
 ## B. Measurements that would settle an open question
 
-- [ ] **B1. Powered vs power-off separation points, directly.** The
-  fan-induction question — how far the aft fan delays separation — is
-  presently answered by a lift increment differenced across two limit
-  cycles, which cannot support the claim. The coupled solve already
-  computes a separation point on every strip; reporting the powered and
-  power-off locations outright settles it. **This is the proper close of
-  the fan-induction study**, and its headline measurement.
+- [x] **B1. Powered vs power-off separation points, directly** — DONE
+  2026-08-20, and it changed a conclusion rather than confirming one.
+  125 conditions. The fan holds the separation point aft at every
+  attitude from −4° to 70°, monotone in thrust at each, peaking at
+  α = 30 with +0.065 chord at Tc = 8 — and it reaches the section
+  tables only through local incidence, since those tables contain no
+  representation of the fan. **The headline is negative**: Part II's
+  threefold lift step at 16° is *not* the separation-delay signature.
+  Across it the load grows ×3.38 while the delay moves ×1.09. The step
+  marks the onset of limit-cycle behaviour, exactly as Part II
+  suspected but could not show. Two traps recorded in
+  `InductionMapExport.cpp` and in the paper: `fMin` saturates at 0 from
+  α = 20 (differencing saturated values is not a measurement), and the
+  shift's *ratios* are not sensitivities (f(α) is steep at the knee;
+  take sensitivity from `dCZ`, which is flat at 1.50–1.65 per thrust
+  doubling). At 80–90° the sign reverses, corroborated independently by
+  `dCZ` reversing across the same two attitudes. Pinned by
+  `TestSeparationDelay`. Data: `separation-map.json` (force-added).
+  **Carried forward:** f is evaluated at the cycle-mean circulation and
+  f is nonlinear, so f(γ̄) ≠ mean f(γ) — the same approximation the
+  load tables make, stated in Part II, and **not bounded**. Bounding it
+  is a real open item.
 - [x] **B2. Duct separated drag at incidence** — DONE: the ring carries
   a bluff-body crossflow term on its side-projected area, CD0(90°)
   0.195 → 0.208. Only body-wake/wing interference now keeps `aeroCD0` a
@@ -180,7 +195,7 @@ Then per paper:
 - [ ] **F6. Fan-induction paper**: confirm the fan operating points that
   bracket a real transition, decide whether the duct's own lip suction
   is reported separately, and check the AIAA duplicate-submission
-  position against Part II. **B1 is this paper's headline measurement.**
+  position against Part II. **B1 is done** — `separation-map.json` is this paper's headline data, and the existing Δα = +0.80° horizontal-shift result corroborates it from an independent driver.
 - [ ] **F7.** Cite the JOSS paper's DOI for the software once minted.
 
 ---
@@ -205,6 +220,9 @@ Short index. Full detail lives where the work does.
 | A hinge cannot live on one chordwise row; the flap belongs in the **section** | `ViscousCoupling.h`, `TestFlapSection` |
 | Past ~30°, the aileron is predominantly a **yaw** effector | `models/README.md`; technical report |
 | The fan's upstream induction needed no new physics — `DiskInduction.h` already had it | `InductionMapExport.cpp` |
+| The fan's separation delay is real and thrust-ordered, but the 16° lift step is **not** its signature (load ×3.38, delay ×1.09) | Part II; `InductionMapExport.cpp` |
+| A separation-point *location* is measurable where a lift *increment* across two cycle means is not | Part II; `TestSeparationDelay` |
+| `fMin` saturates at 0 past α = 20 — a difference of saturated values is not a measurement | `InductionMapExport.cpp` |
 | Overlap-resolved VPM is a separate project ([onurtuncer/VPM](https://github.com/onurtuncer/VPM)); five recorded rules plus the RK2 midpoint-source rule | `ParticleWake.h` |
 | BEMT is a separate project; no dependency either way | `CLAUDE.md` |
 
@@ -218,7 +236,7 @@ Current, on the vcpkg machine (real OpenBLAS/LAPACK, nlohmann/json):
 cmake --preset windows && cmake --build --preset windows && ctest --test-dir build/windows
 ```
 
-**31/31 suites pass.** The build must run inside the MSVC dev environment
+**33/33 suites pass.** The build must run inside the MSVC dev environment
 with `VCPKG_ROOT` re-set after `vcvars64.bat`, which overrides it to VS's
 bundled vcpkg.
 
