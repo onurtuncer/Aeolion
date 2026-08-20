@@ -214,11 +214,25 @@ def gridded_table(d, name, bp_ids, values, description="", sigmas=None):
     """values: flat list in row-major order over bp_ids.
 
     `sigmas`, when given, is a per-cell one-sigma bound in the SAME units
-    as the values, emitted as a DAVE-ML uncertainty element. This is the
-    mechanism the standard provides for exactly the situation most of this
-    model's post-stall entries are in: they are limit-cycle MEANS, not
-    steady states, and without a bound a consumer cannot tell which cells
-    those are.
+    as the values, emitted as a DAVE-ML uncertainty element.
+
+    WHAT THIS BOUND IS, and what it is emphatically not. It is the
+    NUMERICAL CONVERGENCE SPREAD: the width of the damped iterate's
+    wander over the averaging window. It answers "has this cell settled?"
+    and it correctly separates a converged condition (no samples, no
+    bound) from one still moving. It does NOT represent the physical
+    unsteadiness of the flow, and the difference is not a nuance -- the
+    metric reads around 1e-7 on post-stall cells whose PHYSICAL
+    fluctuation the tier-3 particle-wake cross-check measures at
+    RMS/mean of 3 to 40. Seven orders of magnitude apart, because they
+    measure different things: this one says the solver has settled, that
+    one says the real flow buffets.
+
+    A consumer reading 1e-7 as "known to seven digits" would be badly
+    misled, so the file header says so in as many words. The bound is
+    still worth carrying: it is what distinguishes a settled cell from an
+    unsettled one, and it is what flags the handful of rows that genuinely
+    did not converge.
 
     The bound is the measured width of the cycle, not the solver residual.
     The two are very different: the residual is a MAX over strips of a
@@ -380,6 +394,22 @@ def build(args):
             "INCOMPLETE: aileron increment tables are absent -- the deflected sweep has "
             "not been run -- so this model carries NO ROLL CONTROL INPUT.")
     notes.append("")
+    notes.append("")
+    notes.append(
+        "UNCERTAINTY BOUNDS: read the label carefully. Where a table carries an "
+        "uncertainty element, the one-sigma bound is the NUMERICAL CONVERGENCE SPREAD -- "
+        "how far the damped iterate still wanders over its averaging window. It answers "
+        "whether a cell has settled, and separates a converged condition (which carries no "
+        "bound at all) from one still moving. It is NOT the physical unsteadiness of the "
+        "flow. On post-stall cells this metric reads of order 1e-7 while the physical "
+        "fluctuation, measured independently by an unsteady particle-wake cross-check at "
+        "the same attitudes, runs at RMS-to-mean ratios of 3 to 40. The two differ by "
+        "orders of magnitude because they measure different things: one says the solver has "
+        "settled, the other says the real flow buffets. A consumer treating the emitted "
+        "bound as physical uncertainty would conclude these loads are known to seven "
+        "digits, which is false. Post-stall entries remain limit-cycle MEANS of a "
+        "quasi-steady method, and their physical uncertainty is not represented in this "
+        "file at all.")
     if coupling:
         notes.append(
             "INTERACTION VALIDITY. The fan-on-airframe tables (coupling*) were swept at "
