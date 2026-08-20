@@ -572,14 +572,35 @@ independently, on where the mechanism inverts. Broadside, the fan's axial
 induction is perpendicular to the free stream and has no attached layer
 left to energise.
 
-One approximation is carried throughout and is the same one the load
+One approximation is carried throughout, and it is the same one the load
 tables already make. The separation point is evaluated on the final sweep
 at the cycle-mean circulation, and $f$ is nonlinear, so $f(\bar{\gamma})$
-is not $\overline{f(\gamma)}$. The two differ by an amount this work has
-not bounded. What removes the earlier objection is not that the
-approximation is absent but that the quantity is a location read off one
-solve rather than a small difference between two large and nearly equal
-cycle means.
+is not $\overline{f(\gamma)}$. Expanding about the cycle mean, the leading
+error is second order in the cycle width, $f''(\bar\alpha)\,
+\mathrm{Var}(\alpha)/2$, and the solve carries that variance per strip, so
+the error can be estimated rather than merely declared. It is negligible:
+$10^{-15}$ to $10^{-10}$ against $f$ values of $0.7$ to $0.86$. The limit
+cycle is wide in circulation and very nearly stationary in \emph{local
+incidence}, which is the argument $f$ is posed in.
+
+A larger sensitivity sits beside it and is worth stating plainly, because
+it is not the one this section would have predicted. The $\alpha$ grid is
+a continuation path---each solve is warm-started from the preceding
+incidence---so the sequence of attitudes visited is part of the
+specification of a post-stall condition, not merely the order in which
+conditions are computed. Recomputing $\alpha = 20^\circ$, $T_c = 0.5$
+after arriving from $16^\circ$ rather than $18^\circ$ moves the
+span-mean separation point from $0.719$ to $0.706$: both solutions sit in
+limit cycles of the same length, and their \emph{means} differ by $0.013$
+against a fan effect of $0.018$ at that same condition. This does not
+disturb the increments reported here, which difference powered against
+power-off at a common attitude with both solves having traversed the same
+grid; but it does mean the absolute separation locations carry a path
+dependence of the same order as the effect measured against them, and
+whether that dependence cancels in the difference is untested. It also
+qualifies the earlier finding that limit-cycle means are iteration-path
+independent: that result holds at fixed continuation, and warm-start
+history evidently matters a good deal more than the relaxation does.
 
 The honest summary is therefore stronger than the previous one. Power
 adds several percent of lift through the stall in a thrust-ordered way;
