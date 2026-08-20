@@ -440,9 +440,12 @@ coarsening here if taken).
       suite) pins the exact limits, textbook half/quarter-chord values,
       additive inertness, and the stall decay.
       CAVEATS: deep-stall rows are limit-cycle means; once |dCl| collapses
-      its SIGN is unresolved (sweep shows a change between 30 and 60 deg,
-      consistent with real aileron reversal OR cycle-mean scatter — the
-      model carries the uncertainty, not a reversal claim). The flap
+      its sign changes more than once (positive 40-45, negative 50-80,
+      positive at 90). RESOLVED 2026-08-20 (D2): an independent
+      iteration path (relaxation 0.02 vs 0.05, both cycle means)
+      reproduces every value to 0.1% and every sign, so the wobble is
+      determinate rather than scatter. It is a property of the MODEL,
+      not yet of the vehicle. The flap
       model is LIFT-ONLY: no section cm increment, no gap leakage, no
       viscous decay at large deflection, so tabulated authority is an
       upper bound.

@@ -1499,13 +1499,23 @@ roll authority decaying gently and adverse yaw staying small---an
 aircraft that rolls obediently out of a stall.
 
 Two honesties about the deep-stall rows. They are limit-cycle means, so
-the daggered entries are not steady states. And once $|\Delta C_l|$ has
-collapsed to a few thousandths its \emph{sign} is not resolved by this
-method---the sweep shows it changing sign between $30\dg$ and $60\dg$,
-which is consistent with genuine aileron reversal but equally
-consistent with cycle-mean scatter at that amplitude. The model
-therefore carries the values with their uncertainty rather than a claim
-about reversal.
+the daggered entries are not steady states. And the increment changes
+sign more than once past stall---positive near $40$--$45\dg$, negative
+through $50$--$80\dg$, positive again at $90\dg$---at magnitudes of a few
+thousandths against an attached value near $0.0096$.
+
+That wobble was initially suspected to be cycle-mean scatter. It is not.
+Re-running the whole sweep on an independent iteration path---damped
+relaxation of $0.02$ against $0.05$, both running to the iteration
+ceiling as cycle means---reproduces every value to within $0.1\%$, and
+the sign at every attitude. The cycle means are iteration-path
+independent here exactly as they are for the baseline map, so the sign
+changes are a determinate property of the model rather than noise.
+
+What that does \emph{not} settle is whether the aircraft behaves that
+way. Past stall the model rests on the anchored section model, whose
+$C_{L\max}$ is itself an upper bound, so a reproducible sign is a
+statement about the tabulation and not yet about the vehicle.
 
 \paragraph{The moment the lift shift leaves behind.} Equation
 \eqref{eq:tau} is thin-airfoil theory's \emph{lift} result, and taking it
