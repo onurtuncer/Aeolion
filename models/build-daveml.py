@@ -210,8 +210,28 @@ def emit_breakpoints(d, bpID, name, values):
     d.close("breakpointDef")
 
 
-def gridded_table(d, name, bp_ids, values, description=""):
-    """values: flat list in row-major order over bp_ids."""
+def gridded_table(d, name, bp_ids, values, description="", sigmas=None):
+    """values: flat list in row-major order over bp_ids.
+
+    `sigmas`, when given, is a per-cell one-sigma bound in the SAME units
+    as the values, emitted as a DAVE-ML uncertainty element. This is the
+    mechanism the standard provides for exactly the situation most of this
+    model's post-stall entries are in: they are limit-cycle MEANS, not
+    steady states, and without a bound a consumer cannot tell which cells
+    those are.
+
+    The bound is the measured width of the cycle, not the solver residual.
+    The two are very different: the residual is a MAX over strips of a
+    section-lift mismatch and sits at 0.2-0.6 across the post-stall map,
+    while the total lift sum barely moves, so the load-level fluctuation
+    comes out around 1e-6. Quoting the residual as an uncertainty would
+    overstate it by five orders of magnitude and make the tables look
+    worthless; quoting nothing, which is what the model did until now,
+    understates it to zero. The cycle width is the honest quantity.
+
+    DTD order inside griddedTableDef: description?, provenance?,
+    breakpointRefs, uncertainty?, dataTable.
+    """
     d.open("griddedTableDef", name=name, gtID=f"{name}_data")
     if description:
         d.leaf("description", description)
@@ -219,7 +239,21 @@ def gridded_table(d, name, bp_ids, values, description=""):
     for b in bp_ids:
         d.leaf("bpRef", bpID=b)
     d.close("breakpointRefs")
-    # Wrap for legibility; the standard is whitespace-insensitive here.
+    if sigmas and any(s > 0.0 for s in sigmas):
+        # additive, so the bound carries the value's own units and no
+        # convention question arises about what a "percentage" is of.
+        d.open("uncertainty", effect="additive")
+        d.open("normalPDF", numSigmas="1")
+        d.open("bounds")
+        d.open("dataTable")
+        chunk = 8
+        for i in range(0, len(sigmas), chunk):
+            d.raw(", ".join(f"{v:.6g}" for v in sigmas[i:i + chunk]) +
+                  ("," if i + chunk < len(sigmas) else ""))
+        d.close("dataTable")
+        d.close("bounds")
+        d.close("normalPDF")
+        d.close("uncertainty")
     chunk = 8
     d.open("dataTable")
     for i in range(0, len(values), chunk):
@@ -509,20 +543,26 @@ def build(args):
         lookup = {(r["alphaDeg"], r["betaDeg"]): r for r in base}
         ODD = {"CY", "Cl", "Cn"}
         for comp in ("CX", "CY", "CZ", "Cl", "Cm", "Cn"):
-            vals = []
+            vals, sig = [], []
             for a in alphas:
                 for b in full_betas:
                     row = lookup.get((a, abs(b)))
                     if row is None:
                         vals.append(0.0)
+                        sig.append(0.0)
                         continue
                     v = row[comp]
                     if b < 0 and comp in ODD:
                         v = -v
                     vals.append(v)
+                    # The cycle width, carried into the cell's own units.
+                    # A converged condition reports no samples and so no
+                    # fluctuation, which is the honest answer rather than
+                    # a small fabricated one.
+                    sig.append(abs(v) * row.get("cycleFluctuation", 0.0))
             tables.append((f"aero{comp}", ["alphaBp", "betaBp"], vals, f"aero{comp}Table",
                            f"Airframe {comp}, power-off, controls neutral. Carries induced "
-                           f"and wing profile drag; parasite drag is aeroCD0."))
+                           f"and wing profile drag; parasite drag is aeroCD0.", sig))
 
         # Aileron increments. Swept one-sided in deflection and mirrored
         # here on the same symmetry argument used for sideslip: the
@@ -632,21 +672,24 @@ def build(args):
         bp_defs.append(("tcBp", "thrustCoefficient", ctcs))
         clut = {(r["alphaDeg"], r["Tc"]): r for r in crows}
         for comp in ("dCX", "dCY", "dCZ", "dCl", "dCm", "dCn"):
-            vals = []
+            vals, sig = [], []
             for a in calphas:
                 for tc in ctcs:
                     if tc == 0.0:
                         vals.append(0.0)  # power-off is the reference
+                        sig.append(0.0)
                         continue
                     row = clut.get((a, tc))
-                    vals.append(row[comp] if row else 0.0)
+                    v = row[comp] if row else 0.0
+                    vals.append(v)
+                    sig.append(abs(v) * (row.get("cycleFluctuation", 0.0) if row else 0.0))
             name = "coupling" + comp[1:]
             tables.append((name, ["alphaCouplingBp", "tcBp"], vals, f"{name}Table",
                            f"Fan-on-airframe increment {comp[1:]} from the power-off "
                            "configuration at matched alpha. The aft fan induces a "
                            "favourable gradient UPSTREAM of itself, over the wing; the "
                            "momentum-theory slipstream is identically zero there and "
-                           "would report no interaction at all."))
+                           "would report no interaction at all.", sig))
         bp_defs.append(("alphaCouplingBp", "angleOfAttack", calphas))
 
     if vane and prop:
@@ -693,7 +736,7 @@ def build(args):
     # the table outputs are emitted here rather than beside their tables.
     d.comment("Output variables the tables drive.")
     VANE_POS = ("Bottom", "Left", "Top", "Right")
-    for name, bp_ids, vals, tname, desc in tables:
+    for name, bp_ids, vals, tname, desc in (e[:5] for e in tables):
         if "vaneBp" in bp_ids:
             for pos in VANE_POS:
                 m.variable(f"{name}{pos}", f"{name}{pos}", "nd", axis="body",
@@ -709,8 +752,10 @@ def build(args):
         emit_breakpoints(d, bpID, bpname, vals)
 
     d.comment("Gridded tables.")
-    for name, bp_ids, vals, tname, desc in tables:
-        gridded_table(d, tname, bp_ids, vals, desc)
+    for entry in tables:
+        name, bp_ids, vals, tname, desc = entry[:5]
+        sigmas = entry[5] if len(entry) > 5 else None
+        gridded_table(d, tname, bp_ids, vals, desc, sigmas)
 
     d.comment("Functions binding each table to its independent variables. A "
               "per-vane table is bound FOUR times -- once per vane, at that vane's own "
@@ -721,7 +766,7 @@ def build(args):
                 "jBp": "advanceRatio", "jVaneBp": "advanceRatio",
                 "alphaCouplingBp": "alphaDeg", "tcBp": "thrustCoefficient"}
     VANE_POS = ("Bottom", "Left", "Top", "Right")
-    for name, bp_ids, vals, tname, desc in tables:
+    for name, bp_ids, vals, tname, desc in (e[:5] for e in tables):
         if "vaneBp" in bp_ids:
             # One table, four bindings: the same per-vane response evaluated
             # at each vane's own angle. griddedTableRef is an IDREF, so all

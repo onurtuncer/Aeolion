@@ -289,7 +289,9 @@ int main(int argc, char** argv) {
                 << R"(,"dCm":)" << (w.Cm - off.Cm) << R"(,"dCn":)" << (w.Cn - off.Cn)
                 << R"(,"converged":)" << (res.Converged ? "true" : "false")
                 << R"(,"iterations":)" << res.Iterations << R"(,"residual":)"
-                << res.MaxResidual << R"(,"seconds":)" << seconds << '}';
+                << res.MaxResidual
+                << R"(,"cycleFluctuation":)" << res.CycleFluctuation()
+                << R"(,"seconds":)" << seconds << '}';
             out.flush();
 
             std::cout << alphaDeg << "\t" << chain.Tc << "\t" << disk.InducedVelocity << "\t"

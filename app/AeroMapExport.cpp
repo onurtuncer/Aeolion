@@ -484,7 +484,9 @@ int main(int argc, char** argv) {
                 << w.CX << R"(,"CY":)" << w.CY << R"(,"CZ":)" << w.CZ << R"(,"Cl":)" << w.Cl
                 << R"(,"Cm":)" << w.Cm << R"(,"Cn":)" << w.Cn << R"(,"converged":)"
                 << (res.Converged ? "true" : "false") << R"(,"iterations":)" << res.Iterations
-                << R"(,"residual":)" << res.MaxResidual << R"(,"seconds":)" << seconds << '}';
+                << R"(,"residual":)" << res.MaxResidual
+                << R"(,"cycleFluctuation":)" << res.CycleFluctuation()
+                << R"(,"seconds":)" << seconds << '}';
             out.flush();
 
             std::cout << alphaDeg << "\t" << betaDeg << "\t" << w.CX << "\t" << w.CZ << "\t"
@@ -571,7 +573,8 @@ int main(int argc, char** argv) {
                     << R"(,"dCm":)" << (w.Cm - neutral.Cm) << R"(,"dCn":)" << (w.Cn - neutral.Cn)
                     << R"(,"converged":)" << (res.Converged ? "true" : "false")
                     << R"(,"iterations":)" << res.Iterations << R"(,"residual":)"
-                    << res.MaxResidual << '}';
+                    << res.MaxResidual
+                    << R"(,"cycleFluctuation":)" << res.CycleFluctuation() << '}';
                 out.flush();
 
                 std::cout << alphaDeg << "\t" << chain.Delta << "\t" << (w.CX - neutral.CX) << "\t"
