@@ -525,29 +525,68 @@ wrong.
 
 \paragraph{What the step at $16^\circ$ does and does not show.} The
 increment jumps roughly threefold between $14^\circ$ and $16^\circ$, and
-it is tempting to read that as the separation-delay signature. The
-defensible claim is weaker. The step coincides exactly with the onset of
-limit-cycle behaviour in \emph{both} solves---residuals rise from
-$10^{-4}$ to $0.2$--$0.6$---so every increment beyond it is a difference
-of two cycle means, and the size of the step cannot be separated from the
-change in the character of the solution.
+it is tempting to read that as the separation-delay signature. It is not,
+and the direct measurement---stated as the next step in an earlier
+revision of this section, and since performed---is what shows it.
 
-What survives is the ordering. At every post-stall attitude the increment
-scales cleanly and monotonically with thrust; at $\alpha = 20^\circ$ the
-ratios between successive $T_c$ levels are $1.49$, $1.49$ and $1.49$.
-Cycle-mean scatter does not do that. There is therefore a real,
-thrust-ordered fan effect in the stalled regime, and attributing it
-specifically to delayed separation is consistent with these data without
-being established by them.
+The coupled solve computes a separation point on every strip, so the
+powered and power-off locations can be compared outright instead of
+inferring a delay from a lift increment taken across two limit cycles.
+Doing that over $125$ conditions, at the same $T_c = 2$ as
+Table~\ref{tab:faninductionp2}, separates the step cleanly: across
+$14^\circ \rightarrow 16^\circ$ the normal-force increment grows by a
+factor of $3.38$ while the span-mean separation point moves by a factor
+of $1.09$. The step is in the \emph{loads} and not in the separation
+delay. It coincides exactly with the onset of limit-cycle behaviour in
+both solves---residuals rise from $10^{-4}$ to $0.2$--$0.6$---and that,
+rather than any change in the flow's attachment, is what it marks.
 
-The direct measurement is available and is stated here as the next step
-rather than performed: the coupled solve computes a separation point on
-every strip, so the powered and power-off separation locations can be
-compared outright, instead of inferring a delay from a lift increment
-taken across two limit cycles. Until that is done, the honest summary is
-that power adds several percent of lift through the stall in a
-thrust-ordered way, and that its mechanism is consistent with---but not
-proven to be---the separation delay the geometry suggests.
+What the measurement does establish is the delay itself, on its own
+schedule. The fan holds the separation point aft at every attitude from
+$-4^\circ$ to $70^\circ$, monotonically in thrust at each of them, by
+$+0.007$ chord at $16^\circ$ and rising to a peak of $+0.044$ chord at
+$\alpha = 30^\circ$ ($+0.065$ at $T_c = 8$), then decaying as the wing
+runs out of attached flow to preserve. Nothing in the formulation
+enforces any of this: the separation tables are functions of $(\eta,
+\alpha_{\text{local}})$ alone and contain no representation of the fan,
+so the delay reaches them only through the local incidence the induction
+field changes.
+
+Two features of the measurement are worth stating because both would
+otherwise be read as physics. The worst strip's separation point
+saturates at the leading edge from $\alpha = 20^\circ$ upward at every
+thrust setting, so differences taken there are the metric running out of
+range rather than the fan ceasing to act---which is why the span mean is
+quoted. And the ratios of the separation shift are not sensitivities:
+$f(\alpha)$ is steep at the knee, so a span mean of it amplifies a smooth
+input, and the same solve that moves $f$ by a factor of four across one
+thrust step moves $C_Z$ by a flat $1.50$--$1.65$ per thrust doubling at
+every incidence.
+
+At $80^\circ$ and $90^\circ$ the sign reverses and the fan advances
+separation rather than delaying it. This corroborates the reversal
+already visible in Table~\ref{tab:faninductionp2} rather than
+contradicting it: the normal-force increment changes sign across the same
+two attitudes, so the separation location and the load agree,
+independently, on where the mechanism inverts. Broadside, the fan's axial
+induction is perpendicular to the free stream and has no attached layer
+left to energise.
+
+One approximation is carried throughout and is the same one the load
+tables already make. The separation point is evaluated on the final sweep
+at the cycle-mean circulation, and $f$ is nonlinear, so $f(\bar{\gamma})$
+is not $\overline{f(\gamma)}$. The two differ by an amount this work has
+not bounded. What removes the earlier objection is not that the
+approximation is absent but that the quantity is a location read off one
+solve rather than a small difference between two large and nearly equal
+cycle means.
+
+The honest summary is therefore stronger than the previous one. Power
+adds several percent of lift through the stall in a thrust-ordered way;
+its mechanism \emph{is} a separation delay, measured directly as a
+displacement of the separation point and thrust-ordered at every
+attitude---and the threefold step at $16^\circ$, which would have been
+the natural evidence for that conclusion, is not evidence for it.
 
 \section{Validation and the remaining tiers}
 \label{sec:outlook}
