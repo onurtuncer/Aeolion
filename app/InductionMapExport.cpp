@@ -259,6 +259,7 @@ int main(int argc, char** argv) {
     for (const double alphaDeg : BuildAlphaGrid()) {
         fc.alphaDeg = alphaDeg;
         S::BodyAxisCoefficients off;
+        double offFMean = 1.0, offFMin = 1.0;
         for (Chain& chain : chains) {
             const double thrust = chain.Tc * qS;
             const S::ActuatorDisk disk = MakeFanDisk(contract, thrust, Rho, flightSpeed);
@@ -275,8 +276,85 @@ int main(int argc, char** argv) {
             chain.Warm = res.Base.gamma;
             const S::BodyAxisCoefficients w = S::BodyAxisFromCoupled(res, q, ref);
 
+            // THE SEPARATION POINT, measured rather than inferred. The
+            // fan-induction question is how far the aft fan delays
+            // separation, and answering it from a lift increment means
+            // differencing two limit-cycle means -- which cannot support
+            // the claim. The coupled solve already knows the answer
+            // directly: the anchored model carries f(eta, alpha), the
+            // suction-side separation location as a chord fraction, and
+            // every strip has a converged local incidence.
+            //
+            // f = 1 is fully attached and f = 0 is separated at the
+            // leading edge, so a fan that delays separation RAISES f. The
+            // mechanism is available to a strip method even though the
+            // separation tables themselves know nothing about the fan:
+            // the induction accelerates the stream over the wing, which
+            // lowers each strip's local incidence, which moves its
+            // separation point aft through the table it was always going
+            // to consult.
+            //
+            // Reported two ways, because they answer different questions.
+            // The span mean says how much attached flow the wing has in
+            // total; the MINIMUM says how bad the worst strip is, and it
+            // is the worst strip that sheds first and sets the stall.
+            double fSum = 0.0, fMin = 1.0, wSum = 0.0;
+            for (std::size_t i = 0; i < strips.size() && i < res.Strips.size(); ++i) {
+                const double local = res.Strips[i].alphaEffDeg - strips[i].EffectiveAlpha0Deg();
+                const double f = anchored.SeparationPoint
+                                     ? anchored.SeparationPoint(strips[i].Eta, local)
+                                     : 1.0;
+                fSum += f * strips[i].Width;
+                wSum += strips[i].Width;
+                fMin = std::min(fMin, f);
+            }
+            const double fMean = (wSum > 0.0) ? fSum / wSum : 1.0;
+
+            // How these two may be read.  The LOCATIONS are the measurement:
+            // powered f exceeds power-off f at all 115 conditions from alpha
+            // -4 to 70, monotonically in Tc at each of them, peaking at alpha 30
+            // (+0.065 chord at Tc = 8).  Nothing in the code enforces that -- the
+            // separation tables know nothing about the fan, so the delay arrives
+            // entirely through local incidence.
+            //
+            // At alpha 80 and 90 the sign REVERSES: the fan advances separation
+            // (alpha 90, Tc 8: 0.0622 -> 0.0171).  That is not a defect.  dCZ
+            // reverses at exactly the same place -- negative at every attitude up
+            // to 80, then +0.012 to +0.098 across the alpha=90 column -- so the
+            // separation location and the load agree, independently, on where the
+            // mechanism inverts.  Broadside, the fan's axial induction is
+            // perpendicular to the free stream and no longer energises an
+            // attached layer, because there is no attached layer to energise.
+            //
+            // The shift is NOT monotone in alpha, and should not be expected to
+            // be: it peaks at 30 and decays as the wing runs out of attached flow
+            // to preserve.  Power-off fMean at alpha 90 (0.0622) also sits ABOVE
+            // its own alpha 70 and 80 values (0.0127, 0.0149) -- a property of the
+            // anchored section model at exactly broadside, not of the fan.  Treat
+            // the alpha 90 column as the model's edge, and quote it with that.
+            //
+            // Their RATIOS are not.  f(alpha) is steep at the knee, so a span
+            // mean of it amplifies a smooth input: across Tc 1->2 in deep stall
+            // dFMean jumps 4x while dCZ -- the same solve, the same conditions --
+            // grows by a flat 1.50-1.65 per thrust doubling at every alpha.  The
+            // tell is that the jump appears only where the wing is mostly
+            // separated (alpha 30, 40: fMeanOff 0.28, 0.11), and not at alpha 20
+            // where fMeanOff is 0.70 and the ratios run 1.20/1.23/1.24/1.23.
+            // The alpha=20 spike in dFMean has the same cause.  So: quote f as a
+            // location, and take the fan's SENSITIVITY to thrust from dCZ, which
+            // is smooth, never from dFMean, which is a nonlinear readout of it.
+            //
+            // fMin stops discriminating at alpha >= 20: some strip has separated
+            // at the leading edge and reads exactly 0 at every thrust setting,
+            // Tc = 8 included.  Those zero differences are the metric running out
+            // of range, NOT the fan failing to act -- the span mean goes on
+            // growing to +0.065 chord at alpha 30.  Do not difference saturated
+            // values.
+
             if (chain.Tc == 0.0) {
                 off = w;
+                offFMean = fMean;
+                offFMin = fMin;
                 continue;
             }
             if (!res.Converged) ++unconverged;
@@ -288,6 +366,10 @@ int main(int argc, char** argv) {
                 << R"(,"dCZ":)" << (w.CZ - off.CZ) << R"(,"dCl":)" << (w.Cl - off.Cl)
                 << R"(,"dCm":)" << (w.Cm - off.Cm) << R"(,"dCn":)" << (w.Cn - off.Cn)
                 << R"(,"converged":)" << (res.Converged ? "true" : "false")
+                << R"(,"fMean":)" << fMean << R"(,"fMin":)" << fMin
+                << R"(,"fMeanOff":)" << offFMean << R"(,"fMinOff":)" << offFMin
+                << R"(,"dFMean":)" << (fMean - offFMean)
+                << R"(,"dFMin":)" << (fMin - offFMin)
                 << R"(,"iterations":)" << res.Iterations << R"(,"residual":)"
                 << res.MaxResidual
                 << R"(,"cycleFluctuation":)" << res.CycleFluctuation()
