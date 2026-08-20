@@ -449,6 +449,69 @@ The benefit scales as expected with the velocity ratio: at cruise speed
 the same comparison returns roughly a third of the transition value,
 consistent with the induction scaling as $v_i/V_\infty$.
 
+\subsection{The same effect measured across the envelope}
+\label{sec:directmap}
+
+The measurement above is a horizontal shift of the separation curve at one
+operating point, on a fine incidence grid. It answers ``how much incidence
+does the fan buy'' precisely, and says nothing about what happens once the
+wing is past stall, where the curve it shifts no longer exists in the same
+form. A second measurement, from a different driver and a different data
+path, covers that range.
+
+The coupled post-stall solve carries a separation point on every strip, so
+the powered and power-off locations can be compared outright at any
+attitude the solver will run. Doing that over $125$ conditions --- $\alpha$
+from $-4^\circ$ to $90^\circ$, thrust coefficient $T_c$ from $0.5$ to
+$8$ --- gives Fig.~\ref{fig:map} and Table~\ref{tab:map}. This is a
+\emph{vertical} shift, the chord fraction held attached, where
+Fig.~\ref{fig:shift} is a horizontal one. The two are corroboration rather
+than duplication: they share no code beyond the geometry, and neither
+subsumes the other.
+
+\begin{figure}[tb]
+  \centering
+  \includegraphics[width=\linewidth]{figures/separation-map.pdf}
+  \caption{Span-mean separation point read directly off the coupled solve.
+    Left: absolute location, fan off against the strongest thrust ---
+    the delay is a small displacement of a curve that is itself
+    collapsing. Right: the delay alone, one line per thrust. The dotted
+    zero line is drawn because the sign reverses beyond $70^\circ$.}
+  \label{fig:map}
+\end{figure}
+
+\begin{table}[tb]
+  \centering
+  \caption{Span-mean separation point, fan off and on, at $T_c = 8$. Rows
+    are marked according to whether the coupled solve converged or returned
+    a limit-cycle mean, because the two are not the same kind of number.}
+  \label{tab:map}
+  \input{figures/tables/map.tex}
+\end{table}
+
+Three features are worth drawing out. The delay grows to a peak of
+$+0.065$ chord near $\alpha = 30^\circ$ and decays after it, which is what
+a delay must do once there is little attached flow left to preserve. It is
+monotone in thrust at every attitude up to $70^\circ$, and nothing in the
+formulation enforces that: the section tables are functions of $(\eta,
+\alpha_{\text{local}})$ alone and contain no representation of the fan, so
+the delay reaches them only through the local incidence the induction field
+changes. And beyond $70^\circ$ the sign reverses --- the fan advances
+separation rather than delaying it --- because with the plate broadside the
+axial induction is perpendicular to the free stream and there is no
+attached layer left to energise.
+
+Two properties of the metric are stated here because both would otherwise
+read as physics. The \emph{worst} strip's separation point saturates at the
+leading edge from $\alpha = 20^\circ$ upward at every thrust setting, so
+differences taken on it past that incidence measure the metric running out
+of range rather than the fan ceasing to act; the span mean is quoted for
+that reason. And ratios of the separation shift are not sensitivities:
+$f(\alpha)$ is steep at the knee, so a span mean of it amplifies a smooth
+input, and the same solve that moves $\bar f$ by a factor of four across
+one thrust step moves the normal force by a flat $1.50$--$1.65$ per thrust
+doubling at every incidence. Sensitivity should be read from the load.
+
 \section{Limitations}
 
 The coupling is one-way, so the reported shift is a lower bound. The
@@ -462,6 +525,39 @@ inherits the companion study's caveat: bubble bursting~\cite{gaster1967} is
 not modelled, so
 the separation boundary is an upper bound on usable incidence rather than
 a predicted stall.
+
+Two limitations attach specifically to the post-stall map of
+Sec.~\ref{sec:directmap}, and not to the fine-grid measurement that
+precedes it. Beyond roughly $\alpha = 16^\circ$ the coupled solve does not
+reach a steady state; it enters a limit cycle whose mean is reported, and
+the separation point is evaluated on a final sweep at that mean
+circulation. Since $f$ is nonlinear, $f(\bar\gamma)$ is not
+$\overline{f(\gamma)}$. That gap is bounded here rather than assumed small:
+the leading term is second order in the cycle width, and with the per-strip
+incidence variance carried through the solve it evaluates to $10^{-15}$ to
+$10^{-10}$ against $f$ of order unity. The cycle is wide in circulation and
+very nearly stationary in the local incidence $f$ is posed in.
+
+The second is larger and is not yet bounded. The incidence sweep is a
+continuation --- each solve is warm-started from the preceding attitude ---
+so the sequence of attitudes visited forms part of the specification of a
+post-stall condition rather than merely the order of computation. Arriving
+at $\alpha = 20^\circ$, $T_c = 0.5$ from $16^\circ$ instead of $18^\circ$
+moves the span-mean separation point by $0.013$, against a fan effect of
+$0.018$ at that same condition; at $\alpha = 26^\circ$, $T_c = 1$ the
+coarser path reverses the sign of the measured delay outright. Most
+conditions are insensitive --- every row at $\alpha = 16^\circ$ reproduces
+to four digits, including those underlying the comparison in
+Sec.~\ref{sec:directmap} --- and the coarser continuation is on general
+grounds the worse approximation, so this is evidence that the reported map
+is the better-resolved of the two rather than that it is wrong. It is not
+evidence that it is converged. Establishing that requires repeating the
+sweep on a finer incidence grid and confirming that the increments agree,
+which is in progress and is not claimed here. Until it is done, the
+absolute separation locations at low thrust past $\alpha \approx 20^\circ$
+should be read as carrying a path dependence of the same order as the
+effect measured against them.
+
 
 \section{Conclusions}
 \label{sec:conclusions}

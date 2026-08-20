@@ -368,6 +368,39 @@ coarsening here if taken).
 
 ---
 
+## Declared limits inherited from how the sweeps are run
+
+Two properties of the generation, not of the aerodynamics. Both apply to
+every post-stall row of `aero*` and `coupling*`, because both sweeps are
+built the same way.
+
+**The sweeps are continuations, so the path is part of the condition.**
+Every solve above the stall is warm-started from the preceding incidence
+(`ViscousCouplingOptions::InitialGamma`). Which attitudes were visited
+therefore helps determine which limit cycle a condition settles into --- it
+is not merely the order in which the tables were filled. Measured
+2026-08-20: arriving at alpha = 20, Tc = 0.5 from 16 rather than 18 moves
+the span-mean separation point by 0.013, against a fan effect of 0.018 at
+the same condition; at alpha = 26, Tc = 1 a coarser path reverses the sign
+of the measured delay outright. Most conditions are insensitive --- every
+row at alpha = 16 reproduces to four digits --- and the finer continuation
+is the better approximation, so the shipped tables are the better-resolved
+of the two compared. They are **not** demonstrated to be grid-converged;
+that check is outstanding (TODO B5). This also narrows the earlier finding
+that limit-cycle means are iteration-path independent: that holds at
+*fixed continuation*, and warm-start history matters considerably more
+than the relaxation does.
+
+**Cycle-mean nonlinearity is present and negligible.** Anything reported
+past stall is evaluated on a final sweep at the cycle-mean circulation, so
+for nonlinear `g`, `g(gammabar)` is not `mean g(gamma)`. The leading term
+is second order in the cycle width, and `ViscousCoupledResult` now carries
+the per-strip incidence mean and variance needed to evaluate it. For the
+separation point it lands at 1e-15 to 1e-10 against values of order unity:
+the cycle is wide in circulation and nearly stationary in local incidence.
+Recorded because it is the approximation a reader would reasonably suspect,
+and it is not the one that matters --- the continuation is.
+
 ## Open items
 
 - [x] ~~Reconcile varIDs against S-119 Annex A~~ — RESOLVED 2026-08-15:

@@ -7,7 +7,12 @@
 #         (see README.md for the exact commands).
 # Output: axis-induction.pdf   -- the closed-form check, and the upstream half
 #         chordwise-gradient.pdf -- the mechanism, across the span
-#         separation-shift.pdf -- the deliverable
+#         separation-shift.pdf -- the horizontal shift, one operating point
+#         separation-map.pdf   -- the direct map, across alpha and thrust
+#
+#         separation-map.json -- written by `aeolion_induction_map`; the
+#         separation point read DIRECTLY off the coupled solve at 125
+#         conditions, rather than inferred from a lift increment.
 #         tables/*.tex         -- \input-ed by paper.tex
 #
 # Encoding follows the data's job. The operating points are an ordered
@@ -350,21 +355,91 @@ def table_operating(d):
     ])
 
 
+# ------------------------------------- fig 4: the separation map, direct ---
+# The companion to fig 3, and the reason both are kept. Fig 3 measures a
+# HORIZONTAL shift -- incidence bought -- at one operating point on a fine
+# grid. This measures a VERTICAL one -- chord held attached -- across the
+# whole alpha-thrust map, from a different driver and a different data path.
+# They corroborate rather than duplicate, and neither subsumes the other.
+def load_map():
+    return json.loads((HERE / "separation-map.json").read_text())["rows"]
+
+
+def fig_map(rows):
+    fig, (ax, ax2) = plt.subplots(1, 2, figsize=(6.4, 2.5))
+    tcs = sorted({r["Tc"] for r in rows})
+
+    # Left: where separation actually sits, power-off against the strongest
+    # thrust. Absolute locations, so the reader sees that the delay is a small
+    # displacement of a curve that is itself collapsing.
+    lo = [r for r in rows if r["Tc"] == tcs[0]]
+    hi = [r for r in rows if r["Tc"] == tcs[-1]]
+    ax.plot([r["alphaDeg"] for r in lo], [r["fMeanOff"] for r in lo],
+            color=OFF, lw=1.2, label="fan off")
+    ax.plot([r["alphaDeg"] for r in hi], [r["fMean"] for r in hi],
+            color=ON, lw=1.2, label=r"$T_c = %g$" % tcs[-1])
+    ax.set_xlabel(r"$\alpha$ [deg]")
+    ax.set_ylabel(r"span-mean separation point $\bar{f}$")
+    ax.legend(frameon=False, fontsize=7)
+    style(ax)
+
+    # Right: the delay itself, one line per thrust. Ordered in Tc, so a
+    # sequential ramp. The zero line is drawn because the sign REVERSES at the
+    # top of the range, and that reversal is a result rather than an artifact.
+    for c, tc in zip(RAMP, tcs[-len(RAMP):]):
+        sel = [r for r in rows if r["Tc"] == tc]
+        ax2.plot([r["alphaDeg"] for r in sel], [r["dFMean"] for r in sel],
+                 color=c, lw=1.1, label=r"$T_c = %g$" % tc)
+    ax2.axhline(0.0, color=INK, lw=0.6, ls=":")
+    ax2.set_xlabel(r"$\alpha$ [deg]")
+    ax2.set_ylabel(r"$\Delta \bar{f}$, powered $-$ off")
+    ax2.legend(frameon=False, fontsize=7, ncol=2)
+    style(ax2)
+
+    fig.tight_layout()
+    return fig
+
+
+def table_map(rows):
+    # The strongest thrust column: the largest effect, and the one whose sign
+    # reversal at the top of the range is unambiguous. The convergence note is
+    # carried per row because a cycle mean and a converged solve are not the
+    # same kind of number, and the reader should not have to guess which.
+    top = max(r["Tc"] for r in rows)
+    keep = {-4, 8, 14, 16, 18, 20, 26, 30, 40, 60, 90}
+    out = []
+    for r in rows:
+        if r["Tc"] != top or int(round(r["alphaDeg"])) not in keep:
+            continue
+        note = "converged" if r["iterations"] < 1000 else "cycle mean"
+        out.append(r"  %.0f & %.4f & %.4f & %+.4f & %s \\"
+                   % (r["alphaDeg"], r["fMeanOff"], r["fMean"], r["dFMean"], note))
+    header = (r"  $\alpha$ [deg] & $\bar{f}$ off & $\bar{f}$ on"
+              r" & $\Delta \bar{f}$ & \\")
+    return "\n".join([
+        r"\begin{tabular}{rrrrl}", r"  \hline", header,
+        r"  \hline", *out, r"  \hline", r"\end{tabular}",
+    ])
+
+
 def main():
     d, off, on = load()
+    rows = load_map()
     TABLES.mkdir(exist_ok=True)
     for name, fig in (("configuration-3d", fig_configuration3d(d)),
                       ("configuration", fig_configuration(d)),
                       ("axis-induction", fig_axis(d)),
                       ("chordwise-gradient", fig_gradient(d)),
-                      ("separation-shift", fig_shift(off, on))):
+                      ("separation-shift", fig_shift(off, on)),
+                      ("separation-map", fig_map(rows))):
         fig.savefig(HERE / f"{name}.pdf")
         fig.savefig(HERE / f"{name}.png", dpi=220)
         plt.close(fig)
         print(f"wrote {name}.pdf / .png")
     (TABLES / "shift.tex").write_text(table_shift(off, on) + "\n")
     (TABLES / "operating.tex").write_text(table_operating(d) + "\n")
-    print("wrote tables/shift.tex, tables/operating.tex")
+    (TABLES / "map.tex").write_text(table_map(rows) + chr(10))
+    print("wrote tables/shift.tex, operating.tex, map.tex")
 
 
 if __name__ == "__main__":

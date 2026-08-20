@@ -850,6 +850,33 @@ sweep -- rather than a random phase of the cycle; ``Converged`` stays
 false and the residual keeps the cycle's mismatch, so the mean is
 reported, not declared converged.
 
+There is a cost to that branch-following, and it was measured rather than
+assumed. Because the continuation carries history, **which** states were
+visited helps determine which branch a later condition lands on: the
+sequence is part of the specification of a post-stall condition, not
+merely the order of computation. On the fan-induction map, arriving at
+:math:`\alpha = 20^\circ`, :math:`T_c = 0.5` from :math:`16^\circ`
+rather than :math:`18^\circ` moved the span-mean separation point by
+:math:`0.013` -- against a fan effect of :math:`0.018` at that same
+condition -- with both solves sitting in limit cycles of the same length
+and differing only in history. At :math:`\alpha = 26^\circ`,
+:math:`T_c = 1` the coarser path reversed the sign of the measured effect.
+Most conditions are insensitive, and a finer continuation is the better
+approximation, so a densely-swept map is the more trustworthy one; but a
+sweep is not demonstrated grid-converged merely because it warm-started.
+
+This narrows a result stated elsewhere in this document and in the
+post-stall paper: limit-cycle means are **iteration-path** independent ---
+different relaxation on the same grid agrees to 0.1% -- and that holds at
+*fixed continuation*. Warm-start history matters considerably more than
+the relaxation does. A related nonlinearity is by contrast negligible:
+quantities evaluated on the final sweep at the cycle-mean circulation
+satisfy :math:`g(\bar\gamma) \neq \overline{g(\gamma)}`, but with the
+per-strip incidence variance now carried in ``ViscousCoupledResult`` the
+second-order term evaluates to :math:`10^{-15}`--:math:`10^{-10}` for the
+separation point. The cycle is wide in circulation and nearly stationary
+in local incidence.
+
 What the coupling adds physically: the vanes' blockage and upwash now
 unload or re-load the rotor (a measurable thrust shift with vanes
 present), the duct's source strengths feel the vanes through the rotor

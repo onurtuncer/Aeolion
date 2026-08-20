@@ -1837,17 +1837,23 @@ Eq.~\eqref{eq:propnorm} excludes $n \to 0$; windmilling and
 low-rotor-speed descent are outside the envelope.
 \item \textbf{Interaction increments past stall are differences of two
 limit-cycle means} (Section~\ref{sec:coupling}). Below $14\dg$ both
-solves converge and the increment is solid; above $16\dg$ neither does,
-so the post-stall values carry a real thrust-ordered effect whose
-attribution to delayed separation the data supports without
-establishing. The interaction model is also uniform-loading, swirl-free,
-and computed at $\beta = 0$ only.
+solves converge and the increment is solid; above $16\dg$ neither does.
+The attribution to delayed separation is no longer an inference: the
+separation point is now read directly off the coupled solve at both
+power settings, and the delay is present, thrust-ordered at every
+attitude to $70\dg$, and peaks at $+0.065$ chord near $30\dg$. That
+measurement also removed a false signature --- the threefold jump in the
+increment between $14\dg$ and $16\dg$ is \emph{not} the separation delay,
+which moves by only a factor of $1.09$ across the same step; the jump
+marks the onset of limit-cycle behaviour. The interaction model is also
+uniform-loading, swirl-free, and computed at $\beta = 0$ only.
 \item \textbf{Aileron increments carry the flap as a section camber
 change} (Section~\ref{sec:aileron}), not as panel geometry. The lift
-shift is thin-airfoil theory's; the accompanying section pitching-moment
-increment is not modelled, and neither is gap leakage nor the viscous
-decay of effectiveness at large deflection---all of which reduce real
-control power, so the tabulated authority is an upper bound.
+shift is thin-airfoil theory's, and so is the accompanying section
+pitching-moment increment, which the same theory supplies and the model
+now carries. What remains unmodelled is gap leakage and the viscous decay
+of effectiveness at large deflection---both of which reduce real control
+power, so the tabulated authority is still an upper bound.
 \item \textbf{Parasite drag is a conceptual-design estimate}
 (Sections~\ref{sec:drag} and~\ref{sec:parasiteresults}), carrying the
 conventional $\pm10$--$20\%$ accuracy of a component buildup. The duct's
@@ -1856,6 +1862,36 @@ the ring's side-projected area, raising $C_{D_0}(90\dg)$ from $0.195$ to
 $0.208$; what remains unmodelled is the interference between the body
 wake and the wing, so \varid{aeroCD0} is still a lower bound at high
 incidence, by less than before.
+\item \textbf{The post-stall sweeps are continuations, and the path
+is part of the condition.} Every solve above the stall is warm-started
+from the preceding incidence, so which attitudes were visited helps
+determine which limit cycle a condition settles into --- it is not merely
+the order in which the tables were filled. Measured: arriving at
+$\alpha = 20\dg$, $T_c = 0.5$ from $16\dg$ rather than $18\dg$ moves the
+span-mean separation point by $0.013$, against a fan effect of $0.018$ at
+that same condition, and at $\alpha = 26\dg$, $T_c = 1$ a coarser path
+reverses the sign of the measured delay. Most conditions are insensitive,
+and the finer continuation is on general grounds the better
+approximation, so the shipped tables are the better-resolved of the two
+compared --- but they are not demonstrated to be grid-converged, and that
+check is outstanding. This affects the \varid{aero*} and
+\varid{coupling*} post-stall rows, which are generated the same way. It
+also narrows the earlier finding that limit-cycle means are
+iteration-path independent: that holds at fixed continuation, and
+warm-start history matters considerably more than the relaxation does.
+
+\item \textbf{Quantities evaluated at the cycle mean carry a
+nonlinearity error, and it is negligible.} Anything the solver reports
+past stall is evaluated on a final sweep at the cycle-mean circulation,
+so for a nonlinear $g$, $g(\bar\gamma) \neq \overline{g(\gamma)}$. The
+leading term is second order in the cycle width, and the solve carries
+the per-strip incidence variance needed to evaluate it: for the
+separation point it lands at $10^{-15}$ to $10^{-10}$ against values of
+order unity. The cycle is wide in circulation and very nearly stationary
+in local incidence. Stated because it is the approximation a reader would
+reasonably suspect, and it is not the one that matters --- the preceding
+limit is.
+
 \item \textbf{Rate derivatives are absent across
 $\alpha \in [20\dg, 35\dg]$} (Section~\ref{sec:ratetaper}), because
 measurement at two perturbation amplitudes shows no linear coefficient
@@ -1889,7 +1925,10 @@ than by reading.
 \item Model the interference between the body wake and the wing, the
 last contribution keeping \varid{aeroCD0} a lower bound at high
 incidence.
-\item Report the powered and power-off SEPARATION POINTS directly, which the coupled solve already computes per strip, instead of inferring the fan's separation delay from a lift increment taken across two limit cycles.
+\item Repeat the post-stall sweeps on a finer incidence grid and confirm
+that the increments agree, settling whether the continuation-path
+dependence cancels in a powered-minus-power-off difference. The separation
+points themselves are now measured directly rather than inferred.
 \item Extend the flap model with gap leakage and the viscous decay of
 effectiveness at large deflection. The section pitching-moment
 increment is now carried (Section~\ref{sec:aileron}); these two remain,
