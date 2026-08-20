@@ -441,6 +441,17 @@ int main(int argc, char** argv) {
                 << R"(,"fMeanOff":)" << offFMean << R"(,"fMinOff":)" << offFMin
                 << R"(,"dFMean":)" << (fMean - offFMean)
                 << R"(,"dFMin":)" << (fMin - offFMin)
+                // ABSOLUTE coefficients, both power settings.  Exporting only
+                // increments made this map unable to regenerate the paper table
+                // built from it: a ratio needs its denominator, and borrowing one
+                // from the post-stall sweep does not work -- that reconstruction
+                // returns 1.74/1.84/6.78 percent where the driver itself reported
+                // 2.3/2.4/7.5, because the two sweeps' power-off states are not the
+                // same state.  Carry the denominator with the numerator.
+                << R"(,"CX":)" << w.CX << R"(,"CZ":)" << w.CZ
+                << R"(,"Cm":)" << w.Cm
+                << R"(,"CXoff":)" << off.CX << R"(,"CZoff":)" << off.CZ
+                << R"(,"CmOff":)" << off.Cm
                 << R"(,"fCorr":)" << fCorr << R"(,"fCorrOff":)" << offFCorr
                 << R"(,"dFMeanCorr":)" << ((fMean + fCorr) - (offFMean + offFCorr))
                 << R"(,"iterations":)" << res.Iterations << R"(,"residual":)"
