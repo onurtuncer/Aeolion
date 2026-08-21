@@ -196,6 +196,33 @@ struct SmallLu {
  */
 struct BoundaryLayerSectionModel {
     std::function<double(double eta, double psi)> CamberSlope; ///< d(z/c)/d(psi); empty = flat.
+
+    /**
+     * Nondimensional stagnation strain (dUe/ds in Ue/Vinf per s/chord) at a
+     * span station and incidence. Empty means the march starts at theta = 0,
+     * which is what it did before this existed.
+     *
+     * Why it has to be supplied rather than computed here. Thwaites started
+     * from theta = 0 at a REAL stagnation point needs no seed: with
+     * Ue ~ a s the integral produces theta_0 = sqrt(0.075 nu / a) by itself,
+     * which is why the surface march in AttachmentBoundaryLayer.h is correct
+     * without one. This model has no such point to start from. It is a
+     * camber-line lumped-vortex section -- no thickness, hence no stagnation
+     * region -- so ue is already finite at station 0 and starting there with
+     * theta = 0 silently discards the whole upstream run. The error is worst
+     * exactly where the layer is thinnest and the transition correlations are
+     * most sensitive to it.
+     *
+     * The strain is a property of the thickness-resolved flow around the
+     * nose, so it comes from SectionSolution::StagnationStrain
+     * (SectionPanelMethod.h) and cannot be recovered from a camber line at
+     * any price. It depends on incidence, because the stagnation point moves.
+     * The intended supplier is a table precomputed per (eta, alpha) in the
+     * same way BuildSeparationTables precomputes separation -- NOT a
+     * Hess-Smith solve per call, which would sit inside this model's own
+     * iteration inside the coupling's.
+     */
+    std::function<double(double eta, double alphaDeg)> StagnationStrain;
     AnalyticSectionModel Fallback; ///< The saturated polar the envelope blends into.
     int Stations = DefaultSectionStations;
     int MaxIterations = DefaultSectionMaxIterations;
@@ -351,9 +378,18 @@ private:
                     ueLo[i] = ut[i] - Math::Half * sheet;
                 }
 
-                // Integral boundary layers, LE -> TE on each surface.
-                const BoundaryLayerState upper = MarchBoundaryLayer(st, ueUp, Re);
-                const BoundaryLayerState lower = MarchBoundaryLayer(st, ueLo, Re);
+                // Integral boundary layers, LE -> TE on each surface, seeded
+                // with the momentum thickness the unresolved stagnation region
+                // would have delivered. Nondimensionalizing
+                // theta_0 = sqrt(0.075 nu / (dUe/ds)) by chord, with
+                // nu = V c / Re and (dUe/ds) = a V / c, the chord and speed
+                // both cancel and it is simply sqrt(0.075 / (Re a)).
+                const double strain =
+                    StagnationStrain ? StagnationStrain(strip.Eta, alphaDeg) : 0.0;
+                const double theta0 =
+                    (strain > Math::Tiny) ? std::sqrt(0.075 / (Re * strain)) : 0.0;
+                const BoundaryLayerState upper = MarchBoundaryLayer(st, ueUp, Re, theta0);
+                const BoundaryLayerState lower = MarchBoundaryLayer(st, ueLo, Re, theta0);
 
                 // New transpiration: the antisymmetric displacement-flux
                 // derivative, central differences over the arc coordinate.
@@ -421,7 +457,7 @@ private:
     template <typename Stations>
     [[nodiscard]] BoundaryLayerState MarchBoundaryLayer(const Stations& st,
                                                         const std::vector<double>& ueRaw,
-                                                        double Re) const {
+                                                        double Re, double theta0 = 0.0) const {
         const std::size_t mm = ueRaw.size();
         BoundaryLayerState bl;
         bl.ue.resize(mm);
@@ -429,8 +465,25 @@ private:
         for (std::size_t i = 0; i < mm; ++i) bl.ue[i] = std::max(ueRaw[i], MinEdgeVelocityFraction);
 
         bool turbulent = false;
-        double theta = 0.0, H = 2.61, H1 = Detail::HeadH1(TurbulentInitialH);
+        double theta = std::max(theta0, 0.0), H = 2.61, H1 = Detail::HeadH1(TurbulentInitialH);
+
+        // theta0 is the Hiemenz momentum thickness the unresolved stagnation
+        // region would have delivered to station 0. It cannot simply be
+        // assigned to `theta`: Thwaites is an INTEGRAL formula, not a march,
+        // and the loop below recomputes theta from thwaitesIntegral at every
+        // station, so an assigned seed is overwritten at the first one.
+        //
+        // The initial condition belongs inside the integral. Thwaites with a
+        // nonzero start is theta^2 Ue^6 = (0.45/Re) I + theta0^2 Ue0^6, so the
+        // seed is exactly equivalent to beginning the integral at
+        //     I0 = theta0^2 Ue0^6 Re / 0.45
+        // rather than at zero. Zero theta0 gives I0 = 0 and the original march
+        // back, bit for bit.
         double thwaitesIntegral = 0.0;
+        if (theta > 0.0 && mm > 0) {
+            thwaitesIntegral =
+                theta * theta * std::pow(bl.ue[0], 6) * Re / ThwaitesConstant;
+        }
         double sPrev = 0.0;
         double thetaLamPrev = 0.0;
         double michelExcessPrev = -1e30;

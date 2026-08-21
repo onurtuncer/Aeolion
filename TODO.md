@@ -152,16 +152,41 @@ consumer trusting something that is not there.
 
 ## C. Method extensions — each wants its own branch
 
-- [ ] **C1. Wire the boundary-layer march to the real attachment point.**
-  The item the attachment-line work stopped short of on purpose.
-  Everything a march needs is produced and nothing consumes it:
-  `SectionSolution::UpperRun()`/`LowerRun()` give U_e(s) from the
-  stagnation point, `StagnationMomentumThickness` gives θ₀,
-  `SurfaceStreamline` gives U_e(s) and h(s) on the body, and
-  `AttachmentStation` gives Rbar so the march knows whether it may start
-  laminar. `SectionBoundaryLayer.h` still starts at the camber-line
-  leading edge with θ = 0 — exactly the approximation the attachment
-  work removes. A behaviour change to a tested module.
+- [~] **C1. The section march can now start from the stagnation state —
+  MECHANISM DONE, supplier outstanding.** Done 2026-08-21.
+
+  The item's premise needed correcting first. `theta = 0` is *not* the
+  defect: Thwaites started at a real stagnation point, where Ue ~ a·s,
+  produces θ₀ = √(0.075ν/a) unaided — which is why `MarchSurfaceRun` in
+  `AttachmentBoundaryLayer.h` is already right without a seed, and what
+  `TestAttachmentBoundaryLayer` checks. The defect is that
+  `BoundaryLayerSectionModel` is a **camber line**: no thickness, so no
+  stagnation region exists, `ue` is already finite at station 0, and
+  starting there discards the whole upstream run.
+
+  Two things were needed and both are in. `BoundaryLayerSectionModel::
+  StagnationStrain` supplies the nondimensional nose strain; empty
+  reproduces the old march bit for bit. And the seed had to enter the
+  **Thwaites integral**, not the variable — assigning `theta` is
+  overwritten at the first station, since Thwaites is an integral formula
+  and not a march. The equivalent start is `I₀ = θ₀²Ue₀⁶Re/0.45`. The
+  first version assigned it and the test caught that it changed nothing.
+
+  **Remaining:** the supplier itself. `StagnationStrain` depends on
+  incidence (the stagnation point moves) and comes from
+  `SectionSolution::StagnationStrain`, a thickness-resolved Hess–Smith
+  solve — which must NOT run per call, since this model iterates inside
+  the coupling's own iteration. The intended shape is a table precomputed
+  per (η, α), exactly as `BuildSeparationTables` precomputes separation.
+  That is driver-level work and is the rest of C1.
+
+  Measured en route: the seed acts mostly **through transition**. At
+  Re = 5e5, a = 10 it is 1.2e-4 chords and moves cd by 83%, because a
+  thicker leading-edge layer raises Re_θ, trips Michel earlier, and turns
+  a longer run turbulent. Pinned by `TestSectionBoundaryLayer`, whose
+  magnitude check is a **vanishing-seed limit** rather than a bound —
+  a bound would only be a tripwire on where transition sits.
+
 - [ ] **C2. Non-axial propulsor inflow.** The rotor–vane machinery is
   axisymmetric end to end (slipstream bands, azimuthal-mean vane
   feedback, `AxialInflowFromBands`), so disk incidence is not

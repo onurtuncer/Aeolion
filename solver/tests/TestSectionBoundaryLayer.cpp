@@ -96,6 +96,73 @@ void TestTranspirationDecambers() {
     CHECK(clCoupled > 0.5 * clInviscid, "the viscous decrement must stay a correction, not a collapse");
 }
 
+// The march used to start at theta = 0 on a camber line, which has no
+// stagnation region to have started from -- ue is already finite at station 0,
+// so the whole upstream run was discarded. Supplying the stagnation strain
+// seeds it with the Hiemenz value the unresolved region would have delivered.
+void TestStagnationSeedThickensAndDrags() {
+    const auto strip = FlatStrip();
+    const double Re = 5e5, alpha = 4.0;
+
+    Solver::BoundaryLayerSectionModel bare;
+    Solver::BoundaryLayerSectionModel seeded;
+    // A representative nose strain: Ue rising to freestream over a few percent
+    // of chord gives dUe*/ds* of order 10.
+    const double a = 10.0;
+    seeded.StagnationStrain = [a](double, double) { return a; };
+
+    const auto bareCoef = bare(strip, alpha, Re, 0.0);
+    const auto seedCoef = seeded(strip, alpha, Re, 0.0);
+
+    // 1. The seed must MOVE something. A supplier that is accepted and then
+    //    ignored is the failure this test exists to catch.
+    CHECK(seedCoef.cd != bareCoef.cd, "the stagnation seed changed nothing at all");
+
+    // 2. It must move drag UP. A thicker layer at the leading edge stays
+    //    thicker all the way to the trailing edge, and Squire-Young reads
+    //    drag off theta there. A seed that REDUCED drag would mean the sign
+    //    of the correction is inverted.
+    CHECK(seedCoef.cd > bareCoef.cd,
+          "seeding the upstream run must increase cd, got " << bareCoef.cd << " -> " << seedCoef.cd);
+
+    // 3. The seed must VANISH in its own limit. theta_0 = sqrt(0.075/(Re a)),
+    //    so a very sharp nose seeds a vanishing layer and the result must
+    //    return to the unseeded march. This is the check that says the seed is
+    //    a momentum thickness entering the Thwaites integral and not an
+    //    arbitrary offset bolted on.
+    //
+    //    Deliberately NOT a bound on how large the correction may be. It is
+    //    83% of cd at a = 10, which looks alarming for a seed of 1.2e-4 chords
+    //    until one notices the mechanism: a thicker leading-edge layer raises
+    //    Re_theta, which trips Michel earlier, which turns a longer run
+    //    turbulent. The seed acts mostly THROUGH TRANSITION, so a large jump
+    //    is the physics rather than a symptom, and a magnitude bound would
+    //    just be a tripwire on where transition happens to sit.
+    Solver::BoundaryLayerSectionModel vanishing;
+    vanishing.StagnationStrain = [](double, double) { return 1e8; };
+    const double vanishCd = vanishing(strip, alpha, Re, 0.0).cd;
+    CHECK(std::fabs(vanishCd - bareCoef.cd) < 1e-6 * std::max(bareCoef.cd, 1e-9),
+          "a vanishing seed must return the unseeded march, got " << bareCoef.cd
+          << " -> " << vanishCd);
+
+    // 4. An empty supplier must reproduce the old behaviour EXACTLY, so no
+    //    existing consumer moves until it opts in.
+    Solver::BoundaryLayerSectionModel unset;
+    CHECK(unset(strip, alpha, Re, 0.0).cd == bareCoef.cd,
+          "an unset supplier must be bit-identical to the previous march");
+
+    // 5. Larger strain means a thinner stagnation layer, so less drag --
+    //    theta_0 goes as 1/sqrt(a). This is what says the seed is being used
+    //    as a momentum thickness and not merely as an arbitrary offset.
+    Solver::BoundaryLayerSectionModel sharper;
+    sharper.StagnationStrain = [a](double, double) { return 4.0 * a; };
+    CHECK(sharper(strip, alpha, Re, 0.0).cd < seedCoef.cd,
+          "a sharper nose must seed a THINNER layer and less drag");
+
+    std::cout << "stagnation seed: cd " << bareCoef.cd << " -> " << seedCoef.cd
+              << " (a=" << a << ")" << std::endl;
+}
+
 } // namespace
 
 int main() {
@@ -103,6 +170,7 @@ int main() {
     TestCamberLifts();
     TestReynoldsTrend();
     TestTranspirationDecambers();
+    TestStagnationSeedThickensAndDrags();
 
     if (failures == 0) { std::cout << "PASS: TestSectionBoundaryLayer\n"; return 0; }
     std::cerr << failures << " check(s) failed in TestSectionBoundaryLayer\n";
