@@ -50,7 +50,17 @@
 //
 // Usage:
 //   aeolion_aero_map <handoff.json> <out.json> [Vinf] [relaxation]
-//                    [maxIterations] [beta|all] [all|baseline|aileron]
+//                    [maxIterations] [beta|all] [all|baseline|rates|aileron]
+//                    [alpha list]
+//
+// The block selector takes ONE name, or `all`. Note that `baseline` and
+// `rates` are separate: they used to be one, so asking for the baseline map
+// also paid for a 25-station rate-derivative sweep whose cost is several
+// solves per station. That is dead weight for any study of the map itself --
+// and worse than dead weight for a hysteresis study, because the rate block
+// does NOT warm-start (it builds its own options without InitialGamma), so
+// it carries no branch information at all and a reversed alpha list changes
+// nothing in it.
 
 #include "Aeolion/Geometry/CstSurface.h"
 #include "Aeolion/Geometry/FlapEffectiveness.h"
@@ -200,8 +210,9 @@ int main(int argc, char** argv) {
     const std::vector<double> alphaGrid =
         (argc > 8) ? ParseAlphaList(argv[8]) : BuildAlphaGrid();
     const bool wantBaseline = (blocks == "all" || blocks == "baseline");
+    const bool wantRates = (blocks == "all" || blocks == "rates");
     const bool wantAileron = (blocks == "all" || blocks == "aileron");
-    if (!wantBaseline && !wantAileron) {
+    if (!wantBaseline && !wantRates && !wantAileron) {
         std::cerr << "unknown block selector '" << blocks << "' (all | baseline | aileron)\n";
         return 1;
     }
@@ -319,11 +330,15 @@ int main(int argc, char** argv) {
     out << "\"rates\":[\n";
     bool firstRate = true;
     for (const double alphaDeg : alphaGrid) {
-        // The rate block belongs with the baseline map, not with a control
-        // sweep: six coupled solves per attitude, and a blocks=aileron run
-        // exports none of them. Without this guard such a run spends an
-        // hour recomputing derivatives it will discard.
-        if (!wantBaseline) break;
+        // Six coupled solves per attitude, so this must not run for a study
+        // that will discard it -- originally that meant guarding it against
+        // blocks=aileron. It now has its own selector, because "the baseline
+        // map" and "the rate derivatives" are separate questions and asking
+        // for the first should not buy the second. A hysteresis study is the
+        // sharp case: the rate block builds its own options WITHOUT
+        // InitialGamma, so it never warm-starts, carries no branch, and a
+        // reversed alpha list changes nothing in it.
+        if (!wantRates) break;
         S::FreestreamConditions base = fc;
         base.alphaDeg = alphaDeg;
         base.betaDeg = 0.0;
