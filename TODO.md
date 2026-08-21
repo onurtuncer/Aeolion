@@ -125,10 +125,30 @@ consumer trusting something that is not there.
   coarse. Data: `separation-map-fine.json`; table generated into
   `figures/tables/gridconv.tex`.
 
-- [ ] **B4. Hysteresis.** The maps are the ascending-α branch by
-  construction (warm-start continuation up each column). Whether the
-  descending branch differs materially decides whether a static gridded
-  table can represent this vehicle near stall at all.
+- [x] **B4. Hysteresis — RESOLVED 2026-08-21, and a static table is
+  adequate.** Swept 90 → −4 against the shipped −4 → 90 at β = 0, same
+  speed and relaxation. Attached flow is path-independent (worst 6.6e-4 in
+  CZ below α = 14). **Only 7 of 25 attitudes differ by more than 1e-3**;
+  largest 1.65% of CZ at α = 24, 2.6% of Cm at α = 26.
+
+  **Not a classical hysteresis loop**, which is the part that decides the
+  model's shape. Two branches would part across the whole post-stall range
+  and rejoin at its ends. Instead six of seven cluster in 18–35, the
+  branches *agree* at 16 and 20 inside that band, and agree exactly from
+  40 through 70 — isolated bistable conditions, the same signature B5
+  produced by halving the incidence step. **The DAVE-ML tables need no
+  branch axis**; the named attitudes need wider uncertainty, and 1.65% is
+  well inside the ±10–20% already carried on parasite drag.
+
+  Unexplained: α = 80 is the only departure outside the stall band and the
+  largest in CZ (1.76%). It sits beside α = 90, where the fan's mechanism
+  inverts (B1), but no mechanism is offered. Data:
+  `models/data/aero-map-descending.json`.
+
+  Enabled by giving `rates` its own block selector — the rate block never
+  warm-starts, so it carries no branch and a reversed α list changes
+  nothing in it; paying for it in a hysteresis study buys data that cannot
+  answer the question.
 
 ## C. Method extensions — each wants its own branch
 

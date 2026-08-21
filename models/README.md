@@ -403,6 +403,25 @@ that limit-cycle means are iteration-path independent: that holds at
 *fixed continuation*, and warm-start history matters considerably more
 than the relaxation does.
 
+**The tables are the ascending-alpha branch, and that is adequate.** Every
+sweep is a continuation started below the stall, so the tables are one
+branch of a system that could in principle have two. Sweeping the same grid
+downward from 90 degrees settles the cost. Below alpha 14 the branches
+agree to 6.6e-4 in CZ — attached flow is path-independent. Only **7 of 25
+attitudes differ by more than 1e-3**, the largest being 1.65% of CZ at
+alpha 24 and 2.6% of Cm at alpha 26.
+
+This is **not** a classical hysteresis loop, and the distinction decides
+how the model is built. A two-valued system would show the branches parting
+across the whole post-stall range and rejoining at its ends. Instead six of
+the seven cluster in 18–35, the branches agree at 16 and 20 *inside* that
+band, and agree exactly from 40 through 70 — isolated bistable conditions,
+the same signature the incidence-step refinement produced. So the tables
+need **no branch axis**; the named attitudes need wider uncertainty, and
+1.65% sits well inside the ±10–20% already carried on the parasite buildup.
+One departure of 1.76% in CZ at alpha 80 falls outside the stall band and is
+recorded without an explanation. Data: `aero-map-descending.json`.
+
 **Cycle-mean nonlinearity is present and negligible.** Anything reported
 past stall is evaluated on a final sweep at the cycle-mean circulation, so
 for nonlinear `g`, `g(gammabar)` is not `mean g(gamma)`. The leading term

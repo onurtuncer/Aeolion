@@ -272,8 +272,9 @@ $20^\circ$, $5^\circ$ beyond) by $\beta \in [0^\circ, 30^\circ]$
 ($5^\circ$ steps), on the same tail-sitter configuration as Part~I
 ($A\!R = 6$ rectangular wing, body of revolution, aft duct,
 $V_\infty = 25$~m/s), ascending in $\alpha$ with warm-started
-continuation --- the map is the ascending branch; the descending branch
-and its hysteresis band are a deliberate later study.
+continuation --- the map is the ascending branch. The descending branch is
+reported in Sec.~\ref{sec:hysteresis}; the two agree except at seven of
+twenty-five attitudes, by at most $1.65\%$.
 
 \begin{figure}[tb]
   \centering
@@ -719,18 +720,51 @@ declared $10\%$ criterion on the $90^\circ$ ceiling's $AR$ trend
 stands unchanged.
 
 \subsection{The static hysteresis band}
+\label{sec:hysteresis}
 
-% TODO(Phase 1): rerun the map descending in alpha with warm-started
-% continuation (ViscousCouplingOptions::InitialGamma) and report where
-% the ascending and descending branches disagree -- the bistable band
-% around stall. Nearly free with the existing driver.
-The map of Section~\ref{sec:map} is the ascending branch by
-construction. The section response past stall is multivalued, the
-coupling supports warm-started continuation in either direction, and
-the width of the resulting hysteresis band in $(\alpha, \beta)$ ---
-where the two branches disagree --- is a result the quasi-steady tier
-can produce at essentially no additional cost. It will be reported
-here.
+The map of Section~\ref{sec:map} is the ascending branch by construction:
+every solve is warm-started from the attitude below it. The section
+response past stall is multivalued and the coupling supports continuation
+in either direction, so the width of the band where the two branches
+disagree is a result this tier can produce directly. Sweeping the same
+grid downward from $90^\circ$ at $\beta = 0$, at the same speed and
+relaxation, gives it.
+
+The band is narrow, and it is not a band. Below $\alpha = 14^\circ$ the
+two branches agree to $6.6 \times 10^{-4}$ in $C_Z$---attached flow is
+path-independent, as it must be. Only seven of twenty-five attitudes
+differ by more than $10^{-3}$ at all, and the largest departures are
+$1.65\%$ of $C_Z$ at $\alpha = 24^\circ$ and $2.6\%$ of $C_m$ at
+$26^\circ$.
+
+The shape of that disagreement is the substantive result, and it is not
+the shape the term \emph{hysteresis band} implies. A two-valued system
+would show the branches parting on entry to the stall, remaining apart
+across it, and rejoining on exit, so that the disagreeing attitudes form a
+contiguous interval. They do not. Six of the seven lie between $18^\circ$
+and $35^\circ$, but the branches \emph{agree} at $16^\circ$ and at
+$20^\circ$---inside that range---and agree exactly from $40^\circ$ through
+$70^\circ$. What the sweep finds is a small number of isolated bistable
+conditions rather than two branches of a multivalued system.
+
+That is the same signature this study met from an unrelated direction.
+Halving the incidence step of the ascending sweep, a far smaller
+perturbation than reversing it, moved twelve of a hundred and twenty-five
+conditions and left the rest identical to $10^{-6}$. Two different
+perturbations of the continuation therefore produce the same kind of
+answer: most post-stall conditions have a unique reachable solution, and a
+few, individually identifiable, do not.
+
+The practical consequence is that a static gridded representation of this
+vehicle near stall is adequate, and needs no branch axis. The affected
+attitudes want wider uncertainty, and $1.65\%$ is well inside the
+$\pm10$--$20\%$ that a component drag buildup carries in any case. One
+departure is left unexplained rather than absorbed into that summary:
+$\alpha = 80^\circ$ is the only attitude outside the stall band at which
+the branches differ, and at $1.76\%$ of $C_Z$ it is the largest departure
+in the sweep. It lies beside the attitude at which the fan's induction
+reverses its effect on separation, which is suggestive and is not an
+explanation.
 
 \subsection{Method-generated polars: the double-wake tier}
 
