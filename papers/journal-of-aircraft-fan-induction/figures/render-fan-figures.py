@@ -422,9 +422,48 @@ def table_map(rows):
     ])
 
 
+# ------------------------------- grid convergence: the 1-degree cross-check ---
+# The 2-degree map is a CONTINUATION, so the attitudes visited are part of what
+# gets computed. Repeating the sweep on a 1-degree grid tests whether that
+# matters. It mostly does not -- and where it does, the failure is a named
+# bistable condition rather than a drift, which is worth showing as a list
+# instead of an error bar.
+def load_fine():
+    return json.loads((HERE / "separation-map-fine.json").read_text())["rows"]
+
+
+def table_gridconv(coarse, fine, tol=1e-6):
+    C = {(round(r["alphaDeg"]), r["Tc"]): r for r in coarse}
+    F = {(round(r["alphaDeg"]), r["Tc"]): r for r in fine}
+    shared = sorted(set(C) & set(F))
+    rows, n_bad = [], 0
+    for k in shared:
+        c, f = C[k], F[k]
+        d_on = f["fMean"] - c["fMean"]
+        d_off = f["fMeanOff"] - c["fMeanOff"]
+        d_inc = f["dFMean"] - c["dFMean"]
+        if max(abs(d_on), abs(d_off), abs(d_inc)) <= tol:
+            continue
+        n_bad += 1
+        # Name which solve moved: that is the diagnosis, not the magnitude.
+        which = ("power-off" if abs(d_off) > tol and abs(d_on) <= tol else
+                 "powered" if abs(d_on) > tol and abs(d_off) <= tol else "both")
+        rows.append(r"  %d & %g & %s & %+.4f & %+.4f \\"
+                    % (k[0], k[1], which, d_off if which != "powered" else d_on, d_inc))
+    head = (r"  $\alpha$ [deg] & $T_c$ & solve that moved & shift & "
+            r"$\Delta(\Delta \bar f)$ \\")
+    return "\n".join([
+        r"\begin{tabular}{rrlrr}", r"  \hline", head, r"  \hline", *rows, r"  \hline",
+        r"  \multicolumn{5}{l}{\footnotesize %d of %d shared conditions agree to $10^{-6}$.} \\"
+        % (len(shared) - n_bad, len(shared)),
+        r"  \hline", r"\end{tabular}",
+    ])
+
+
 def main():
     d, off, on = load()
     rows = load_map()
+    fine = load_fine()
     TABLES.mkdir(exist_ok=True)
     for name, fig in (("configuration-3d", fig_configuration3d(d)),
                       ("configuration", fig_configuration(d)),
@@ -439,7 +478,8 @@ def main():
     (TABLES / "shift.tex").write_text(table_shift(off, on) + "\n")
     (TABLES / "operating.tex").write_text(table_operating(d) + "\n")
     (TABLES / "map.tex").write_text(table_map(rows) + chr(10))
-    print("wrote tables/shift.tex, operating.tex, map.tex")
+    (TABLES / "gridconv.tex").write_text(table_gridconv(rows, fine) + chr(10))
+    print("wrote tables/shift.tex, operating.tex, map.tex, gridconv.tex")
 
 
 if __name__ == "__main__":

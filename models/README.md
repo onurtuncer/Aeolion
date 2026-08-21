@@ -385,8 +385,20 @@ the same condition; at alpha = 26, Tc = 1 a coarser path reverses the sign
 of the measured delay outright. Most conditions are insensitive --- every
 row at alpha = 16 reproduces to four digits --- and the finer continuation
 is the better approximation, so the shipped tables are the better-resolved
-of the two compared. They are **not** demonstrated to be grid-converged;
-that check is outstanding (TODO B5). This also narrows the earlier finding
+of the two compared.
+
+That check is now done. Repeating the sweep at half the incidence step,
+**113 of 125 shared conditions agree to better than 1e-6** — the tables
+are grid-converged over ninety percent of their extent, including every
+condition the fan-induction comparison rests on. The twelve that disagree
+are isolated bistable conditions, all post-stall, each a single solve
+settling into a different limit cycle according to the attitude it was
+reached from: alpha 20 (all Tc, power-off moves), alpha 24 (all Tc,
+power-off; powered too at Tc <= 1), alpha 26 Tc 2, alpha 30 Tc 2. Where
+only the power-off solve moves its shift passes through every thrust
+column undiminished; where both move together the increment nearly
+cancels. Cancellation is therefore real but not reliable. Those rows carry
+an uncertainty of order 0.01 in separation location, 0.027 at worst. This also narrows the earlier finding
 that limit-cycle means are iteration-path independent: that holds at
 *fixed continuation*, and warm-start history matters considerably more
 than the relaxation does.

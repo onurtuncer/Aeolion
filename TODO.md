@@ -102,22 +102,28 @@ consumer trusting something that is not there.
   lift result only. The same theory supplies the moment. Gap leakage and
   viscous decay at large deflection are separate omissions; all three
   push the tabulated authority the same way, upward.
-- [ ] **B5. The alpha grid is a continuation path, and the path
-  sensitivity is the size of the signal.** Found 2026-08-20 while closing
-  B1's carried-forward item. Every solve warm-starts from the preceding
-  incidence, so *which* attitudes are run is part of the specification of
-  a post-stall condition, not just the order of computation. Arriving at
-  α = 20, Tc = 0.5 from 16 rather than 18 moves fMean 0.7189 → 0.7061:
-  both in 1000-iteration cycles, differing only in history, by **0.013
-  against a fan effect of 0.018 at that condition**. Two consequences.
-  (a) B1's increments difference powered against power-off at a common
-  attitude on a common grid, so they are internally consistent — but
-  whether the path dependence *cancels* in the difference is **untested**,
-  and settling it needs a second full sweep on a different alpha grid
-  (~2 h). (b) It narrows D2: cycle means are iteration-path independent
-  *at fixed continuation*; warm-start history matters more than the
-  relaxation does. Documented on the alpha selector in
-  `InductionMapExport.cpp` so the next subset run does not repeat it.
+- [x] **B5. The alpha grid is a continuation path** — RESOLVED
+  2026-08-21 by repeating the whole sweep at half the incidence step.
+  **113 of 125 shared conditions agree to better than 1e-6**: the map is
+  grid-converged over ninety percent of its extent. The twelve that are
+  not are isolated bistable conditions, all post-stall, each a single
+  solve settling into a different limit cycle according to the attitude it
+  was reached from — α 20 (all Tc, power-off), α 24 (all Tc, power-off;
+  powered too at Tc ≤ 1), α 26 Tc 2, α 30 Tc 2. Named, so they can be
+  carried as an uncertainty rather than as a caveat over the whole map.
+
+  **The question B1 left open is answered, and the answer is "sometimes".**
+  Where only the power-off solve moves (α 20) its 0.011 shift passes
+  through every thrust column undiminished; where powered and power-off
+  move together (α 24, Tc ≤ 1) the increment cancels to 0.0005. Both
+  happen in one map, so cancellation is real but must not be assumed.
+  Worst case 0.027 against a 0.044 signal.
+
+  **B1's headline is not an artifact of the step.** The 14° and 16° rows
+  agree between grids to 1e-9…1e-7, and the step across them is ×3.39
+  against ×1.09 on the fine grid where it was ×3.38 against ×1.09 on the
+  coarse. Data: `separation-map-fine.json`; table generated into
+  `figures/tables/gridconv.tex`.
 
 - [ ] **B4. Hysteresis.** The maps are the ascending-α branch by
   construction (warm-start continuation up each column). Whether the

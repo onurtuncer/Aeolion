@@ -538,25 +538,46 @@ incidence variance carried through the solve it evaluates to $10^{-15}$ to
 $10^{-10}$ against $f$ of order unity. The cycle is wide in circulation and
 very nearly stationary in the local incidence $f$ is posed in.
 
-The second is larger and is not yet bounded. The incidence sweep is a
-continuation --- each solve is warm-started from the preceding attitude ---
-so the sequence of attitudes visited forms part of the specification of a
-post-stall condition rather than merely the order of computation. Arriving
-at $\alpha = 20^\circ$, $T_c = 0.5$ from $16^\circ$ instead of $18^\circ$
-moves the span-mean separation point by $0.013$, against a fan effect of
-$0.018$ at that same condition; at $\alpha = 26^\circ$, $T_c = 1$ the
-coarser path reverses the sign of the measured delay outright. Most
-conditions are insensitive --- every row at $\alpha = 16^\circ$ reproduces
-to four digits, including those underlying the comparison in
-Sec.~\ref{sec:directmap} --- and the coarser continuation is on general
-grounds the worse approximation, so this is evidence that the reported map
-is the better-resolved of the two rather than that it is wrong. It is not
-evidence that it is converged. Establishing that requires repeating the
-sweep on a finer incidence grid and confirming that the increments agree,
-which is in progress and is not claimed here. Until it is done, the
-absolute separation locations at low thrust past $\alpha \approx 20^\circ$
-should be read as carrying a path dependence of the same order as the
-effect measured against them.
+The second concerns the incidence sweep, which is a continuation: each
+solve is warm-started from the preceding attitude, so the sequence of
+attitudes visited forms part of the specification of a post-stall
+condition rather than merely the order of computation. Whether that
+matters was settled by repeating the entire sweep on a $1^\circ$ grid and
+comparing the $125$ conditions the two share.
+
+It mostly does not. $113$ of the $125$ agree to better than $10^{-6}$ ---
+the map is grid-converged over ninety percent of its extent, including
+every condition underlying the comparison in Sec.~\ref{sec:directmap}: the
+rows at $14^\circ$ and $16^\circ$ agree to between $10^{-9}$ and
+$10^{-7}$, and the step across them is $3.39$ against $1.09$ on the finer
+grid where it was $3.38$ against $1.09$ on the coarser.
+
+The twelve that disagree are listed in Table~\ref{tab:gridconv}, and they
+are isolated bistable conditions rather than a drift. All lie past the
+stall; each is a single solve settling into a different limit cycle
+depending on the attitude it was approached from. Two features of that
+list are worth stating because they bear on how the increments should be
+read. At $\alpha = 20^\circ$ only the \emph{power-off} solve moves, so its
+shift of $0.0108$ passes through every thrust column undiminished. At
+$\alpha = 24^\circ$, $T_c \leq 1$, powered and power-off move together and
+the difference very nearly cancels, to $0.0005$ and $0.0010$. Cancellation
+in the increment is therefore real but not reliable, and cannot be assumed
+in either direction. The largest single disagreement is $0.0267$ at
+$\alpha = 30^\circ$, $T_c = 2$, against a fan effect of $0.0436$ at the
+same condition.
+
+\begin{table}[tb]
+  \centering
+  \caption{Conditions at which the $2^\circ$ map and a $1^\circ$ repeat of
+    the same sweep disagree by more than $10^{-6}$, with the solve
+    responsible. All are past the stall.}
+  \label{tab:gridconv}
+  \input{figures/tables/gridconv.tex}
+\end{table}
+
+The practical reading is that the tabulated increments are sound except at
+the listed attitudes, where an uncertainty of order $0.01$ in $\bar f$ ---
+and $0.027$ in the worst case --- should be carried.
 
 
 \section{Conclusions}

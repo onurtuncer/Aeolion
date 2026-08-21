@@ -588,19 +588,32 @@ it is not the one this section would have predicted. The $\alpha$ grid is
 a continuation path---each solve is warm-started from the preceding
 incidence---so the sequence of attitudes visited is part of the
 specification of a post-stall condition, not merely the order in which
-conditions are computed. Recomputing $\alpha = 20^\circ$, $T_c = 0.5$
-after arriving from $16^\circ$ rather than $18^\circ$ moves the
-span-mean separation point from $0.719$ to $0.706$: both solutions sit in
-limit cycles of the same length, and their \emph{means} differ by $0.013$
-against a fan effect of $0.018$ at that same condition. This does not
-disturb the increments reported here, which difference powered against
-power-off at a common attitude with both solves having traversed the same
-grid; but it does mean the absolute separation locations carry a path
-dependence of the same order as the effect measured against them, and
-whether that dependence cancels in the difference is untested. It also
-qualifies the earlier finding that limit-cycle means are iteration-path
-independent: that result holds at fixed continuation, and warm-start
-history evidently matters a good deal more than the relaxation does.
+conditions are computed. Repeating the entire sweep at half the incidence
+step and comparing the $125$ shared conditions puts a number on it: $113$
+agree to better than $10^{-6}$, and the twelve that do not are isolated
+bistable conditions, all past the stall, each a single solve settling into
+a different limit cycle according to the attitude it was reached from.
+
+Two features of that list bear on how the increments should be read. Where
+only the power-off solve moves---as at $\alpha = 20^\circ$, at every
+thrust setting---its shift of $0.011$ passes through every column
+undiminished. Where powered and power-off move together, as at
+$\alpha = 24^\circ$ and $T_c \leq 1$, the difference very nearly cancels,
+to $0.0005$ and $0.0010$. Cancellation in the increment is therefore real
+but not reliable, and cannot be assumed in either direction; the affected
+attitudes should carry an uncertainty of order $0.01$ in separation
+location, rising to $0.027$ in the worst case against a fan effect of
+$0.044$ there.
+
+None of this disturbs the comparison above. The conditions at $14^\circ$
+and $16^\circ$ agree between the two grids to between $10^{-9}$ and
+$10^{-7}$, and the step across them is $3.39$ against $1.09$ on the finer
+grid where it was $3.38$ against $1.09$ on the coarser. The finding is not
+an artifact of the incidence step.
+
+It does qualify the earlier result that limit-cycle means are
+iteration-path independent: that holds at fixed continuation, and
+warm-start history evidently matters a good deal more than the relaxation does.
 
 The honest summary is therefore stronger than the previous one. Power
 adds several percent of lift through the stall in a thrust-ordered way;

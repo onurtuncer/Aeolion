@@ -1818,6 +1818,7 @@ this document was typed by hand.
 
 %======================================================================
 \section{Declared limits}
+\label{sec:limits}
 
 Collected here so that a consumer need not reconstruct them from the body
 of the report.
@@ -1870,11 +1871,19 @@ the order in which the tables were filled. Measured: arriving at
 $\alpha = 20\dg$, $T_c = 0.5$ from $16\dg$ rather than $18\dg$ moves the
 span-mean separation point by $0.013$, against a fan effect of $0.018$ at
 that same condition, and at $\alpha = 26\dg$, $T_c = 1$ a coarser path
-reverses the sign of the measured delay. Most conditions are insensitive,
-and the finer continuation is on general grounds the better
-approximation, so the shipped tables are the better-resolved of the two
-compared --- but they are not demonstrated to be grid-converged, and that
-check is outstanding. This affects the \varid{aero*} and
+reverses the sign of the measured delay.
+
+That check has since been done, by repeating the sweep at half the
+incidence step: $113$ of the $125$ shared conditions agree to better than
+$10^{-6}$, so the tables are grid-converged over ninety percent of their
+extent. The twelve that do not are isolated bistable conditions, all past
+the stall, each a single solve settling into a different limit cycle
+according to the attitude it was approached from --- not a drift, and
+individually identifiable. Where only the power-off solve moves, its shift
+passes through every thrust column undiminished; where both move together
+the increment very nearly cancels. Both occur, so cancellation is real but
+cannot be assumed. The affected rows carry an uncertainty of order $0.01$
+in separation location, $0.027$ at worst. This affects the \varid{aero*} and
 \varid{coupling*} post-stall rows, which are generated the same way. It
 also narrows the earlier finding that limit-cycle means are
 iteration-path independent: that holds at fixed continuation, and
@@ -1925,10 +1934,10 @@ than by reading.
 \item Model the interference between the body wake and the wing, the
 last contribution keeping \varid{aeroCD0} a lower bound at high
 incidence.
-\item Repeat the post-stall sweeps on a finer incidence grid and confirm
-that the increments agree, settling whether the continuation-path
-dependence cancels in a powered-minus-power-off difference. The separation
-points themselves are now measured directly rather than inferred.
+\item Decide whether the twelve grid-sensitive conditions
+(Section~\ref{sec:limits}) should be resolved by bisecting the continuation
+around them, or declared and carried as an uncertainty. They are named, so
+either is tractable; at present they are declared.
 \item Extend the flap model with gap leakage and the viscous decay of
 effectiveness at large deflection. The section pitching-moment
 increment is now carried (Section~\ref{sec:aileron}); these two remain,
