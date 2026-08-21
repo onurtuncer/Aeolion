@@ -193,6 +193,30 @@ consumer trusting something that is not there.
   `LatticeOptions` knob is open — the argument for the knob is that
   axial spacing is exactly as much a consumer choice as
   `BodyCircumferentialPanels` already is.
+- [ ] **E4. One condition costs 380x normal, with no outer-loop symptom.**
+  Found 2026-08-21 during B5's fine-grid sweep. `alpha = 21, Tc = 0.5`
+  took **40,741 s (11.3 h)**; every other row at the same incidence took
+  107-163 s. The output is *normal in every respect* — same 1000
+  iterations as its neighbours, residual 0.6307 against 0.5527 at 20 and
+  0.6627 at 22, `fMean` 0.6787 interpolating smoothly between them, cycle
+  fluctuation 5.45e-08. Same iteration count and same quality for 380x
+  the wall time, so the cost is **inside** the iterations, not in more of
+  them: almost certainly the inner section root-find burning its full
+  budget on some strip every outer sweep where neighbouring conditions
+  resolve it in a few steps.
+
+  Two reasons this matters more than a slow row. It is **invisible to the
+  shipped 2-degree map**, which skips alpha = 21 entirely — so it was
+  never going to be found without a finer sweep. And because there is no
+  outer-loop signal, a consumer who hits it sees an apparent *hang*, not a
+  diagnosis; `Converged`, `Iterations` and the residual all look ordinary.
+
+  Wants an inner-iteration budget that is *counted and reported* — a
+  per-solve tally of inner steps alongside `Iterations`, so a pathological
+  condition announces itself instead of merely taking a long time. Not a
+  correctness defect: the row's numbers are sound and B5's comparison is
+  unaffected.
+
 - [ ] **E3.** `AttachmentLine` takes one Weissinger row per strip. A
   multi-row chordwise lattice needs the caller to pass the leading-edge
   row.
