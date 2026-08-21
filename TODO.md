@@ -29,26 +29,19 @@ Places where a shipped artifact claims more than it delivers. First
 because they are cheap, and because the cost of leaving them is a
 consumer trusting something that is not there.
 
-- [~] **A1. Uncertainty bounds — plumbing DONE, data pending.**
-  The solver now measures the cycle WIDTH (`CycleFluctuation()`), the
-  drivers export it, and the assembler emits it as a DAVE-ML
-  `uncertainty`/`normalPDF` with per-cell additive bounds — verified end
-  to end against the DTD on synthesised data before committing to the
-  sweeps. The bound is deliberately the cycle width and NOT the residual:
-  the residual is a max over strips of a section mismatch and sits at
-  0.2–0.6 post-stall, while the load-level fluctuation is ~1e-6, so
-  quoting the residual would overstate uncertainty by five orders of
-  magnitude. Remaining: the sweeps that populate it (running).
-  *Original statement:*
-  `models/README.md` decisions 9 and 10 say post-stall tables carry
-  DAVE-ML uncertainty bounds derived from the cycle RMS, and the
-  technical report repeats it. `build-daveml.py` emits none — the
-  standard's `uncertainty` element appears nowhere in the file. Either
-  emit them or strike the claim from both documents. Emitting is the
-  better answer: 110 of 175 airframe conditions and 72 of 125
-  interaction conditions are cycle means, and a consumer currently
-  cannot tell which. The sweeps already export per-condition residuals;
-  the cycle RMS itself would have to be collected.
+- [x] **A1. Uncertainty bounds carry real data** — DONE 2026-08-20
+  (`c5f680b`). The solver measures the cycle WIDTH
+  (`CycleFluctuation()`), the drivers export it, and the assembler emits
+  12 DAVE-ML `uncertainty`/`normalPDF` elements with per-cell additive
+  bounds. 65 converged rows correctly get no bounds; 110 cycle-mean rows
+  get them, median 1.14e-7 but reaching **0.591 at α = 90, β = 30 against
+  CZ = −1.485** — a 40% bound, which is the honest number there.
+
+  The bound is deliberately the cycle width and NOT the residual: the
+  residual is a max over strips of a section mismatch and sits at 0.2–0.6
+  post-stall, while the load-level fluctuation is ~1e-6, so quoting it
+  would overstate uncertainty by five orders of magnitude.
+
 - [x] **A2. DTD check could silently skip in CI** — DONE:
   `libxml2-utils` added to `sanitizers.yml`. *Original:* `verify-daveml.py`
   uses `xmllint` when present and says so when it is not, but
@@ -234,10 +227,21 @@ consumer trusting something that is not there.
 
 ## E. Solver housekeeping
 
-- [ ] **E1.** Body streamline tracing assumes the lateral fuselage
-  surface; the base cap is correctly declined. If the attachment
-  analysis should ever cross onto the base, that needs a second patch
-  and a join.
+- [x] **E1. A declined surface grid now says why** — DONE 2026-08-21
+  (`275eb83`). The original note was that streamline tracing assumes the
+  lateral fuselage surface and correctly declines the base cap. True, and
+  it hid a usability defect: `SurfaceGrid::Valid()` is derived from sample
+  counts, so **six distinct causes collapsed into one `false`** — and the
+  base cap being declined *by design* was indistinguishable from a
+  misspelled surface name. `SurfaceGridStatus` separates `NoSystem`,
+  `NoSuchSurface`, `Unindexed` (the cap), `TooSmall`, `IncompleteGrid`
+  and `DuplicateKey` across all six return paths, pinned by
+  `TestSurfaceFlow`.
+
+  **Still true and still conditional:** if the attachment analysis should
+  ever need to cross onto the base, that wants a second patch and a join.
+  Nothing needs it today.
+
 - [x] **E2. Axial nose resolution is a `LatticeOptions` knob** — DONE
   2026-08-21. `BodyNoseRefineStations` / `BodyNoseRefineFraction`, default
   zero so no existing mesh moves. The argument was the stated one: the
