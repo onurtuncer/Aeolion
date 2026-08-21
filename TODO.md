@@ -204,9 +204,53 @@ consumer trusting something that is not there.
   corners on the axis, and the base cap is panelled as **concentric
   annuli**, so a single-valued-in-x radius law cannot describe its corners.
 
-- [ ] **E3.** `AttachmentLine` takes one Weissinger row per strip. A
-  multi-row chordwise lattice needs the caller to pass the leading-edge
-  row.
+- [ ] **E4. One condition costs 380x normal, and the cause is not yet
+  known.** Found 2026-08-21 during B5's fine-grid sweep. `alpha = 21,
+  Tc = 0.5` took **40,741 s (11.3 h)**; every other row at that incidence
+  took 107-163 s. The output is *normal in every respect* - same 1000
+  iterations as its neighbours, residual 0.6307 against 0.5527 at 20 and
+  0.6627 at 22, `fMean` 0.6787 interpolating smoothly between them, cycle
+  fluctuation 5.45e-08. Same iteration count and same quality for 380x the
+  wall time, so the cost is **inside** the iterations.
+
+  **A first explanation was recorded here and was wrong.** It said the
+  inner section root-find was burning its budget. There is no inner
+  iterative solve: `PostStallSection.h` contains exactly one loop, a
+  fixed-count stall scan used for reporting, and the coupling is a relaxed
+  fixed point with no nested solve. That mechanism does not exist; it was
+  asserted from the signature rather than checked.
+
+  Two candidates remain, distinguishable by one experiment. **Denormal
+  arithmetic** fits the signature exactly - identical operations,
+  identical results, two orders of magnitude slower - and would arise if a
+  strip's circulation decayed toward 1e-320. **Machine contention** is the
+  dull alternative, though 11.3 h of it is implausible. Re-running the
+  condition on an idle machine separates them: slow again means
+  data-dependent, fast means contention. A cold start changes the
+  continuation path (B5), so a negative result is the weaker evidence.
+
+  Why it matters either way: it is **invisible to the shipped 2-degree
+  map**, which skips alpha = 21, and because no outer-loop quantity is
+  disturbed a consumer meets it as an apparent *hang* rather than a
+  diagnosable condition. If denormals, the fix is flush-to-zero; if
+  contention, there is nothing to fix and this note should be deleted.
+  Not a correctness defect: the numbers are sound and B5 is unaffected.
+
+- [x] **E3. A malformed attachment-line call is now reported** — DONE
+  2026-08-21. `ComputeAttachmentLine` takes one Weissinger row per strip;
+  a multi-row chordwise lattice trips that and used to return an empty
+  station list, which is byte-for-byte what a wing with no resolvable
+  attachment line returns. `AttachmentLine::Status`
+  (`Ok`/`TooFewStations`/`SizeMismatch`) and `Valid()` separate them,
+  pinned by `TestAttachmentLine`.
+
+  **A worse trap surfaced while documenting it**, and no status can catch
+  it: passing the LE row is not just a slice. `StripLeadingEdge` steps a
+  quarter of `strip.Chord` ahead of the bound segment, which is the
+  leading edge only if that row spans the whole chord. On a multi-row
+  stack the LE row's bound vortex sits at a quarter of *its own* panel's
+  chord, so a caller who slices the LE row but keeps section-chord strips
+  gets a plausible wrong answer. Stated at the contract.
 
 ## F. Papers
 
