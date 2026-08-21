@@ -7,10 +7,20 @@
 // tables themselves enforce -- they are functions of (eta, alpha) alone and
 // have never heard of the fan. Every property below is one whose loss would
 // corrupt the measured map SILENTLY, without any magnitude looking wrong.
+//
+// NOTE ON assert(): an earlier revision of this file used it, and in the
+// `windows` preset -- CMAKE_BUILD_TYPE=Release, so NDEBUG -- every check was
+// compiled out and the test passed while verifying nothing. That is why the
+// suites here define their own CHECK. Do not reintroduce assert.
 #include "Aeolion/Solver/SeparationTables.h"
-#include <cassert>
+
 #include <cmath>
-#include <cstdio>
+#include <iostream>
+#include <numbers>
+
+static int failures = 0;
+#define CHECK(cond, msg) \
+    do { if (!(cond)) { std::cerr << "FAIL: " << msg << "\n"; ++failures; } } while (0)
 
 int main() {
     using namespace Aeolion::Solver;
@@ -28,15 +38,15 @@ int main() {
     double prev = f(0.25, 0.0);
     for (double a = 0.5; a <= 40.0; a += 0.5) {
         const double v = f(0.25, a);
-        assert(v <= prev + 1e-12 && "separation point moved AFT with rising incidence");
+        CHECK(v <= prev + 1e-12, "separation point moved AFT with rising incidence at " << a);
         prev = v;
     }
 
     // 2. SIGN CONVENTION: f = 1 attached, f = 0 separated at the LE, so a fan
-    //    that delays separation RAISES f. A silent flip here would inverting
-    //    the paper's headline table without changing one magnitude -- exactly
-    //    the failure a magnitude check cannot catch.
-    assert(f(0.25, 13.0) > f(0.25, 14.0) && "lowering incidence must RAISE f");
+    //    that delays separation RAISES f. A silent flip here would invert the
+    //    paper's headline table without changing one magnitude -- exactly the
+    //    failure a magnitude check cannot catch.
+    CHECK(f(0.25, 13.0) > f(0.25, 14.0), "lowering incidence must RAISE f");
 
     // 3. CLAMPED, and extrapolating to the plate limit rather than freezing.
     //    The measured map reads exactly 0 on the worst strip from alpha 20 up,
@@ -44,18 +54,21 @@ int main() {
     //    differencing two saturated values is not a measurement, and why B1
     //    reports the span mean past that point. Freezing f above zero instead
     //    would deny the model its plate limit and manufacture a fan effect
-    //    where the metric has simply run out of range.
-    assert(f(0.25, 60.0) == 0.0 && "f must reach the plate limit, not freeze");
+    //    where the metric has simply run out of range. The table's last entry
+    //    is 0.06, so a freezing implementation returns that and fails here.
+    CHECK(f(0.25, 60.0) == 0.0, "f must reach the plate limit, not freeze");
     for (double a = 0.0; a <= 120.0; a += 3.0) {
         const double v = f(0.25, a);
-        assert(v >= 0.0 && v <= 1.0 && "f left [0,1]");
+        CHECK(v >= 0.0 && v <= 1.0, "f left [0,1] at alpha " << a << ": " << v);
     }
 
     // 4. SYMMETRIC in incidence -- the table is keyed on |alpha| from the
     //    zero-lift line. The map is swept to negative alpha, so a sign-
-    //    sensitive lookup would corrupt those rows only.
-    assert(std::fabs(f(0.25, -14.0) - f(0.25, 14.0)) < 1e-12 && "lookup not symmetric");
+    //    sensitive lookup would corrupt those rows only. An unsigned lookup
+    //    returns 0.99 for -14 against 0.82 for +14, so this discriminates.
+    CHECK(std::fabs(f(0.25, -14.0) - f(0.25, 14.0)) < 1e-12, "lookup not symmetric");
 
-    std::printf("TestSeparationDelay: monotone, sign, plate limit, symmetry -- OK\n");
-    return 0;
+    if (failures == 0)
+        std::cout << "TestSeparationDelay: monotone, sign, plate limit, symmetry -- OK\n";
+    return failures == 0 ? 0 : 1;
 }

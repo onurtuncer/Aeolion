@@ -112,41 +112,6 @@ const double PoweredBetas[] = {0.0};
 const double FigureAlphas[] = {0.0, 4.0, 8.0};
 const double FigureBetas[] = {-10.0, 0.0, 10.0};
 
-// Resample the body's station list with cosine clustering toward the nose,
-// keeping every original breakpoint so added stations lie exactly on the
-// contract's own piecewise-linear radius law -- the geometry is unchanged,
-// only its discretization is refined. This is the fix SurfaceFlow.h's
-// nose-resolution caveat calls for: at moderate incidence the stagnation
-// point sits a few millimetres from the apex, inside the first panel ring
-// of the contract's 25-station list, where the honest answer is
-// AttachesUpstream rather than a located node. Station spacing is a
-// consumer choice exactly like the azimuthal sector count: the handoff
-// states the shape, not the mesh.
-void RefineNoseStations(Geometry::BodyGeometry& body) {
-    if (body.Stations.size() < 2) return;
-    const double xNose = body.Stations.front().x;
-    const double xTail = body.Stations.back().x;
-    const double depth = NoseRefineFraction * (xNose - xTail);
-
-    std::vector<double> xs;
-    xs.reserve(body.Stations.size() + NoseRefineStations);
-    for (const Geometry::BodyStation& station : body.Stations) xs.push_back(station.x);
-    for (int k = 1; k <= NoseRefineStations; ++k) {
-        const double s =
-            1.0 - std::cos(0.5 * std::numbers::pi * static_cast<double>(k) / NoseRefineStations);
-        xs.push_back(xNose - depth * s);
-    }
-    std::ranges::sort(xs, std::greater<>());
-    const auto duplicates =
-        std::ranges::unique(xs, [](double a, double b) { return std::fabs(a - b) < 1e-9; });
-    xs.erase(duplicates.begin(), duplicates.end());
-
-    std::vector<Geometry::BodyStation> refined;
-    refined.reserve(xs.size());
-    for (const double x : xs) refined.push_back({x, Geometry::RadiusAt(body, x)});
-    body.Stations = std::move(refined);
-}
-
 // One StripSection per single-row panel. The frame is the TRUE CHORD
 // frame -- StripSection's own contract ("ChordDir: leading edge ->
 // trailing edge") -- NOT the panel's: the quarter-to-three-quarter-chord
@@ -457,10 +422,15 @@ int main(int argc, char** argv) {
         return 1;
     }
     contract.Mesh.ChordwisePanels = 1; // one Weissinger row per strip -- the attachment-line contract
-    RefineNoseStations(contract.Body);
-
     PB::LatticeOptions carryOptions; // trim + carry-through: the physical solve
     carryOptions.BodyCircumferentialPanels = BodySectors;
+    // Axial nose resolution, the counterpart to the sector count above. This
+    // used to be a consumer-side resample of contract.Body performed here;
+    // it is now a LatticeOptions knob, because station spacing is a mesh
+    // choice and the contract states shape rather than mesh. See
+    // LatticeOptions::BodyNoseRefineStations for why refinement only.
+    carryOptions.BodyNoseRefineStations = NoseRefineStations;
+    carryOptions.BodyNoseRefineFraction = NoseRefineFraction;
     PB::LatticeBuilder carryBuilder(contract, carryOptions);
     PB::LatticeOptions cleanOptions = carryOptions;
     cleanOptions.CarryThroughLift = false; // true strip geometry for the attachment line
