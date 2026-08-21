@@ -142,12 +142,20 @@ consumer trusting something that is not there.
   representable and `alphaDiskDeg` is exported as a validity monitor
   rather than faked as a table axis. Representing it needs
   once-per-revolution loading, which is a different solver.
-- [ ] **C3. Decide whether `SolveResult::CDi` becomes the Trefftz value.**
-  The far-field integral is the trustworthy one on a coupled
-  configuration; the near-field number is still what the field returns,
-  with the Trefftz result computed alongside. Making the far-field value
-  the default is a behaviour change to a tested field and wants its own
-  decision, not a drive-by.
+- [x] **C3. `SolveResult::CDi` does NOT become the Trefftz value** —
+  DECIDED 2026-08-21, against the change, for three independent reasons.
+  Propeller thrust is `-Di` (`PanelBuilder.h`) and `CDi = Di/(qS)`, so
+  changing one breaks the identity and changing both breaks the rotor. A
+  rotating-frame rotor sheds a *helical* wake, which is not what a plane
+  at downstream infinity models. And the coupled solver calls `Solve`
+  ~1000× per condition without ever reading `CDi`, so an O(strips²) wake
+  integral on every call would be paid entirely in sweeps that discard it.
+  The real defect was never the default — it was that `SolveResult::CDi`
+  documented itself as "induced drag" with no hint that it goes negative
+  at zero lift and fits e = 1.53 on a coupled configuration. That trap is
+  now documented at the point of use, pointing to `TrefftzPlane.h`, which
+  stays opt-in. A consumer who reads the field now learns the trap; one
+  who wants the far-field number asks for it by name.
 
 ## D. Assumptions to revisit
 

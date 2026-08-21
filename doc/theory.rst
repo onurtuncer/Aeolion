@@ -196,7 +196,9 @@ via LAPACK's ``dgetrf`` (partial-pivoting LU) and re-solved with
 central-difference stability sweep.
 
 **Force and moment integration.** Computed by the **near-field method**,
-not a Trefftz-plane integration. At each vortex panel's bound-vortex
+not a Trefftz-plane integration. That choice is deliberate and it has a
+consequence for induced drag specifically on coupled configurations; see
+the Trefftz-plane section below. At each vortex panel's bound-vortex
 midpoint :math:`\mathbf{m}_i = \tfrac{1}{2}(\mathbf{A}_i+\mathbf{B}_i)`,
 sum the velocity induced by every *other* singularity (vortices with their
 bound segment included, sources) plus :math:`\mathbf{V}_{kin}(\mathbf{m}_i)`
@@ -1675,6 +1677,26 @@ fuselage carries about 9% of the total, and using the configuration
 :math:`0.965` for the wing's own lift. The integral is the same either
 way; only the comparison differs.
 
+**Which value ``Solve`` returns.** The near-field one.
+``SolveResult::CDi`` is *not* replaced by the Trefftz result, and the
+far-field integral stays opt-in through ``TrefftzInducedDrag``. Three
+reasons, each sufficient alone. Propeller thrust is :math:`-D_i`
+(``PanelBuilder.h``) and :math:`C_{D_i} = D_i / (qS)`, so changing one of
+them breaks the identity and changing both breaks the rotor. A
+rotating-frame rotor sheds a *helical* wake, which is not what a plane at
+downstream infinity models -- there the far-field construct is not merely
+costly but wrong. And the viscous coupling calls ``Solve`` on the order of
+a thousand times per condition without ever reading ``CDi``, so an
+:math:`O(N_{\text{strips}}^2)` wake integral on every call would be paid
+entirely in sweeps that discard it.
+
+The defect that remains is therefore one of signposting rather than of
+default, and it is fixed where it bites: ``SolveResult::CDi`` now carries
+the near-field caveat in its own documentation, so a consumer reading the
+field learns that it goes negative at zero lift on a coupled
+configuration, instead of discovering it from a drag polar that does not
+close.
+
 Disk induction: what a rotor does upstream of itself
 -----------------------------------------------------
 
@@ -1978,6 +2000,18 @@ Vortex lattice methods are potential-flow (inviscid), so
 ``Solver::SolveResult::CDi`` is **induced drag only**. Total drag needs a
 separate viscous ("profile"/"parasite") estimate via the classic
 component buildup method (Raymer; Hoerner :cite:`hoerner1965fluiddynamicdrag`):
+
+.. warning::
+
+   ``SolveResult::CDi`` is the **near-field** value, and on a configuration
+   with a body it is the wrong number to build a drag polar on: it goes
+   negative at zero lift, and an incidence sweep of the airframe in
+   ``tests/Data`` fits to an Oswald efficiency of 1.53, which no planar
+   wing can have. Lift and the moments are unaffected -- the same absolute
+   error is negligible beside lift and comparable with induced drag. On a
+   bare wing near and far field agree to 0.4%. Use ``TrefftzInducedDrag``
+   (see the Trefftz-plane section above) when the induced drag itself
+   matters and a body is present.
 
 .. math::
 
