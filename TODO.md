@@ -224,37 +224,30 @@ consumer trusting something that is not there.
   corners on the axis, and the base cap is panelled as **concentric
   annuli**, so a single-valued-in-x radius law cannot describe its corners.
 
-- [ ] **E4. One condition costs 380x normal, and the cause is not yet
-  known.** Found 2026-08-21 during B5's fine-grid sweep. `alpha = 21,
-  Tc = 0.5` took **40,741 s (11.3 h)**; every other row at that incidence
-  took 107-163 s. The output is *normal in every respect* - same 1000
-  iterations as its neighbours, residual 0.6307 against 0.5527 at 20 and
-  0.6627 at 22, `fMean` 0.6787 interpolating smoothly between them, cycle
-  fluctuation 5.45e-08. Same iteration count and same quality for 380x the
-  wall time, so the cost is **inside** the iterations.
+- [x] **E4. The 380x condition was the MACHINE, not the solver** —
+  RESOLVED 2026-08-21, and the note it asked for is this one.
 
-  **A first explanation was recorded here and was wrong.** It said the
-  inner section root-find was burning its budget. There is no inner
-  iterative solve: `PostStallSection.h` contains exactly one loop, a
-  fixed-count stall scan used for reporting, and the coupling is a relaxed
-  fixed point with no nested solve. That mechanism does not exist; it was
-  asserted from the signature rather than checked.
+  Re-running `alpha = 21, Tc = 0.5` on an idle machine took **113 s**
+  against the original 40,741 s. That alone was weak evidence, since a
+  cold start takes a different continuation path (B5) and `fMean` confirmed
+  the state differed (0.6737 vs 0.6787). The decisive evidence arrived
+  from the environment instead: the machine runs at **254 MB free of
+  8 GB** (3%), `Get-Process` itself threw `OutOfMemoryException`, and
+  **two long sweeps were killed mid-run** with truncated JSON and empty
+  stderr — the same silent kill that ended the first B4 attempt.
 
-  Two candidates remain, distinguishable by one experiment. **Denormal
-  arithmetic** fits the signature exactly - identical operations,
-  identical results, two orders of magnitude slower - and would arise if a
-  strip's circulation decayed toward 1e-320. **Machine contention** is the
-  dull alternative, though 11.3 h of it is implausible. Re-running the
-  condition on an idle machine separates them: slow again means
-  data-dependent, fast means contention. A cold start changes the
-  continuation path (B5), so a negative result is the weaker evidence.
+  A machine thrashing at 3% free memory produces exactly the observed
+  signature: identical arithmetic, identical iterations, identical
+  results, orders of magnitude of wall time, because `seconds` is
+  `steady_clock` and measures wall rather than CPU. Denormal arithmetic —
+  the other candidate — would have slowed all five Tc rows at that
+  incidence, since they share the flow state. It slowed exactly one.
 
-  Why it matters either way: it is **invisible to the shipped 2-degree
-  map**, which skips alpha = 21, and because no outer-loop quantity is
-  disturbed a consumer meets it as an apparent *hang* rather than a
-  diagnosable condition. If denormals, the fix is flush-to-zero; if
-  contention, there is nothing to fix and this note should be deleted.
-  Not a correctness defect: the numbers are sound and B5 is unaffected.
+  **Operational consequence, which is the part worth keeping:** long
+  sweeps on this machine are not reliable. Two of the last four were
+  killed. A multi-hour sweep should be chunked, or run when memory is
+  actually free, and a truncated JSON with empty stderr should be read as
+  a kill rather than as a solver fault.
 
 - [x] **E3. A malformed attachment-line call is now reported** — DONE
   2026-08-21. `ComputeAttachmentLine` takes one Weissinger row per strip;
@@ -327,6 +320,7 @@ Short index. Full detail lives where the work does.
 | `fMin` saturates at 0 past α = 20 — a difference of saturated values is not a measurement | `InductionMapExport.cpp` |
 | Overlap-resolved VPM is a separate project ([onurtuncer/VPM](https://github.com/onurtuncer/VPM)); five recorded rules plus the RK2 midpoint-source rule | `ParticleWake.h` |
 | BEMT is a separate project; no dependency either way | `CLAUDE.md` |
+| This machine runs at ~3% free memory; long sweeps get silently killed (truncated JSON, empty stderr) and wall-clock timings can be absurd | TODO E4 |
 | `assert()` is compiled out — the `windows` preset is Release, so NDEBUG. Tests must use the suites' own `CHECK` macro | `TestSeparationDelay.cpp` header note |
 | The base cap is panelled as concentric annuli; `RadiusAt` is single-valued in x and cannot describe its corners | `TestBodyNoseRefine` |
 

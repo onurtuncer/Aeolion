@@ -161,12 +161,41 @@ struct SurfaceSample {
  * Stations do NOT wrap (the patch has a nose end and a tail end); sectors
  * do, because a body of revolution closes on itself azimuthally.
  */
+/**
+ * Why a surface grid may be unavailable.
+ *
+ * `Valid()` is derived from the sample counts, so it answers "can I index
+ * this?" and not "why not?" -- and the causes are not interchangeable. A
+ * misspelled surface name, a patch that carries no topology, and a patch
+ * whose topology contradicts itself are three different problems, and one of
+ * them is not a problem at all: the fuselage BASE CAP is a flat disc stacked
+ * in rings at a single axial station, so its (station, sector) pair is not a
+ * unique key and it is declined BY DESIGN. A caller that cannot tell that
+ * apart from a malformed request has to guess, and the natural guess -- that
+ * the surface name is wrong -- is the wrong one.
+ */
+enum class SurfaceGridStatus {
+    Ok,
+    NoSystem,        ///< The field carries no solved system.
+    NoSuchSurface,   ///< No panel carries this surface tag.
+    Unindexed,       ///< A panel has no (StationIndex, SectorIndex). The base cap is this.
+    TooSmall,        ///< Fewer stations or sectors than a difference stencil needs.
+    IncompleteGrid,  ///< Member count does not fill station x sector: a hole or a duplicate.
+    DuplicateKey,    ///< Two panels claim one slot; the stated topology is a lie.
+};
+
 struct SurfaceGrid {
     std::string Surface;
     int Stations = 0;
     int Sectors = 0;
     std::vector<SurfaceSample> Samples; ///< Row-major, [station * Sectors + sector].
     double MeanSpeed = 0.0;             ///< Patch-average |V_t|, the scale a stall test is measured against.
+
+    /**
+     * Why Samples may be unusable. Ok is the only value for which Valid()
+     * is true; the rest distinguish a declined patch from a malformed one.
+     */
+    SurfaceGridStatus Status = SurfaceGridStatus::Ok;
 
     [[nodiscard]] bool Valid() const {
         return Stations >= MinSurfaceStations && Sectors >= MinSurfaceSectors &&
@@ -237,7 +266,10 @@ inline void SurfaceBasis(const SurfaceGrid& grid, int i, int j, Vec3& ai, Vec3& 
 [[nodiscard]] inline SurfaceGrid BuildSurfaceGrid(const FlowField& field, const std::string& surface) {
     SurfaceGrid grid;
     grid.Surface = surface;
-    if (!field.System) return grid;
+    if (!field.System) {
+        grid.Status = SurfaceGridStatus::NoSystem;
+        return grid;
+    }
     const std::vector<SourcePanel>& sources = field.System->Sources;
 
     // Extent of the index space, and a rejection of anything unindexed.
@@ -245,17 +277,30 @@ inline void SurfaceBasis(const SurfaceGrid& grid, int i, int j, Vec3& ai, Vec3& 
     int members = 0;
     for (const SourcePanel& panel : sources) {
         if (panel.Surface != surface) continue;
-        if (panel.StationIndex < 0 || panel.SectorIndex < 0) return grid; // unstructured: decline
+        if (panel.StationIndex < 0 || panel.SectorIndex < 0) {
+            // Unstructured: decline. The base cap arrives here, by design.
+            grid.Status = SurfaceGridStatus::Unindexed;
+            return grid;
+        }
         maxStation = std::max(maxStation, panel.StationIndex);
         maxSector = std::max(maxSector, panel.SectorIndex);
         ++members;
     }
-    if (members == 0) return grid;
+    if (members == 0) {
+        grid.Status = SurfaceGridStatus::NoSuchSurface;
+        return grid;
+    }
 
     const int stations = maxStation + 1;
     const int sectors = maxSector + 1;
-    if (stations < MinSurfaceStations || sectors < MinSurfaceSectors) return grid;
-    if (members != stations * sectors) return grid; // a hole or a duplicate
+    if (stations < MinSurfaceStations || sectors < MinSurfaceSectors) {
+        grid.Status = SurfaceGridStatus::TooSmall;
+        return grid;
+    }
+    if (members != stations * sectors) { // a hole or a duplicate
+        grid.Status = SurfaceGridStatus::IncompleteGrid;
+        return grid;
+    }
 
     grid.Stations = stations;
     grid.Sectors = sectors;
@@ -271,7 +316,10 @@ inline void SurfaceBasis(const SurfaceGrid& grid, int i, int j, Vec3& ai, Vec3& 
                                      static_cast<std::size_t>(sectors) +
                                  static_cast<std::size_t>(panel.SectorIndex);
         if (filled[slot]) { // duplicate key: the topology is a lie, decline the whole patch
-            return SurfaceGrid{};
+            SurfaceGrid rejected;
+            rejected.Surface = surface;
+            rejected.Status = SurfaceGridStatus::DuplicateKey;
+            return rejected;
         }
         filled[slot] = true;
 
