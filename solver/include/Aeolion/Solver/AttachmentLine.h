@@ -160,8 +160,33 @@ struct AttachmentStation {
 };
 
 /** The attachment line across a lifting surface, one entry per strip. */
+/**
+ * Why an empty result needs a reason attached.
+ *
+ * ComputeAttachmentLine takes ONE Weissinger row per spanwise strip, and
+ * returns an empty station list when that contract is not met. Without a
+ * status, "no attachment line" and "you handed me the wrong panels" are the
+ * same answer -- and the second is by far the more likely, because a
+ * multi-row chordwise lattice has more panels than strips and trips it every
+ * time. A caller who gets nothing back should be able to tell which of those
+ * happened without reading this header.
+ */
+enum class AttachmentLineStatus {
+    Ok,
+    TooFewStations,   ///< Fewer than two strips: a leading-edge direction needs neighbours.
+    SizeMismatch,     ///< panels/strips/localVelocity are not one-to-one. See MultiRow note.
+};
+
 struct AttachmentLine {
     std::vector<AttachmentStation> Stations;
+
+    /**
+     * Why Stations may be empty. Ok with an empty list means the geometry
+     * genuinely resolved nothing; anything else means the call was malformed.
+     */
+    AttachmentLineStatus Status = AttachmentLineStatus::Ok;
+
+    [[nodiscard]] bool Valid() const { return Status == AttachmentLineStatus::Ok; }
 };
 
 /** Tuning for an attachment-line computation. */
@@ -245,6 +270,17 @@ namespace Detail {
  * Strips must be ordered along the span, because the leading edge's own
  * direction is differenced from neighbouring stations -- there is no other
  * way to know which way a leading edge runs.
+ *
+ * MULTI-ROW LATTICES. A chordwise stack has more panels than strips, so a
+ * caller must pass the LEADING-EDGE row only. That is not just a slice: the
+ * leading edge is computed a quarter of `strip.Chord` ahead of the bound
+ * segment, which lands on the leading edge only if the row's bound vortex is
+ * at the strip's own quarter chord. Passing the LE row of a multi-row stack
+ * with section-chord strips puts the leading edge too far forward by a
+ * quarter of the difference. Supply strips whose Chord is that row's.
+ *
+ * A mismatch is reported through AttachmentLine::Status rather than as an
+ * empty result that looks like a geometric outcome.
  */
 [[nodiscard]] inline AttachmentLine ComputeAttachmentLine(
     const std::vector<Panel>& panels, const std::vector<StripSection>& strips,
@@ -252,7 +288,22 @@ namespace Detail {
     const AttachmentLineOptions& options = {}) {
     AttachmentLine line;
     const std::size_t n = panels.size();
-    if (n < 2 || strips.size() != n || localVelocity.size() != n) return line;
+    if (strips.size() != n || localVelocity.size() != n) {
+        // The overwhelmingly likely cause is a multi-row chordwise lattice:
+        // pass the LEADING-EDGE row only, one panel per strip. Note that
+        // doing so is not merely a slicing exercise -- StripLeadingEdge
+        // steps a quarter of the STRIP chord ahead of the bound segment,
+        // which is the leading edge only when that row spans the whole
+        // chord. On a multi-row lattice the leading-edge row's own bound
+        // vortex sits at a quarter of ITS panel's chord, so a caller must
+        // supply strips whose Chord is the panel's, not the section's.
+        line.Status = AttachmentLineStatus::SizeMismatch;
+        return line;
+    }
+    if (n < 2) {
+        line.Status = AttachmentLineStatus::TooFewStations;
+        return line;
+    }
 
     // Leading-edge points first: the leading edge's DIRECTION is a difference
     // between neighbouring stations, so every point has to exist before any
