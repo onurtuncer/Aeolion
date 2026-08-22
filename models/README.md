@@ -211,13 +211,14 @@ optimistic drag polar.
   6.4% at 20°, 15.5% at 30°. *Second, not correctable here:* the in-plane
   force and hub moment of a disk at incidence are absent entirely, since
   the generating solver is axisymmetric end to end.
-- `advanceRatioAxial = advanceRatio · cos(alphaDisk)` — the corrected
-  value, **exposed but deliberately NOT substituted into the table
-  lookup**. Substituting is the better approximation *and* a behaviour
-  change to a shipped model, so it is offered rather than imposed. At the
-  conditions the tables were generated at, alphaDisk is zero and the two
-  are identical: the divergence is entirely a use-time question, which is
-  why the monitor is where it is raised.
+- `advanceRatioAxial = advanceRatio · cos(alphaDisk)` — **the variable the
+  propulsor tables are indexed by** (decision of record, 2026-08-22). A
+  propeller advances on the component of the free stream along its own
+  axis, so `V/(nD)` is the wrong argument off-axis, high by 1/cos(alphaDisk).
+  At the conditions the tables were generated at alphaDisk is zero and the
+  two are identical, so **no tabulated value depends on this** — it changes
+  only where an off-axis consumer lands in them. `advanceRatio` remains
+  defined and output, as the geometric advance ratio.
 - `phiWDeg = atan2(sinβ, sinα·cosβ)` — crossflow azimuth, 0 in the
   pitch plane
 - `phat = p·b/(2V)`, `qhat = q·c̄/(2V)`, `rhat = r·b/(2V)` (the

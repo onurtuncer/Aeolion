@@ -503,16 +503,16 @@ def build(args):
                description="Validity monitor: angle between the free stream and the "
                            "rotor axis. The propulsor model is axial-inflow only. Two "
                            "errors grow with this angle and they are not the same size. "
-                           "FIRST ORDER, and correctable: the propulsor tables are "
-                           "indexed by advanceRatio = V/(nD) on the FULL free stream, "
-                           "while a propeller advances on the axial component only, so "
-                           "the tables are read at a J that is high by 1/cos(alphaDisk) "
-                           "-- 1.5% at 10 deg, 6.4% at 20 deg, 15.5% at 30 deg. "
-                           "advanceRatioAxial carries the corrected value. SECOND, and "
-                           "not correctable here: the in-plane force and hub moment a "
-                           "disk at incidence develops are absent entirely, because the "
+                           "FIRST ORDER, and now CORRECTED: a propeller advances on "
+                           "the axial component of the free stream, so the propulsor "
+                           "tables are indexed by advanceRatioAxial = J*cos(alphaDisk) "
+                           "rather than by J, which would be high by 1/cos(alphaDisk) "
+                           "-- 1.5% at 10 deg, 6.4% at 20 deg, 15.5% at 30 deg. SECOND, "
+                           "and NOT corrected: the in-plane force and hub moment a disk "
+                           "at incidence develops are absent entirely, because the "
                            "generating solver is axisymmetric end to end and "
-                           "representing them needs once-per-revolution loading.",
+                           "representing them needs once-per-revolution loading. That "
+                           "residual error is what this monitor is for.",
                calc=app("times",
                         app("arccos", app("times",
                                           app("cos", deg2rad(ci("alphaDeg"))),
@@ -530,9 +530,13 @@ def build(args):
         # question, which is why the monitor is the right place to raise it.
         m.variable("advanceRatioAxial", "advanceRatio", "nd", symbol="J_ax",
                    description="advanceRatio reduced to the axial component, "
-                               "J*cos(alphaDisk). The value the propulsor tables would "
-                               "be indexed by if disk incidence were carried; equal to "
-                               "advanceRatio at zero disk incidence.",
+                               "J*cos(alphaDisk). THIS is what the propulsor tables are "
+                               "indexed by: a propeller advances on the component of "
+                               "the free stream along its own axis. Equal to "
+                               "advanceRatio at zero disk incidence, which is where the "
+                               "tables were generated, so no tabulated value depends on "
+                               "the distinction -- only where a consumer lands in them "
+                               "when off-axis.",
                    calc=app("times", ci("advanceRatio"),
                             app("cos", deg2rad(ci("alphaDiskDeg")))),
                    is_output=True)
@@ -821,7 +825,15 @@ def build(args):
               "the superposition measurement forced.")
     axis_var = {"alphaBp": "alphaDeg", "betaBp": "betaDeg", "alphaRateBp": "alphaDeg",
                 "alphaParasiteBp": "alphaDeg", "aileronBp": "aileronDeg",
-                "jBp": "advanceRatio", "jVaneBp": "advanceRatio",
+                # The propulsor tables index on the AXIAL advance ratio, not on
+                # advanceRatio. A propeller advances on the component of the
+                # free stream along its own axis, so at disk incidence
+                # V/(nD) is the wrong argument -- high by 1/cos(alphaDisk),
+                # which is 6.4% at 20 degrees and 15.5% at 30. At the
+                # conditions these tables were GENERATED at, alphaDisk is zero
+                # and the two are identical, so this changes no tabulated
+                # value; it changes where a consumer lands in them off-axis.
+                "jBp": "advanceRatioAxial", "jVaneBp": "advanceRatioAxial",
                 "alphaCouplingBp": "alphaDeg", "tcBp": "thrustCoefficient"}
     VANE_POS = ("Bottom", "Left", "Top", "Right")
     for name, bp_ids, vals, tname, desc in (e[:5] for e in tables):
@@ -927,6 +939,43 @@ def build(args):
             {"alphaDeg": top["alphaDeg"]},
             {"aeroCD0": top["CD0"]},
             1e-9))
+
+    if prop:
+        # The propulsor tables had NO checkData at all until this: all six
+        # existing shots exercise aero* quantities, so the whole prop path --
+        # breakpoints, ordering, interpolation, and the variable the tables
+        # are indexed BY -- was unpinned. That gap is why the switch to
+        # advanceRatioAxial could be made and verified green without any
+        # check having looked at a propulsor table.
+        #
+        # This shot is deliberately taken at ZERO disk incidence, which is
+        # where every row of the map was solved. There it also pins the claim
+        # the switch rests on: alphaDisk = 0 makes advanceRatioAxial equal to
+        # advanceRatio exactly, so no tabulated value depends on the change,
+        # only where an off-axis consumer lands. An off-axis shot cannot be
+        # generated at all -- there is no solve at disk incidence to generate
+        # it from, which is the whole of C2.
+        base_rows = [r for r in prop["rows"]
+                     if r.get("mode") in (None, "none", "baseline") and r.get("deltaDeg", 0.0) == 0.0]
+        if base_rows:
+            js = sorted({r["J"] for r in base_rows})
+            probe = min(base_rows, key=lambda r: abs(r["J"] - js[len(js) // 2]))
+            shots.append((
+                "propEncodingAtBreakpoint",
+                "Encoding pin for the propulsor path, which carried no checkData "
+                "before. At an exact advance-ratio breakpoint the gridded lookup must "
+                "return the stored thrust and torque coefficients. Taken at zero disk "
+                "incidence, where the tables were solved and where advanceRatioAxial "
+                "-- the variable they are indexed by -- equals advanceRatio exactly.",
+                # Supply the AXIS variable directly, as every aero shot does with
+                # alphaDeg. Feeding V and n instead would require the checker to
+                # chain V -> advanceRatio -> advanceRatioAxial through MathML,
+                # which it does not do -- it evaluates tables from the inputs it
+                # is given. Learned by trying it: the shot failed with
+                # "inputs ['advanceRatioAxial'] not supplied".
+                {"advanceRatioAxial": probe["J"]},
+                {"propCT": probe["ct"], "propCQ": probe["cq"]},
+                1e-6))
 
     for name, desc, inputs, outputs, tol in shots:
         d.open("staticShot", name=name)

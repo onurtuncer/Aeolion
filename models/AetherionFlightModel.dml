@@ -103,7 +103,7 @@
     </calculation>
   </variableDef>
   <variableDef name="angleOfAttackDisk" varID="alphaDiskDeg" units="deg" axisSystem="body">
-    <description>Validity monitor: angle between the free stream and the rotor axis. The propulsor model is axial-inflow only. Two errors grow with this angle and they are not the same size. FIRST ORDER, and correctable: the propulsor tables are indexed by advanceRatio = V/(nD) on the FULL free stream, while a propeller advances on the axial component only, so the tables are read at a J that is high by 1/cos(alphaDisk) -- 1.5% at 10 deg, 6.4% at 20 deg, 15.5% at 30 deg. advanceRatioAxial carries the corrected value. SECOND, and not correctable here: the in-plane force and hub moment a disk at incidence develops are absent entirely, because the generating solver is axisymmetric end to end and representing them needs once-per-revolution loading.</description>
+    <description>Validity monitor: angle between the free stream and the rotor axis. The propulsor model is axial-inflow only. Two errors grow with this angle and they are not the same size. FIRST ORDER, and now CORRECTED: a propeller advances on the axial component of the free stream, so the propulsor tables are indexed by advanceRatioAxial = J*cos(alphaDisk) rather than by J, which would be high by 1/cos(alphaDisk) -- 1.5% at 10 deg, 6.4% at 20 deg, 15.5% at 30 deg. SECOND, and NOT corrected: the in-plane force and hub moment a disk at incidence develops are absent entirely, because the generating solver is axisymmetric end to end and representing them needs once-per-revolution loading. That residual error is what this monitor is for.</description>
     <calculation>
       <math xmlns="http://www.w3.org/1998/Math/MathML">
         <apply><times/><apply><arccos/><apply><times/><apply><cos/><apply><times/><ci>alphaDeg</ci><apply><divide/><pi/><cn>180</cn></apply></apply></apply><apply><cos/><apply><times/><ci>betaDeg</ci><apply><divide/><pi/><cn>180</cn></apply></apply></apply></apply></apply><apply><divide/><cn>180</cn><pi/></apply></apply>
@@ -112,7 +112,7 @@
     <isOutput/>
   </variableDef>
   <variableDef name="advanceRatio" varID="advanceRatioAxial" units="nd" symbol="J_ax">
-    <description>advanceRatio reduced to the axial component, J*cos(alphaDisk). The value the propulsor tables would be indexed by if disk incidence were carried; equal to advanceRatio at zero disk incidence.</description>
+    <description>advanceRatio reduced to the axial component, J*cos(alphaDisk). THIS is what the propulsor tables are indexed by: a propeller advances on the component of the free stream along its own axis. Equal to advanceRatio at zero disk incidence, which is where the tables were generated, so no tabulated value depends on the distinction -- only where a consumer lands in them when off-axis.</description>
     <calculation>
       <math xmlns="http://www.w3.org/1998/Math/MathML">
         <apply><times/><ci>advanceRatio</ci><apply><cos/><apply><times/><ci>alphaDiskDeg</ci><apply><divide/><pi/><cn>180</cn></apply></apply></apply></apply>
@@ -1923,14 +1923,14 @@
     </functionDefn>
   </function>
   <function name="propCTFn">
-    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="advanceRatioAxial" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propCT"/>
     <functionDefn>
       <griddedTableRef gtID="propCTTable_data"/>
     </functionDefn>
   </function>
   <function name="propCQFn">
-    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="advanceRatioAxial" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propCQ"/>
     <functionDefn>
       <griddedTableRef gtID="propCQTable_data"/>
@@ -1985,7 +1985,7 @@
     </functionDefn>
   </function>
   <function name="propDCCXvaneBottomFn">
-    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="advanceRatioAxial" interpolate="linear" extrapolate="neither"/>
     <independentVarRef varID="vaneBottomDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propDCCXvaneBottom"/>
     <functionDefn>
@@ -1993,7 +1993,7 @@
     </functionDefn>
   </function>
   <function name="propDCCXvaneLeftFn">
-    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="advanceRatioAxial" interpolate="linear" extrapolate="neither"/>
     <independentVarRef varID="vaneLeftDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propDCCXvaneLeft"/>
     <functionDefn>
@@ -2001,7 +2001,7 @@
     </functionDefn>
   </function>
   <function name="propDCCXvaneTopFn">
-    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="advanceRatioAxial" interpolate="linear" extrapolate="neither"/>
     <independentVarRef varID="vaneTopDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propDCCXvaneTop"/>
     <functionDefn>
@@ -2009,7 +2009,7 @@
     </functionDefn>
   </function>
   <function name="propDCCXvaneRightFn">
-    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="advanceRatioAxial" interpolate="linear" extrapolate="neither"/>
     <independentVarRef varID="vaneRightDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propDCCXvaneRight"/>
     <functionDefn>
@@ -2017,7 +2017,7 @@
     </functionDefn>
   </function>
   <function name="propDCCYvaneBottomFn">
-    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="advanceRatioAxial" interpolate="linear" extrapolate="neither"/>
     <independentVarRef varID="vaneBottomDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propDCCYvaneBottom"/>
     <functionDefn>
@@ -2025,7 +2025,7 @@
     </functionDefn>
   </function>
   <function name="propDCCYvaneLeftFn">
-    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="advanceRatioAxial" interpolate="linear" extrapolate="neither"/>
     <independentVarRef varID="vaneLeftDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propDCCYvaneLeft"/>
     <functionDefn>
@@ -2033,7 +2033,7 @@
     </functionDefn>
   </function>
   <function name="propDCCYvaneTopFn">
-    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="advanceRatioAxial" interpolate="linear" extrapolate="neither"/>
     <independentVarRef varID="vaneTopDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propDCCYvaneTop"/>
     <functionDefn>
@@ -2041,7 +2041,7 @@
     </functionDefn>
   </function>
   <function name="propDCCYvaneRightFn">
-    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="advanceRatioAxial" interpolate="linear" extrapolate="neither"/>
     <independentVarRef varID="vaneRightDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propDCCYvaneRight"/>
     <functionDefn>
@@ -2049,7 +2049,7 @@
     </functionDefn>
   </function>
   <function name="propDCCZvaneBottomFn">
-    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="advanceRatioAxial" interpolate="linear" extrapolate="neither"/>
     <independentVarRef varID="vaneBottomDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propDCCZvaneBottom"/>
     <functionDefn>
@@ -2057,7 +2057,7 @@
     </functionDefn>
   </function>
   <function name="propDCCZvaneLeftFn">
-    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="advanceRatioAxial" interpolate="linear" extrapolate="neither"/>
     <independentVarRef varID="vaneLeftDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propDCCZvaneLeft"/>
     <functionDefn>
@@ -2065,7 +2065,7 @@
     </functionDefn>
   </function>
   <function name="propDCCZvaneTopFn">
-    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="advanceRatioAxial" interpolate="linear" extrapolate="neither"/>
     <independentVarRef varID="vaneTopDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propDCCZvaneTop"/>
     <functionDefn>
@@ -2073,7 +2073,7 @@
     </functionDefn>
   </function>
   <function name="propDCCZvaneRightFn">
-    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="advanceRatioAxial" interpolate="linear" extrapolate="neither"/>
     <independentVarRef varID="vaneRightDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propDCCZvaneRight"/>
     <functionDefn>
@@ -2081,7 +2081,7 @@
     </functionDefn>
   </function>
   <function name="propDCClvaneBottomFn">
-    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="advanceRatioAxial" interpolate="linear" extrapolate="neither"/>
     <independentVarRef varID="vaneBottomDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propDCClvaneBottom"/>
     <functionDefn>
@@ -2089,7 +2089,7 @@
     </functionDefn>
   </function>
   <function name="propDCClvaneLeftFn">
-    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="advanceRatioAxial" interpolate="linear" extrapolate="neither"/>
     <independentVarRef varID="vaneLeftDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propDCClvaneLeft"/>
     <functionDefn>
@@ -2097,7 +2097,7 @@
     </functionDefn>
   </function>
   <function name="propDCClvaneTopFn">
-    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="advanceRatioAxial" interpolate="linear" extrapolate="neither"/>
     <independentVarRef varID="vaneTopDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propDCClvaneTop"/>
     <functionDefn>
@@ -2105,7 +2105,7 @@
     </functionDefn>
   </function>
   <function name="propDCClvaneRightFn">
-    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="advanceRatioAxial" interpolate="linear" extrapolate="neither"/>
     <independentVarRef varID="vaneRightDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propDCClvaneRight"/>
     <functionDefn>
@@ -2113,7 +2113,7 @@
     </functionDefn>
   </function>
   <function name="propDCCmvaneBottomFn">
-    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="advanceRatioAxial" interpolate="linear" extrapolate="neither"/>
     <independentVarRef varID="vaneBottomDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propDCCmvaneBottom"/>
     <functionDefn>
@@ -2121,7 +2121,7 @@
     </functionDefn>
   </function>
   <function name="propDCCmvaneLeftFn">
-    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="advanceRatioAxial" interpolate="linear" extrapolate="neither"/>
     <independentVarRef varID="vaneLeftDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propDCCmvaneLeft"/>
     <functionDefn>
@@ -2129,7 +2129,7 @@
     </functionDefn>
   </function>
   <function name="propDCCmvaneTopFn">
-    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="advanceRatioAxial" interpolate="linear" extrapolate="neither"/>
     <independentVarRef varID="vaneTopDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propDCCmvaneTop"/>
     <functionDefn>
@@ -2137,7 +2137,7 @@
     </functionDefn>
   </function>
   <function name="propDCCmvaneRightFn">
-    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="advanceRatioAxial" interpolate="linear" extrapolate="neither"/>
     <independentVarRef varID="vaneRightDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propDCCmvaneRight"/>
     <functionDefn>
@@ -2145,7 +2145,7 @@
     </functionDefn>
   </function>
   <function name="propDCCnvaneBottomFn">
-    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="advanceRatioAxial" interpolate="linear" extrapolate="neither"/>
     <independentVarRef varID="vaneBottomDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propDCCnvaneBottom"/>
     <functionDefn>
@@ -2153,7 +2153,7 @@
     </functionDefn>
   </function>
   <function name="propDCCnvaneLeftFn">
-    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="advanceRatioAxial" interpolate="linear" extrapolate="neither"/>
     <independentVarRef varID="vaneLeftDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propDCCnvaneLeft"/>
     <functionDefn>
@@ -2161,7 +2161,7 @@
     </functionDefn>
   </function>
   <function name="propDCCnvaneTopFn">
-    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="advanceRatioAxial" interpolate="linear" extrapolate="neither"/>
     <independentVarRef varID="vaneTopDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propDCCnvaneTop"/>
     <functionDefn>
@@ -2169,7 +2169,7 @@
     </functionDefn>
   </function>
   <function name="propDCCnvaneRightFn">
-    <independentVarRef varID="advanceRatio" interpolate="linear" extrapolate="neither"/>
+    <independentVarRef varID="advanceRatioAxial" interpolate="linear" extrapolate="neither"/>
     <independentVarRef varID="vaneRightDeg" interpolate="linear" extrapolate="neither"/>
     <dependentVarRef varID="propDCCnvaneRight"/>
     <functionDefn>
@@ -2321,6 +2321,30 @@
           <signalUnits>nd</signalUnits>
           <signalValue>0.207518892</signalValue>
           <tol>1e-09</tol>
+        </signal>
+      </checkOutputs>
+    </staticShot>
+    <staticShot name="propEncodingAtBreakpoint">
+      <description>Encoding pin for the propulsor path, which carried no checkData before. At an exact advance-ratio breakpoint the gridded lookup must return the stored thrust and torque coefficients. Taken at zero disk incidence, where the tables were solved and where advanceRatioAxial -- the variable they are indexed by -- equals advanceRatio exactly.</description>
+      <checkInputs>
+        <signal>
+          <signalName>advanceRatioAxial</signalName>
+          <signalUnits>deg</signalUnits>
+          <signalValue>0.5</signalValue>
+        </signal>
+      </checkInputs>
+      <checkOutputs>
+        <signal>
+          <signalName>propCT</signalName>
+          <signalUnits>nd</signalUnits>
+          <signalValue>0.082438634</signalValue>
+          <tol>1e-06</tol>
+        </signal>
+        <signal>
+          <signalName>propCQ</signalName>
+          <signalUnits>nd</signalUnits>
+          <signalValue>0.00939135863</signalValue>
+          <tol>1e-06</tol>
         </signal>
       </checkOutputs>
     </staticShot>

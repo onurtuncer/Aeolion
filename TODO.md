@@ -205,12 +205,21 @@ consumer trusting something that is not there.
   **Second, not correctable here:** the in-plane force and hub moment are
   absent entirely.
 
-  `advanceRatioAxial` is **exposed, not substituted** into the lookup.
-  Substituting is the better approximation *and* a behaviour change to a
-  shipped model, so it is offered rather than imposed — and at the
-  conditions the tables were generated at, alphaDisk is zero and the two
-  agree exactly. **Open decision for the user:** whether to index the
-  propulsor tables on the axial value.
+  **Decided 2026-08-22 by the user: take the better approximation.** All 26
+  propulsor function references now index on `advanceRatioAxial`. No
+  tabulated value changes — alphaDisk is zero at every solved condition, so
+  the two agree exactly there; it changes only where an off-axis consumer
+  lands.
+
+  That switch also exposed a coverage hole worth more than the switch: **no
+  staticShot exercised a propulsor table at all.** All six pinned `aero*`
+  quantities, so the entire prop path — breakpoints, ordering,
+  interpolation, and the variable the tables are indexed *by* — was
+  unpinned, and the rebinding verified green without any check having
+  looked at it. `propEncodingAtBreakpoint` closes that, at zero disk
+  incidence where the map was solved. An off-axis shot cannot be generated:
+  there is no solve at disk incidence to generate one from, which is C2
+  itself.
 
   Corrected en route: I first reported the monitor did not exist. It does
   — I had checked `PropulsionMapExport.cpp`, where alphaDisk is only a
