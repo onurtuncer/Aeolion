@@ -374,9 +374,17 @@ Then per paper:
   the transition's μ range. Thrust does fall monotonically with airspeed,
   which is the right qualitative shape and is not a trim schedule.
 
-  **Still open:** whether the duct's own lip suction is reported
-  separately, and the AIAA duplicate-submission position against Part II.
-  Both are the user's calls.
+  **Lip suction — SETTLED 2026-08-22 by the user: not reported
+  separately, one paper carries it.** That is already the state: the
+  SciTech paper reports it quantitatively as one line of its thrust split
+  (+0.26 N of bore-lip suction), and nothing else reports it. The
+  fan-induction paper contains no lip force at all and cannot — it models
+  the fan as a bare actuator disk and panels no duct — so a scope note now
+  says so and points to the single account, since a reader who sees
+  "ducted fan" will otherwise wonder where the duct's own force went.
+
+  **Still open:** the AIAA duplicate-submission position against Part II.
+  The user's call.
 
 - [ ] **F7.** Cite the JOSS paper's DOI for the software once minted.
 
