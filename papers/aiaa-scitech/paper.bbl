@@ -1,0 +1,216 @@
+\begin{thebibliography}{10}
+\newcommand{\enquote}[1]{``#1''}
+
+\bibitem{goc2021}
+Goc, K.~A., Lehmkuhl, O., Park, G.~I., Bose, S.~T., and Moin, P.,
+  \enquote{Large Eddy Simulation of Aircraft at Affordable Cost: A Milestone in
+  Computational Fluid Dynamics,} {\em Flow\/}, Vol.~1, 2021.
+
+\bibitem{avl}
+Drela, M. and Youngren, H., \enquote{{AVL} -- Athena Vortex Lattice,}
+  \url{https://web.mit.edu/drela/Public/web/avl/}, Software, accessed 2026.
+
+\bibitem{openvsp2022}
+McDonald, R.~A. and Gloudemans, J.~R., \enquote{Open Vehicle Sketch Pad: An
+  Open Source Parametric Geometry and Analysis Tool for Conceptual Aircraft
+  Design,} {\em AIAA SciTech 2022 Forum\/}, 2022.
+
+\bibitem{xrotor}
+Drela, M. and Youngren, H., \enquote{{XROTOR}: An Interactive Program for the
+  Design and Analysis of Ducted and Free-Tip Propellers and Windmills,}
+  \url{https://web.mit.edu/drela/Public/web/xrotor/}, Software, accessed 2026.
+
+\bibitem{tugnoli2021}
+Tugnoli, M., Montagnani, D., Syal, M., Droandi, G., and Zanotti, A.,
+  \enquote{Mid-Fidelity Approach to Aerodynamic Simulations of Unconventional
+  {VTOL} Aircraft Configurations,} {\em Aerospace Science and Technology\/},
+  Vol.~115, 2021, pp.~106804.
+
+\bibitem{jois2026}
+Jois, H., Hong, A.~S., and Ansell, P.~J., \enquote{Potential Flow Framework for
+  Design of Aeropropulsive Geometries with Powered Wakes,} {\em Journal of
+  Aircraft\/}, 2026.
+
+\bibitem{kuchemannWeber1953}
+K{\"u}chemann, D. and Weber, J., {\em Aerodynamics of Propulsion\/},
+  McGraw--Hill, New York, 1953.
+
+\bibitem{pereira2008}
+Pereira, J.~L., {\em Hover and Wind-Tunnel Testing of Shrouded Rotors for
+  Improved Micro Air Vehicle Design\/}, Ph.D. thesis, University of Maryland,
+  College Park, MD, 2008.
+
+\bibitem{sutton2016}
+Sutton, G.~P. and Biblarz, O., {\em Rocket Propulsion Elements\/}, John Wiley
+  \& Sons, Hoboken, NJ, 9th ed., 2016.
+
+\bibitem{graf2005}
+Graf, W.~E., {\em Effects of Duct Lip Shaping and Various Control Devices on
+  the Hover and Forward Flight Performance of Ducted Fan {UAVs}\/}, Master's
+  thesis, Virginia Polytechnic Institute and State University, Blacksburg, VA,
+  2005.
+
+\bibitem{gazzaniga1992}
+Gazzaniga, J.~A. and Rose, G.~E., \enquote{Wind Tunnel Performance Results of
+  Swirl Recovery Vanes as Tested with an Advanced High Speed Propeller,} {\em
+  28th Joint Propulsion Conference and Exhibit\/}, 1992, AIAA Paper 92-3770.
+
+\bibitem{katzPlotkin2001}
+Katz, J. and Plotkin, A., {\em Low-Speed Aerodynamics\/}, Cambridge University
+  Press, 2nd ed., 2001.
+
+\bibitem{lee2022}
+Lee, H., Sengupta, B., Araghizadeh, M.~S., and Myong, R.~S., \enquote{Review of
+  Vortex Methods for Rotor Aerodynamics and Wake Dynamics,} {\em Advances in
+  Aerodynamics\/}, Vol.~4, 2022.
+
+\bibitem{murua2012}
+Murua, J., Palacios, R., and Graham, J. M.~R., \enquote{Applications of the
+  Unsteady Vortex-Lattice Method in Aircraft Aeroelasticity and Flight
+  Dynamics,} {\em Progress in Aerospace Sciences\/}, Vol.~55, 2012, pp.~46--72.
+
+\bibitem{ai2021}
+Ai, T., Fan, W., Xu, B., Xiang, C., Zhang, Y., and Zhao, Z.,
+  \enquote{Aerodynamic Analysis and Modeling of Coaxial Ducted Fan Aircraft
+  with the Ceiling Effect,} {\em Engineering Applications of Computational
+  Fluid Mechanics\/}, Vol.~15, No.~1, 2021, pp.~1563--1584.
+
+\bibitem{silva2021mrf}
+Silva, P.~L., Tsoutsanis, P., and Antoniadis, A.~F., \enquote{Simple Multiple
+  Reference Frame for High-Order Solution of Hovering Rotors with and without
+  Ground Effect,} {\em Aerospace Science and Technology\/}, Vol.~111, 2021,
+  pp.~106518.
+
+\bibitem{weissinger1947}
+Weissinger, J., \enquote{The Lift Distribution of Swept-Back Wings,} Tech. Rep.
+  TM 1120, NACA, 1947.
+
+\bibitem{kulfan2008}
+Kulfan, B.~M., \enquote{Universal Parametric Geometry Representation Method,}
+  {\em Journal of Aircraft\/}, Vol.~45, No.~1, 2008, pp.~142--158.
+
+\bibitem{landgrebe1972}
+Landgrebe, A.~J., \enquote{The Wake Geometry of a Hovering Helicopter Rotor and
+  Its Influence on Rotor Performance,} {\em Journal of the American Helicopter
+  Society\/}, Vol.~17, No.~4, 1972, pp.~3--15.
+
+\bibitem{leishman2006}
+Leishman, J.~G., {\em Principles of Helicopter Aerodynamics\/}, Cambridge
+  University Press, 2nd ed., 2006.
+
+\bibitem{vatistas1991}
+Vatistas, G.~H., Kozel, V., and Mih, W.~C., \enquote{A Simpler Model for
+  Concentrated Vortices,} {\em Experiments in Fluids\/}, Vol.~11, No.~1, 1991,
+  pp.~73--76.
+
+\bibitem{leishman2002}
+Leishman, J.~G., Bhagwat, M.~J., and Bagai, A., \enquote{Free-Vortex Filament
+  Methods for the Analysis of Helicopter Rotor Wakes,} {\em Journal of
+  Aircraft\/}, Vol.~39, No.~5, 2002, pp.~759--775.
+
+\bibitem{erhardAlonso2024}
+Erhard, R.~M. and Alonso, J.~J., \enquote{A Quasi-Prescribed Vortex Wake Method
+  Capturing Rotor Wake Distortion,} {\em Proceedings of the Vertical Flight
+  Society 80th Annual Forum\/}, 2024.
+
+\bibitem{ribeiro2023}
+Ribeiro, A. F.~P., Ferreira, C., and Casalino, D., \enquote{On the Use of
+  Filament-Based Free Wake Panel Methods for Preliminary Design of
+  Propeller--Wing Configurations,} {\em Aerospace Science and Technology\/},
+  2023, pp.~108775.
+
+\bibitem{kocurekTangler1977}
+Kocurek, J.~D. and Tangler, J.~L., \enquote{A Prescribed Wake Lifting Surface
+  Hover Performance Analysis,} {\em Journal of the American Helicopter
+  Society\/}, Vol.~22, No.~1, 1977, pp.~24--35.
+
+\bibitem{anderson1965}
+Anderson, D.~G., \enquote{Iterative Procedures for Nonlinear Integral
+  Equations,} {\em Journal of the ACM\/}, Vol.~12, No.~4, 1965, pp.~547--560.
+
+\bibitem{walkerNi2011}
+Walker, H.~F. and Ni, P., \enquote{Anderson Acceleration for Fixed-Point
+  Iterations,} {\em SIAM Journal on Numerical Analysis\/}, Vol.~49, No.~4,
+  2011, pp.~1715--1735.
+
+\bibitem{thwaites1949}
+Thwaites, B., \enquote{Approximate Calculation of the Laminar Boundary Layer,}
+  {\em The Aeronautical Quarterly\/}, Vol.~1, No.~3, 1949, pp.~245--280.
+
+\bibitem{head1958}
+Head, M.~R., \enquote{Entrainment in the Turbulent Boundary Layer,} Tech. Rep.
+  R\&M 3152, Aeronautical Research Council, 1958.
+
+\bibitem{squireYoung1938}
+Squire, H.~B. and Young, A.~D., \enquote{The Calculation of the Profile Drag of
+  Aerofoils,} Tech. Rep. R\&M 1838, Aeronautical Research Council, 1938.
+
+\bibitem{drela1989}
+Drela, M., \enquote{{XFOIL}: An Analysis and Design System for Low Reynolds
+  Number Airfoils,} {\em Low Reynolds Number Aerodynamics\/}, edited by T.~J.
+  Mueller, Vol.~54 of {\em Lecture Notes in Engineering\/}, Springer, Berlin,
+  1989, pp. 1--12.
+
+\bibitem{williams1991}
+Williams, M.~H., Cho, J.-S., and Dalton, W.~N., \enquote{Unsteady Aerodynamic
+  Analysis of Ducted Fans,} {\em Journal of Propulsion and Power\/}, Vol.~7,
+  No.~5, 1991, pp.~800--804.
+
+\bibitem{zhang2021ducted}
+Zhang, T., Qiao, G., Smith, D.~A., Barakos, G.~N., and Kusyumov, A.,
+  \enquote{Parametric Study of Aerodynamic Performance of Equivalent
+  Ducted/Un-Ducted Rotors,} {\em Aerospace Science and Technology\/}, Vol.~117,
+  2021, pp.~106984.
+
+\bibitem{akturkCamci2021}
+Akturk, A. and Camci, C., \enquote{Double-Ducted Fan as an Effective Lip
+  Separation Control Concept for Vertical-Takeoff-and-Landing Vehicles,} {\em
+  Journal of Aircraft\/}, 2021, TODO: confirm volume/issue/pages of the printed
+  version.
+
+\bibitem{glauert1935}
+Glauert, H., \enquote{Airplane Propellers,} {\em Aerodynamic Theory\/}, edited
+  by W.~F. Durand, Vol.~IV, Springer, Berlin, 1935, pp. 169--360.
+
+\bibitem{bontempoManna2013}
+Bontempo, R. and Manna, M., \enquote{Solution of the Flow over a Non-Uniform
+  Heavily Loaded Ducted Actuator Disk,} {\em Journal of Fluid Mechanics\/},
+  Vol.~728, 2013, pp.~163--195.
+
+\bibitem{vanDerWall2024}
+van~der Wall, B.~G., \enquote{Helicopter Rotor in a Propeller Slipstream:
+  Aerodynamic and Rotor Blade Flapping Responses,} {\em Aerospace Science and
+  Technology\/}, 2024, pp.~109341.
+
+\bibitem{kuikLignarolo2016}
+van Kuik, G. A.~M. and Lignarolo, L. E.~M., \enquote{Potential Flow Solutions
+  for Energy Extracting Actuator Disc Flows,} {\em Wind Energy\/}, Vol.~19,
+  No.~8, 2016, pp.~1391--1406.
+
+\bibitem{duivenvoorden2025}
+Duivenvoorden, R.~R., Ribeiro, A. F.~P., Sinnige, T., and Veldhuis, L. L.~M.,
+  \enquote{Slipstream Deformation in Propeller--Wing--Flap Aerodynamic
+  Interaction,} {\em Journal of Aircraft\/}, 2025.
+
+\bibitem{sinnige2018}
+Sinnige, T., Stokkermans, T. C.~A., Ragni, D., Eitelberg, G., and Veldhuis, L.
+  L.~M., \enquote{Aerodynamic and Aeroacoustic Performance of a Propeller
+  Propulsion System with Swirl-Recovery Vanes,} {\em Journal of Propulsion and
+  Power\/}, Vol.~34, No.~6, 2018.
+
+\bibitem{xiongYu2007}
+Xiong, J. and Yu, X., \enquote{Helicopter Rotor-Fuselage Aeroelasticity
+  Modeling and Solution Using the Partition-Iteration Method,} {\em Journal of
+  Sound and Vibration\/}, Vol.~302, No. 4--5, 2007, pp.~821--840.
+
+\bibitem{dixon2014}
+Dixon, S.~L. and Hall, C.~A., {\em Fluid Mechanics and Thermodynamics of
+  Turbomachinery\/}, Butterworth--Heinemann, Oxford, 7th ed., 2014.
+
+\bibitem{li2018srv}
+Li, Q., {\"O}zt{\"u}rk, K., Sinnige, T., Ragni, D., Eitelberg, G., Veldhuis, L.
+  L.~M., and Wang, Y., \enquote{Design and Experimental Validation of
+  Swirl-Recovery Vanes for Propeller Propulsion Systems,} {\em AIAA Journal\/},
+  Vol.~56, No.~12, 2018.
+
+\end{thebibliography}
