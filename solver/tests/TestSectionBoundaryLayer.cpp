@@ -13,6 +13,8 @@
 //     lumped-vortex solve with the boundary layer silenced.
 #include "Aeolion/Solver/SectionBoundaryLayer.h"
 
+#include "Aeolion/Solver/StagnationStrainTables.h"
+
 #include <cmath>
 #include <iostream>
 #include <numbers>
@@ -163,6 +165,44 @@ void TestStagnationSeedThickensAndDrags() {
               << " (a=" << a << ")" << std::endl;
 }
 
+// The two halves of C1 working together: a REAL section geometry through the
+// real Hess-Smith solve produces the strain, the table serves it per
+// (eta, alpha), and the march consumes it. The stub supplier above proves the
+// march reads a number; this proves the number is one the geometry produced.
+void TestRealGeometrySeedsTheMarch() {
+    Aeolion::Geometry::AirfoilSection section;
+    section.Eta = 0.5;
+    section.CoefficientsUpper = {0.22, 0.22, 0.22};
+    section.CoefficientsLower = {-0.22, -0.22, -0.22};
+
+    auto tables = Solver::BuildStagnationStrainTables({section});
+    CHECK(!tables.empty() && !tables[0].AlphaDeg.empty(),
+          "the section produced no strain table");
+
+    Solver::BoundaryLayerSectionModel model;
+    model.StagnationStrain = Solver::MakeStagnationStrainFunction(std::move(tables), {0.5});
+
+    const auto strip = FlatStrip();
+    const double Re = 5e5;
+    const Solver::BoundaryLayerSectionModel bare;
+
+    // The seed must survive the whole path: geometry -> panel solve -> table
+    // -> interpolation -> Thwaites integral -> Squire-Young drag. Any link
+    // returning zero silently reproduces the unseeded march, which is exactly
+    // what the first implementation of the seed did.
+    const double seeded = model(strip, 4.0, Re, 0.0).cd;
+    const double unseeded = bare(strip, 4.0, Re, 0.0).cd;
+    CHECK(seeded > unseeded,
+          "a real section must seed a thicker layer: " << unseeded << " -> " << seeded);
+
+    // And it must still be a section polar, not a runaway: lift is unchanged
+    // in character by a boundary-layer seed at moderate incidence.
+    const auto coef = model(strip, 4.0, Re, 0.0);
+    CHECK(coef.cl > 0.2 && coef.cl < 0.8, "cl left the plausible band: " << coef.cl);
+
+    std::cout << "real-geometry seed: cd " << unseeded << " -> " << seeded << std::endl;
+}
+
 } // namespace
 
 int main() {
@@ -171,6 +211,7 @@ int main() {
     TestReynoldsTrend();
     TestTranspirationDecambers();
     TestStagnationSeedThickensAndDrags();
+    TestRealGeometrySeedsTheMarch();
 
     if (failures == 0) { std::cout << "PASS: TestSectionBoundaryLayer\n"; return 0; }
     std::cerr << failures << " check(s) failed in TestSectionBoundaryLayer\n";

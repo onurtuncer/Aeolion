@@ -145,40 +145,47 @@ consumer trusting something that is not there.
 
 ## C. Method extensions — each wants its own branch
 
-- [~] **C1. The section march can now start from the stagnation state —
-  MECHANISM DONE, supplier outstanding.** Done 2026-08-21.
+- [x] **C1. The section march starts from the stagnation state** — DONE
+  2026-08-21/22, both halves.
 
   The item's premise needed correcting first. `theta = 0` is *not* the
   defect: Thwaites started at a real stagnation point, where Ue ~ a·s,
-  produces θ₀ = √(0.075ν/a) unaided — which is why `MarchSurfaceRun` in
-  `AttachmentBoundaryLayer.h` is already right without a seed, and what
-  `TestAttachmentBoundaryLayer` checks. The defect is that
+  produces θ₀ = √(0.075ν/a) unaided — which is why `MarchSurfaceRun` is
+  already right without a seed. The defect is that
   `BoundaryLayerSectionModel` is a **camber line**: no thickness, so no
-  stagnation region exists, `ue` is already finite at station 0, and
-  starting there discards the whole upstream run.
+  stagnation region exists, `ue` is finite at station 0, and starting
+  there discards the upstream run.
 
-  Two things were needed and both are in. `BoundaryLayerSectionModel::
-  StagnationStrain` supplies the nondimensional nose strain; empty
-  reproduces the old march bit for bit. And the seed had to enter the
-  **Thwaites integral**, not the variable — assigning `theta` is
-  overwritten at the first station, since Thwaites is an integral formula
-  and not a march. The equivalent start is `I₀ = θ₀²Ue₀⁶Re/0.45`. The
-  first version assigned it and the test caught that it changed nothing.
+  **Mechanism.** `StagnationStrain` supplies the nose strain; empty
+  reproduces the old march bit for bit. The seed had to enter the
+  **Thwaites integral**, not the variable — Thwaites is an integral
+  formula, so an assigned `theta` is overwritten at the first station. The
+  equivalent start is `I₀ = θ₀²Ue₀⁶Re/0.45`. The first version assigned it
+  and the test caught that it changed nothing.
 
-  **Remaining:** the supplier itself. `StagnationStrain` depends on
-  incidence (the stagnation point moves) and comes from
-  `SectionSolution::StagnationStrain`, a thickness-resolved Hess–Smith
-  solve — which must NOT run per call, since this model iterates inside
-  the coupling's own iteration. The intended shape is a table precomputed
-  per (η, α), exactly as `BuildSeparationTables` precomputes separation.
-  That is driver-level work and is the rest of C1.
+  **Supplier.** `Solver/StagnationStrainTables.h`, mirroring
+  `SeparationTables.h`: one Hess–Smith solve per (section, α) over ±20° at
+  1°, built once. It must not run per call — this model iterates inside
+  the coupling's own iteration, so a panel solve there would be paid tens
+  of thousands of times per condition for a number depending only on
+  (η, α). Two rules differ from the separation tables deliberately: the
+  table is **signed** in α (camber makes a nose asymmetric — measured
+  42.6 at +6° against 22.4 at −6°), and the edge rule **clamps** rather
+  than extrapolating, because extrapolated strain goes negative and
+  √(0.075ν/a) then has no real value.
+
+  **Nothing shipped moved, and that is not luck.** `BoundaryLayerSectionModel`
+  is Level-3 and appears only in its own test; every driver uses the
+  anchored `PostStallSectionModel`. So C1 had no destination to be wired
+  to — the tier is not in the production pipeline. Proven end to end
+  instead by `TestSectionBoundaryLayer`: real CST geometry → panel solve →
+  table → Thwaites → drag, cd 0.00840 → 0.01160.
 
   Measured en route: the seed acts mostly **through transition**. At
-  Re = 5e5, a = 10 it is 1.2e-4 chords and moves cd by 83%, because a
-  thicker leading-edge layer raises Re_θ, trips Michel earlier, and turns
-  a longer run turbulent. Pinned by `TestSectionBoundaryLayer`, whose
-  magnitude check is a **vanishing-seed limit** rather than a bound —
-  a bound would only be a tripwire on where transition sits.
+  Re = 5e5, a = 10 it is 1.2e-4 chords and moves cd 83%, because a thicker
+  leading-edge layer raises Re_θ, trips Michel earlier, and turns a longer
+  run turbulent. The magnitude check is a **vanishing-seed limit** rather
+  than a bound — a bound would only be a tripwire on where transition sits.
 
 - [ ] **C2. Non-axial propulsor inflow.** The rotor–vane machinery is
   axisymmetric end to end (slipstream bands, azimuthal-mean vane
