@@ -355,7 +355,7 @@ The quantity that matters is not the induction at a point but its
 variation \emph{along the chord}, because that variation is the pressure
 gradient. The wing trailing edge sits roughly three times closer to the
 disk than its leading edge, so the induction rises substantially across
-the chord: at the transition point $V_\infty = 12$~m/s, $T = 25$~N, the
+the chord: at the mid-range condition $V_\infty = 12$~m/s, $T = 25$~N, the
 rise is $23\%$ of freestream at $2y/b = 0.10$, $14.5\%$ at $0.20$ and
 $5\%$ at $0.30$. It is a favourable gradient, and it is strongest at the
 trailing edge, which is where turbulent separation begins and from which
@@ -364,8 +364,13 @@ it marches forward.
 \begin{table}[tb]
   \centering
   \caption{Chordwise rise in axial velocity across the wing, as a
-    percentage of freestream, at four points along a transition. The
-    velocity ratio $\mu = V_\infty / v_h$ runs from near-hover to cruise.}
+    percentage of freestream, at four operating points spanning the
+    transition's range of velocity ratio $\mu = V_\infty / v_h$, from
+    near-hover to cruise. These are a parametric sweep in $\mu$, not trim
+    points on a computed trajectory: no transition operating line exists
+    yet (Sec.~\ref{sec:limits}). $v_h$ is referred to the \emph{annular}
+    disk area, which excludes the blade root at $r/R = 0.42$; using the
+    full disk instead lowers $\mu$ by 8\%.}
   \label{tab:operating}
   \input{figures/tables/operating.tex}
 \end{table}
@@ -513,6 +518,7 @@ one thrust step moves the normal force by a flat $1.50$--$1.65$ per thrust
 doubling at every incidence. Sensitivity should be read from the load.
 
 \section{Limitations}
+\label{sec:limits}
 
 The coupling is one-way, so the reported shift is a lower bound. The
 induction model assumes uniform disk loading; real loading tapers at both
@@ -525,6 +531,18 @@ inherits the companion study's caveat: bubble bursting~\cite{gaster1967} is
 not modelled, so
 the separation boundary is an upper bound on usable incidence rather than
 a predicted stall.
+
+The operating points of Table~\ref{tab:operating} span the transition's
+range of velocity ratio but are not a trajectory through it. Confirming
+that they bracket a \emph{real} transition would require checking the
+thrust at each speed against a trimmed flight condition, and that check
+cannot be made here: no mass is stated anywhere in the geometry contract,
+which carries shape alone. What can be confirmed is internal consistency,
+and it holds --- $\mu$ recomputed from the contract's own disk geometry
+reproduces the tabulated values to within one percent at all four points.
+The thrust schedule also falls monotonically with airspeed, which is the
+qualitative shape a transition must have. Neither of those makes the set a
+trim schedule, and the caption no longer implies otherwise.
 
 Two limitations attach specifically to the post-stall map of
 Sec.~\ref{sec:directmap}, and not to the fine-grid measurement that

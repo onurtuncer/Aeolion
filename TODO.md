@@ -251,9 +251,17 @@ consumer trusting something that is not there.
   within the model; past stall the model still rests on the anchored
   section model, so this is not yet a statement about the vehicle.
 
-- [ ] **D3. Confirm the S-119 Annex A spellings** against the published
-  standard text rather than the reference documentation's examples, and
-  settle the vane command names, which have no Annex A counterpart.
+- [x] **D3. Vane names settled** — 2026-08-22, by the user: the existing
+  `vaneDeflection_{Pitch,Yaw,Roll}` / `_{Bottom,Left,Top,Right}` coinage
+  stands. It follows Annex A's compound pattern (the same
+  `Name_Qualifier` shape as the genuine `bodyAngularRate_Roll`), and Annex
+  A has no propulsive-vane concept to align to, so any alternative would
+  be a different invention with no better claim.
+
+  **Not done, and needs the purchased text:** confirming the other Annex A
+  spellings against the published ANSI/AIAA S-119 standard rather than the
+  reference documentation's examples. Without the standard I can only
+  re-read the examples, which is the thing this item existed to stop.
 
 ## E. Solver housekeeping
 
@@ -346,10 +354,30 @@ Then per paper:
 - [ ] **F5. SciTech**: abstract deadline for the target year, the
   demonstration figure set, the validation anchor for the conference
   version, and the scope split against the JPP article.
-- [ ] **F6. Fan-induction paper**: confirm the fan operating points that
-  bracket a real transition, decide whether the duct's own lip suction
-  is reported separately, and check the AIAA duplicate-submission
-  position against Part II. **B1 is done** — `separation-map.json` is this paper's headline data, and the existing Δα = +0.80° horizontal-shift result corroborates it from an independent driver.
+- [~] **F6. Fan-induction paper** — operating points CONFIRMED and the
+  paper corrected, 2026-08-22.
+
+  **Internally consistent:** μ recomputed from the contract's own disk
+  geometry reproduces the published 0.26 / 0.62 / 1.04 / 1.86 to within
+  1%. The non-obvious part, now stated in the caption: `v_h` is referred
+  to the **annular** disk area, excluding the blade root at r/R = 0.42
+  (the motor hub). Recomputing with the full disk gives μ 8% low and looks
+  like an error.
+
+  **Not a transition, and the paper said it was.** Confirming these
+  bracket a *real* transition needs the thrust at each speed checked
+  against a trimmed condition, and **no mass is stated anywhere in the
+  repo** — the contract carries shape alone. The paper's own header
+  already said "the transition operating line… does not exist yet", while
+  its caption called these "four points along a transition" and its body
+  "the transition point". Corrected: they are a parametric sweep spanning
+  the transition's μ range. Thrust does fall monotonically with airspeed,
+  which is the right qualitative shape and is not a trim schedule.
+
+  **Still open:** whether the duct's own lip suction is reported
+  separately, and the AIAA duplicate-submission position against Part II.
+  Both are the user's calls.
+
 - [ ] **F7.** Cite the JOSS paper's DOI for the software once minted.
 
 ---
