@@ -501,13 +501,41 @@ def build(args):
                             app("times", ci("propSpeedRevps"), ci("DiskDiameterM"))))
     m.variable("alphaDiskDeg", "angleOfAttackDisk", "deg", axis="body",
                description="Validity monitor: angle between the free stream and the "
-                           "rotor axis. The propulsor model is axial-inflow only.",
+                           "rotor axis. The propulsor model is axial-inflow only. Two "
+                           "errors grow with this angle and they are not the same size. "
+                           "FIRST ORDER, and correctable: the propulsor tables are "
+                           "indexed by advanceRatio = V/(nD) on the FULL free stream, "
+                           "while a propeller advances on the axial component only, so "
+                           "the tables are read at a J that is high by 1/cos(alphaDisk) "
+                           "-- 1.5% at 10 deg, 6.4% at 20 deg, 15.5% at 30 deg. "
+                           "advanceRatioAxial carries the corrected value. SECOND, and "
+                           "not correctable here: the in-plane force and hub moment a "
+                           "disk at incidence develops are absent entirely, because the "
+                           "generating solver is axisymmetric end to end and "
+                           "representing them needs once-per-revolution loading.",
                calc=app("times",
                         app("arccos", app("times",
                                           app("cos", deg2rad(ci("alphaDeg"))),
                                           app("cos", deg2rad(ci("betaDeg"))))),
                         app("divide", cn(180), "<pi/>")),
                is_output=True)
+    if prop:
+        # The axial advance ratio, exposed but NOT substituted into the table
+        # lookup. Substituting would be the better approximation and it is a
+        # behaviour change to a shipped model, so it is offered rather than
+        # imposed: a consumer who cares can index on this, and one who does not
+        # gets exactly the numbers the previous revision produced. Note that at
+        # the conditions the tables were GENERATED at, alphaDisk is zero and
+        # the two are identical -- the divergence is entirely a use-time
+        # question, which is why the monitor is the right place to raise it.
+        m.variable("advanceRatioAxial", "advanceRatio", "nd", symbol="J_ax",
+                   description="advanceRatio reduced to the axial component, "
+                               "J*cos(alphaDisk). The value the propulsor tables would "
+                               "be indexed by if disk incidence were carried; equal to "
+                               "advanceRatio at zero disk incidence.",
+                   calc=app("times", ci("advanceRatio"),
+                            app("cos", deg2rad(ci("alphaDiskDeg")))),
+                   is_output=True)
     if vane and prop:
         # Mixing matrix (models/README.md): bottom = R+Y, left = R-P,
         # top = R-Y, right = R+P. These index the per-vane tables, which

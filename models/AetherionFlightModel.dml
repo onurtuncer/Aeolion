@@ -5,7 +5,7 @@
     <author name="Onur Tuncer" org="Istanbul Technical University"/>
     <author name="Caglar Ucler" org="Ozyegin University"/>
     <author name="Ahmet Gunes" org="Istanbul Technical University"/>
-    <fileCreationDate date="2026-08-20"/>
+    <fileCreationDate date="2026-08-22"/>
     <description>
       Tabulated flight model of the Aetherion ducted-fan tail-sitter, generated from the Aeolion aerodynamic toolkit. Body axes are the contract frame aetherion_body_frd (x forward, y right, z down), the standard aeronautical body axis system of ANSI/AIAA R-004-1992. Moments are about the contract's moment_reference_point. See models/README.md for the normative specification and models/report/ for the technical report.
       
@@ -19,14 +19,14 @@
       UNCERTAINTY BOUNDS: read the label carefully. Where a table carries an uncertainty element, the one-sigma bound is the NUMERICAL CONVERGENCE SPREAD -- how far the damped iterate still wanders over its averaging window. It answers whether a cell has settled, and separates a converged condition (which carries no bound at all) from one still moving. It is NOT the physical unsteadiness of the flow. On post-stall cells this metric reads of order 1e-7 while the physical fluctuation, measured independently by an unsteady particle-wake cross-check at the same attitudes, runs at RMS-to-mean ratios of 3 to 40. The two differ by orders of magnitude because they measure different things: one says the solver has settled, the other says the real flow buffets. A consumer treating the emitted bound as physical uncertainty would conclude these loads are known to seven digits, which is false. Post-stall entries remain limit-cycle MEANS of a quasi-steady method, and their physical uncertainty is not represented in this file at all.
       INTERACTION VALIDITY. The fan-on-airframe tables (coupling*) were swept at ZERO SIDESLIP and are indexed by alpha and Tc only, but the buildup applies them at every beta. Their beta dependence is therefore unmeasured, not established as weak. They are also uniform-disk-loading and swirl-free, and past alpha 16 they are differences of two limit-cycle means: the effect is thrust-ordered and real, but its attribution to delayed separation is consistent with the data rather than established by it.
     </description>
-    <reference refID="srcAeroMap" author="aeolion_aero_map" title="Airframe baseline map and reduced-rate derivatives (aero-map.json)" date="2026-08-20"/>
-    <reference refID="srcAileron" author="aeolion_aero_map (aileron block)" title="Aileron increment sweep (aero-aileron.json)" date="2026-08-20"/>
-    <reference refID="srcParasite" author="aeolion_parasite_drag" title="Body and duct parasite drag, friction buildup plus crossflow branch (parasite-drag.json)" date="2026-08-20"/>
-    <reference refID="srcPropMap" author="aeolion_propulsion_map" title="Ducted propulsor over advance ratio (propulsion-map.json)" date="2026-08-20"/>
-    <reference refID="srcPropVane" author="aeolion_propulsion_map (single)" title="Per-vane control increments (propulsion-singlevane.json)" date="2026-08-20"/>
+    <reference refID="srcAeroMap" author="aeolion_aero_map" title="Airframe baseline map and reduced-rate derivatives (aero-map.json)" date="2026-08-22"/>
+    <reference refID="srcAileron" author="aeolion_aero_map (aileron block)" title="Aileron increment sweep (aero-aileron.json)" date="2026-08-22"/>
+    <reference refID="srcParasite" author="aeolion_parasite_drag" title="Body and duct parasite drag, friction buildup plus crossflow branch (parasite-drag.json)" date="2026-08-22"/>
+    <reference refID="srcPropMap" author="aeolion_propulsion_map" title="Ducted propulsor over advance ratio (propulsion-map.json)" date="2026-08-22"/>
+    <reference refID="srcPropVane" author="aeolion_propulsion_map (single)" title="Per-vane control increments (propulsion-singlevane.json)" date="2026-08-22"/>
     <provenance provID="genProv">
       <author name="Aeolion" org="models/build-daveml.py"/>
-      <creationDate date="2026-08-20"/>
+      <creationDate date="2026-08-22"/>
       <documentRef refID="srcAeroMap"/>
       <documentRef refID="srcAileron"/>
       <documentRef refID="srcParasite"/>
@@ -103,10 +103,19 @@
     </calculation>
   </variableDef>
   <variableDef name="angleOfAttackDisk" varID="alphaDiskDeg" units="deg" axisSystem="body">
-    <description>Validity monitor: angle between the free stream and the rotor axis. The propulsor model is axial-inflow only.</description>
+    <description>Validity monitor: angle between the free stream and the rotor axis. The propulsor model is axial-inflow only. Two errors grow with this angle and they are not the same size. FIRST ORDER, and correctable: the propulsor tables are indexed by advanceRatio = V/(nD) on the FULL free stream, while a propeller advances on the axial component only, so the tables are read at a J that is high by 1/cos(alphaDisk) -- 1.5% at 10 deg, 6.4% at 20 deg, 15.5% at 30 deg. advanceRatioAxial carries the corrected value. SECOND, and not correctable here: the in-plane force and hub moment a disk at incidence develops are absent entirely, because the generating solver is axisymmetric end to end and representing them needs once-per-revolution loading.</description>
     <calculation>
       <math xmlns="http://www.w3.org/1998/Math/MathML">
         <apply><times/><apply><arccos/><apply><times/><apply><cos/><apply><times/><ci>alphaDeg</ci><apply><divide/><pi/><cn>180</cn></apply></apply></apply><apply><cos/><apply><times/><ci>betaDeg</ci><apply><divide/><pi/><cn>180</cn></apply></apply></apply></apply></apply><apply><divide/><cn>180</cn><pi/></apply></apply>
+      </math>
+    </calculation>
+    <isOutput/>
+  </variableDef>
+  <variableDef name="advanceRatio" varID="advanceRatioAxial" units="nd" symbol="J_ax">
+    <description>advanceRatio reduced to the axial component, J*cos(alphaDisk). The value the propulsor tables would be indexed by if disk incidence were carried; equal to advanceRatio at zero disk incidence.</description>
+    <calculation>
+      <math xmlns="http://www.w3.org/1998/Math/MathML">
+        <apply><times/><ci>advanceRatio</ci><apply><cos/><apply><times/><ci>alphaDiskDeg</ci><apply><divide/><pi/><cn>180</cn></apply></apply></apply></apply>
       </math>
     </calculation>
     <isOutput/>

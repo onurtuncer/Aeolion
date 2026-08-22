@@ -203,7 +203,21 @@ optimistic drag polar.
 - `J = V / (n · DiskDiameterM)`
 - `alphaDiskDeg`: freestream in FRD is
   u = (cosα cosβ, sinβ, sinα cosβ); rotation axis is +x, so
-  `cos(alphaDisk) = cosα·cosβ`
+  `cos(alphaDisk) = cosα·cosβ`. **Validity monitor with a stated scale.**
+  Two errors grow with it and they are not the same size. *First order,
+  correctable:* the propulsor tables are indexed by `advanceRatio` on the
+  FULL free stream, while a propeller advances on the axial component
+  only, so they are read at a J high by 1/cos(alphaDisk) — 1.5% at 10°,
+  6.4% at 20°, 15.5% at 30°. *Second, not correctable here:* the in-plane
+  force and hub moment of a disk at incidence are absent entirely, since
+  the generating solver is axisymmetric end to end.
+- `advanceRatioAxial = advanceRatio · cos(alphaDisk)` — the corrected
+  value, **exposed but deliberately NOT substituted into the table
+  lookup**. Substituting is the better approximation *and* a behaviour
+  change to a shipped model, so it is offered rather than imposed. At the
+  conditions the tables were generated at, alphaDisk is zero and the two
+  are identical: the divergence is entirely a use-time question, which is
+  why the monitor is where it is raised.
 - `phiWDeg = atan2(sinβ, sinα·cosβ)` — crossflow azimuth, 0 in the
   pitch plane
 - `phat = p·b/(2V)`, `qhat = q·c̄/(2V)`, `rhat = r·b/(2V)` (the

@@ -187,12 +187,35 @@ consumer trusting something that is not there.
   run turbulent. The magnitude check is a **vanishing-seed limit** rather
   than a bound — a bound would only be a tripwire on where transition sits.
 
-- [ ] **C2. Non-axial propulsor inflow.** The rotor–vane machinery is
-  axisymmetric end to end (slipstream bands, azimuthal-mean vane
-  feedback, `AxialInflowFromBands`), so disk incidence is not
-  representable and `alphaDiskDeg` is exported as a validity monitor
-  rather than faked as a table axis. Representing it needs
-  once-per-revolution loading, which is a different solver.
+- [~] **C2. Non-axial propulsor inflow — BOUNDED, not modelled.**
+  2026-08-22. The model itself still needs once-per-revolution loading and
+  that is genuinely a different solver: `BuildPropellerLattice` takes a
+  scalar `axialSpeed` and bakes an axial helical wake, so a disk at
+  incidence would need skewed wake legs *and* azimuthal averaging, and the
+  rotor–vane path is axisymmetric end to end besides. Fabricating an
+  alphaDisk sweep from either would be an artifact.
+
+  What *was* wrong is that `alphaDiskDeg` shipped as a "validity monitor"
+  with **no scale**: a consumer saw 25° and had no way to judge it. It now
+  states both errors, which are not the same size. **First order, and
+  correctable:** the propulsor tables are indexed by `advanceRatio` on the
+  full free stream while a propeller advances on the axial component only,
+  so they are read at a J high by 1/cos(alphaDisk) — 1.5% at 10°, 6.4% at
+  20°, 15.5% at 30°. `advanceRatioAxial` now carries the corrected value.
+  **Second, not correctable here:** the in-plane force and hub moment are
+  absent entirely.
+
+  `advanceRatioAxial` is **exposed, not substituted** into the lookup.
+  Substituting is the better approximation *and* a behaviour change to a
+  shipped model, so it is offered rather than imposed — and at the
+  conditions the tables were generated at, alphaDisk is zero and the two
+  agree exactly. **Open decision for the user:** whether to index the
+  propulsor tables on the axial value.
+
+  Corrected en route: I first reported the monitor did not exist. It does
+  — I had checked `PropulsionMapExport.cpp`, where alphaDisk is only a
+  comment, and not the assembler, which emits it.
+
 - [x] **C3. `SolveResult::CDi` does NOT become the Trefftz value** —
   DECIDED 2026-08-21, against the change, for three independent reasons.
   Propeller thrust is `-Di` (`PanelBuilder.h`) and `CDi = Di/(qS)`, so
