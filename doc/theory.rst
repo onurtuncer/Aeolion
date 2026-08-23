@@ -196,7 +196,9 @@ via LAPACK's ``dgetrf`` (partial-pivoting LU) and re-solved with
 central-difference stability sweep.
 
 **Force and moment integration.** Computed by the **near-field method**,
-not a Trefftz-plane integration. At each vortex panel's bound-vortex
+not a Trefftz-plane integration. That choice is deliberate and it has a
+consequence for induced drag specifically on coupled configurations; see
+the Trefftz-plane section below. At each vortex panel's bound-vortex
 midpoint :math:`\mathbf{m}_i = \tfrac{1}{2}(\mathbf{A}_i+\mathbf{B}_i)`,
 sum the velocity induced by every *other* singularity (vortices with their
 bound segment included, sources) plus :math:`\mathbf{V}_{kin}(\mathbf{m}_i)`
@@ -849,6 +851,33 @@ the second half of its iterates, evaluated consistently in one final
 sweep -- rather than a random phase of the cycle; ``Converged`` stays
 false and the residual keeps the cycle's mismatch, so the mean is
 reported, not declared converged.
+
+There is a cost to that branch-following, and it was measured rather than
+assumed. Because the continuation carries history, **which** states were
+visited helps determine which branch a later condition lands on: the
+sequence is part of the specification of a post-stall condition, not
+merely the order of computation. On the fan-induction map, arriving at
+:math:`\alpha = 20^\circ`, :math:`T_c = 0.5` from :math:`16^\circ`
+rather than :math:`18^\circ` moved the span-mean separation point by
+:math:`0.013` -- against a fan effect of :math:`0.018` at that same
+condition -- with both solves sitting in limit cycles of the same length
+and differing only in history. At :math:`\alpha = 26^\circ`,
+:math:`T_c = 1` the coarser path reversed the sign of the measured effect.
+Most conditions are insensitive, and a finer continuation is the better
+approximation, so a densely-swept map is the more trustworthy one; but a
+sweep is not demonstrated grid-converged merely because it warm-started.
+
+This narrows a result stated elsewhere in this document and in the
+post-stall paper: limit-cycle means are **iteration-path** independent ---
+different relaxation on the same grid agrees to 0.1% -- and that holds at
+*fixed continuation*. Warm-start history matters considerably more than
+the relaxation does. A related nonlinearity is by contrast negligible:
+quantities evaluated on the final sweep at the cycle-mean circulation
+satisfy :math:`g(\bar\gamma) \neq \overline{g(\gamma)}`, but with the
+per-strip incidence variance now carried in ``ViscousCoupledResult`` the
+second-order term evaluates to :math:`10^{-15}`--:math:`10^{-10}` for the
+separation point. The cycle is wide in circulation and nearly stationary
+in local incidence.
 
 What the coupling adds physically: the vanes' blockage and upwash now
 unload or re-load the rotor (a measurable thrust shift with vanes
@@ -1648,6 +1677,26 @@ fuselage carries about 9% of the total, and using the configuration
 :math:`0.965` for the wing's own lift. The integral is the same either
 way; only the comparison differs.
 
+**Which value ``Solve`` returns.** The near-field one.
+``SolveResult::CDi`` is *not* replaced by the Trefftz result, and the
+far-field integral stays opt-in through ``TrefftzInducedDrag``. Three
+reasons, each sufficient alone. Propeller thrust is :math:`-D_i`
+(``PanelBuilder.h``) and :math:`C_{D_i} = D_i / (qS)`, so changing one of
+them breaks the identity and changing both breaks the rotor. A
+rotating-frame rotor sheds a *helical* wake, which is not what a plane at
+downstream infinity models -- there the far-field construct is not merely
+costly but wrong. And the viscous coupling calls ``Solve`` on the order of
+a thousand times per condition without ever reading ``CDi``, so an
+:math:`O(N_{\text{strips}}^2)` wake integral on every call would be paid
+entirely in sweeps that discard it.
+
+The defect that remains is therefore one of signposting rather than of
+default, and it is fixed where it bites: ``SolveResult::CDi`` now carries
+the near-field caveat in its own documentation, so a consumer reading the
+field learns that it goes negative at zero lift on a coupled
+configuration, instead of discovering it from a drag polar that does not
+close.
+
 Disk induction: what a rotor does upstream of itself
 -----------------------------------------------------
 
@@ -1951,6 +2000,18 @@ Vortex lattice methods are potential-flow (inviscid), so
 ``Solver::SolveResult::CDi`` is **induced drag only**. Total drag needs a
 separate viscous ("profile"/"parasite") estimate via the classic
 component buildup method (Raymer; Hoerner :cite:`hoerner1965fluiddynamicdrag`):
+
+.. warning::
+
+   ``SolveResult::CDi`` is the **near-field** value, and on a configuration
+   with a body it is the wrong number to build a drag polar on: it goes
+   negative at zero lift, and an incidence sweep of the airframe in
+   ``tests/Data`` fits to an Oswald efficiency of 1.53, which no planar
+   wing can have. Lift and the moments are unaffected -- the same absolute
+   error is negligible beside lift and comparable with induced drag. On a
+   bare wing near and far field agree to 0.4%. Use ``TrefftzInducedDrag``
+   (see the Trefftz-plane section above) when the induced drag itself
+   matters and a body is present.
 
 .. math::
 

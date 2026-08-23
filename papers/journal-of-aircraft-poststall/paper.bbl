@@ -1,4 +1,4 @@
-\begin{thebibliography}{1}
+\begin{thebibliography}{10}
 \newcommand{\enquote}[1]{``#1''}
 
 \bibitem{leishman2006rotor}
@@ -27,16 +27,26 @@ Anderson, J.~D., Corda, S., and Van~Wie, D.~M., \enquote{Numerical Lifting Line
   Theory Applied to Drooped Leading-Edge Wings Below and Above Stall,} {\em
   Journal of Aircraft\/}, Vol.~17, No.~12, 1980, pp.~898--904.
 
+\bibitem{raymer2018}
+Raymer, D.~P., {\em Aircraft Design: A Conceptual Approach\/}, AIAA Education
+  Series, American Institute of Aeronautics and Astronautics, Reston, Virginia,
+  6th ed., 2018.
+
+\bibitem{allenPerkins1951}
+Allen, H.~J. and Perkins, E.~W., \enquote{A Study of Effects of Viscosity on
+  Flow over Slender Inclined Bodies of Revolution,} Tech. Rep. NACA Report
+  1048, National Advisory Committee for Aeronautics, 1951.
+
+\bibitem{jorgensen1977}
+Jorgensen, L.~H., \enquote{Prediction of Static Aerodynamic Characteristics for
+  Slender Bodies Alone and with Lifting Surfaces to Very High Angles of
+  Attack,} Tech. Rep. NASA TR R-474, National Aeronautics and Space
+  Administration, 1977.
+
 \bibitem{sheldahlKlimas1981}
 Sheldahl, R.~E. and Klimas, P.~C., \enquote{Aerodynamic Characteristics of
   Seven Symmetrical Airfoil Sections Through 180-Degree Angle of Attack for Use
   in Aerodynamic Analysis of Vertical Axis Wind Turbines,} Tech. Rep.
   SAND80-2114, Sandia National Laboratories, 1981.
-
-\bibitem{ramesh2014lesp}
-Ramesh, K., Gopalarathnam, A., Granlund, K., Ol, M.~V., and Edwards, J.~R.,
-  \enquote{Discrete-vortex method with novel shedding criterion for unsteady
-  aerofoil flows with intermittent leading-edge vortex shedding,} {\em Journal
-  of Fluid Mechanics\/}, Vol.~751, 2014, pp.~500--538.
 
 \end{thebibliography}

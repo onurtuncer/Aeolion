@@ -166,7 +166,7 @@ struct PostStallSectionModel {
 
     [[nodiscard]] SectionCoefficients operator()(const StripSection& strip, double alphaEffDeg,
                                                  double Re, double /*Ma*/) const {
-        const double alphaZDeg = alphaEffDeg - strip.Alpha0Deg;
+        const double alphaZDeg = alphaEffDeg - strip.EffectiveAlpha0Deg();
         const double sign = (alphaZDeg >= 0.0) ? 1.0 : -1.0;
         const double aDeg = std::fabs(alphaZDeg);
         const double aRad = Math::DegToRad(aDeg);

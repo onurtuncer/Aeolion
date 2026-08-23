@@ -26,6 +26,8 @@ Usage:  python verify-daveml.py [model.dml]
 """
 
 import os
+import shutil
+import subprocess
 import sys
 import xml.etree.ElementTree as ET
 
@@ -124,6 +126,31 @@ def main():
         return 1
     print(f"parsed {os.path.basename(path)}: well-formed")
 
+    # DTD validation, where a validator exists. This is not redundant with
+    # the structural checks below: the DTD encodes the STANDARD's grammar,
+    # and it caught six classes of real deviation the first time it was
+    # run -- element ordering at the top level, initialValue being an
+    # attribute rather than an element, reference/documentRef ID discipline,
+    # and the true shape of a gridded function. The in-repo checks then
+    # verify what a DTD structurally cannot: that the numbers interpolate.
+    #
+    # lxml is deliberately not required; xmllint is used when present and
+    # the step reports honestly when it is not, rather than passing quietly.
+    dtd = os.path.join(os.path.dirname(os.path.abspath(path)), "DAVEfunc.dtd")
+    if not os.path.exists(dtd):
+        print("  DTD: models/DAVEfunc.dtd absent, skipping grammar validation")
+    elif shutil.which("xmllint") is None:
+        print("  DTD: no xmllint on PATH, skipping grammar validation "
+              "(structural checks below still run)")
+    else:
+        proc = subprocess.run(["xmllint", "--noout", "--dtdvalid", dtd, path],
+                              capture_output=True, text=True)
+        if proc.returncode == 0:
+            print("  DTD: validates against DAVEfunc.dtd 2.0.1")
+        else:
+            head = "\n".join(proc.stderr.strip().split("\n")[:12])
+            check(False, f"DTD validation failed:\n{head}")
+
     # ---------------- structure ----------------
     var_ids = [v.get("varID") for v in root.iter("variableDef")]
     check(len(var_ids) == len(set(var_ids)),
@@ -168,16 +195,25 @@ def main():
         if dep is None or defn is None:
             continue
         out = dep.get("varID")
-        gtid = defn.get("gtID")
+        # The DTD form: functionDefn CONTAINS a griddedTableRef rather than
+        # carrying a gtID, and independentVarRef carries no bpID at all --
+        # the breakpoint association comes from the table's own
+        # breakpointRefs, matched POSITIONALLY against these.
+        ref_el = defn.find("griddedTableRef")
+        gtid = ref_el.get("gtID") if ref_el is not None else None
         check(out in defined, f"function {fn.get('name')} drives undefined varID {out}")
         check(gtid in tables, f"function {fn.get('name')} references unknown table {gtid}")
-        ins = [(iv.get("varID"), iv.get("bpID")) for iv in fn.iter("independentVarRef")]
+        in_vars = [iv.get("varID") for iv in fn.iter("independentVarRef")]
+        for v in in_vars:
+            check(v in defined,
+                  f"function {fn.get('name')} reads undefined varID {v}")
         if gtid in tables:
             refs, _ = tables[gtid]
-            check([b for _, b in ins] == refs,
-                  f"function {fn.get('name')}: independent variables {[b for _, b in ins]} "
-                  f"do not match the table's breakpoints {refs}")
-            funcs[out] = (ins, gtid)
+            check(len(in_vars) == len(refs),
+                  f"function {fn.get('name')}: {len(in_vars)} independent variables against "
+                  f"{len(refs)} table dimensions")
+            if len(in_vars) == len(refs):
+                funcs[out] = (list(zip(in_vars, refs)), gtid)
 
     # Every table must be evaluable at the centre of its own grid: a
     # cheap, total check that the encoding and the lookup agree.

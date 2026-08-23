@@ -1,0 +1,474 @@
+// InductionMapExport.cpp -- the coupling* half of the DAVE-ML flight
+// model (models/README.md): what the aft fan does to the AIRFRAME, as
+// increments from the power-off tables.
+//
+// --- why this driver exists, and why it was long declared blocked ---------
+// The model's airframe tables are power-off. On this configuration that is
+// a real omission rather than a conservative one: the ducted fan sits AFT
+// of the wing -- duct leading edge about a fifth of a chord behind the
+// wing trailing edge -- so it does not blow the wing. What it does is
+// induce a favourable pressure gradient UPSTREAM of itself, over the wing,
+// which delays separation. And it does so over precisely the span that
+// sheds first: duct outer radius to semi-span is 0.21, against a worst
+// separation station at |2y/b| ~ 0.15-0.23.
+//
+// Solver::SlipstreamField cannot compute this. It is a momentum-theory
+// wake and returns identically zero ahead of the disk by construction, so
+// pointed at a wing that sits upstream it reports exactly zero
+// interaction -- a property of the model, not of the aircraft, and the
+// most dangerous kind of answer because it is confidently null.
+//
+// THE BLOCKER IS STALE. Solver/DiskInduction.h implements the missing
+// half: a uniformly loaded actuator disk is exactly equivalent to a
+// semi-infinite cylindrical vortex sheet, which has a computable field
+// everywhere including upstream, and an exact closed form on the axis to
+// check against. It is pinned by TestDiskInduction and already used by
+// the attachment sweep. Nothing further was needed to generate these
+// tables; the specification simply had not caught up with the solver.
+//
+// --- what is computed ----------------------------------------------------
+// For each (alpha, Tc) the fan's thrust follows from the interaction
+// index itself, T = Tc * qbar * S, momentum theory gives the induced
+// velocity at the disk, and the vortex cylinder gives the field. The
+// coupled solve then runs with that field in its externalField hook and
+// the result is differenced against the SAME solve with the fan off.
+//
+// Neutral and powered are solved in one pass, each warm-started up its own
+// alpha column, for the reason the aileron sweep gives: differencing two
+// limit-cycle means taken from different continuation histories injects
+// noise into the increment that has nothing to do with the fan.
+//
+// --- the annulus ---------------------------------------------------------
+// The fan is an annulus around the tail boom, not a disk, so the hub
+// radius is the body's own radius at the duct station. A uniformly loaded
+// annulus sheds at BOTH edges -- outer at +gamma_t, inner at -gamma_t --
+// which DiskInduction.h represents as two superposed cylinders.
+//
+// --- declared limits -----------------------------------------------------
+// Uniform disk loading (real loading tapers at both edges); no swirl,
+// which is correct here because the rotor's axial wake vorticity lives
+// DOWNSTREAM of the disk and contributes nothing ahead of it; and the
+// q-normalized Tc degenerates toward hover, so the tables are declared
+// valid for V >= 10 m/s.
+//
+// Usage:
+//   aeolion_induction_map <handoff.json> <out.json> [Vinf] [relaxation]
+//                         [maxIterations]
+
+#include "Aeolion/Geometry/CstSurface.h"
+#include "Aeolion/Geometry/HandoffContract.h"
+#include "Aeolion/PanelBuilder/PanelBuilder.h"
+#include "Aeolion/Solver/BodyAxes.h"
+#include "Aeolion/Solver/DiskInduction.h"
+#include "Aeolion/Solver/PostStallSection.h"
+#include "Aeolion/Solver/SeparationTables.h"
+#include "Aeolion/Solver/Solver.h"
+#include "Aeolion/Solver/ViscousCoupling.h"
+
+#include <chrono>
+#include <cmath>
+#include <cstdlib>
+#include <fstream>
+#include <iostream>
+#include <string>
+#include <vector>
+
+using namespace Aeolion;
+namespace PB = Aeolion::PanelBuilder;
+namespace S = Aeolion::Solver;
+
+namespace {
+
+constexpr double FlightSpeed = 25.0;
+constexpr double Rho = 1.225;
+constexpr double TrailSpans = 50.0;
+constexpr int BodySectors = 16;
+
+// The model's tcBp. Logarithmically spaced because momentum theory makes
+// the induced-velocity ratio go as sqrt(Tc), so equal RATIOS of Tc are
+// roughly equal increments of effect.
+const double ThrustCoefficients[] = {0.5, 1.0, 2.0, 4.0, 8.0};
+
+// An explicit comma-separated alpha list overrides the grid, so a question
+// about a handful of attitudes costs minutes rather than the two hours the
+// full map takes, and a targeted rerun is a flag rather than an edit to this
+// function -- which is how a "temporary" narrowing gets committed by accident.
+//
+// READ THIS BEFORE TRUSTING A SUBSET.  The alpha grid is a CONTINUATION PATH,
+// not a set of independent conditions: each solve is warm-started from the
+// previous alpha up its own Tc column (chain.Warm below).  Changing which
+// alphas run therefore changes the states they are started from, and post-
+// stall that can change the ANSWER and not just the cost.
+//
+// Measured, on the first use of this flag.  Running {16, 20, 26, 30, 40}
+// reproduced the full grid EXACTLY at alpha 16 -- same convergence behaviour,
+// fMean equal to four digits -- and then disagreed at alpha 20, Tc = 0.5:
+// 0.7061 against the map's 0.7189.  Both sat in a 1000-iteration limit cycle;
+// the cycle MEANS differ, because one arrived from alpha 18 and the other from
+// alpha 16.  Note the size of that: 0.013 in f, against a fan effect at the
+// same condition of 0.018.  The path sensitivity is the same order as the
+// signal, so it cannot be waved away as noise.
+//
+// So a subset is sound for exploring, and unsound for reproducing a row of a
+// shipped map.  Anything that has to match the map must run the whole grid.
+std::vector<double> ParseAlphaList(const std::string& spec) {
+    std::vector<double> alphas;
+    std::size_t pos = 0;
+    while (pos < spec.size()) {
+        const std::size_t comma = spec.find(',', pos);
+        const std::string tok = spec.substr(pos, comma - pos);
+        if (!tok.empty()) alphas.push_back(std::atof(tok.c_str()));
+        if (comma == std::string::npos) break;
+        pos = comma + 1;
+    }
+    return alphas;
+}
+
+std::vector<double> BuildAlphaGrid() {
+    std::vector<double> alphas;
+    for (double a = -4.0; a <= 26.0 + 1e-9; a += 2.0) alphas.push_back(a);
+    for (const double a : {30.0, 35.0, 40.0, 45.0, 50.0, 60.0, 70.0, 80.0, 90.0})
+        alphas.push_back(a);
+    return alphas;
+}
+
+// True chord frame, not the cambered panel axes -- the camber double-count
+// trap ViscousCoupling.h warns about and this repo has hit twice.
+std::vector<S::StripSection> StripsFromPanels(const std::vector<S::Panel>& panels, double halfSpan,
+                                              const std::vector<Geometry::AirfoilSection>& sections) {
+    std::vector<S::StripSection> strips;
+    strips.reserve(panels.size());
+    for (const S::Panel& panel : panels) {
+        const S::Vec3 mid = (panel.A + panel.B) * 0.5;
+        S::StripSection strip;
+        strip.ChordDir = S::Vec3(1.0, 0.0, 0.0);
+        strip.LiftDir = S::Vec3(0.0, 0.0, 1.0);
+        strip.Chord = (panel.SpanwiseWidth > 0.0) ? panel.PlanformArea / panel.SpanwiseWidth : 0.0;
+        strip.Width = panel.SpanwiseWidth;
+        strip.Eta = std::fabs(mid.y) / halfSpan;
+        strip.Alpha0Deg = Geometry::SectionZeroLiftAngleDeg(sections, strip.Eta);
+        strips.push_back(strip);
+    }
+    return strips;
+}
+
+/**
+ * The fan as an annular actuator disk, in SOLVER axes. The contract states
+ * the duct centre in its own frame, so the ingest flip applies here as it
+ * does to the moment reference point.
+ */
+S::ActuatorDisk MakeFanDisk(const Geometry::HandoffContract& contract, double thrust, double rho,
+                            double axialSpeed) {
+    S::ActuatorDisk disk;
+    if (!(thrust > 0.0) || !contract.Duct.IsStated || !(contract.Propulsion.DiskRadius > 0.0))
+        return disk;
+
+    const double diskContractX = contract.Duct.Center.x;
+    disk.Center = S::Vec3(-diskContractX, contract.Duct.Center.y, -contract.Duct.Center.z);
+    disk.Axis = S::Vec3(1.0, 0.0, 0.0); // downstream is solver +x (aft)
+    disk.Radius = contract.Propulsion.DiskRadius;
+    // Annular: the tail boom occupies the middle, so the hub radius is the
+    // body's own radius at the duct station.
+    disk.HubRadius = Geometry::RadiusAt(contract.Body, diskContractX);
+    if (!(disk.HubRadius < disk.Radius)) disk.HubRadius = 0.0;
+    disk.InducedVelocity = S::InducedVelocityFromThrust(thrust, rho, disk.Area(), axialSpeed);
+    return disk;
+}
+
+} // namespace
+
+int main(int argc, char** argv) {
+    if (argc < 3) {
+        std::cerr << "usage: aeolion_induction_map <handoff.json> <out.json> [Vinf]"
+                     " [relaxation] [maxIterations]\n";
+        return 1;
+    }
+    const std::string handoffPath = argv[1];
+    const std::string outPath = argv[2];
+    const double flightSpeed = (argc > 3) ? std::atof(argv[3]) : FlightSpeed;
+    const double relaxation = (argc > 4) ? std::atof(argv[4]) : 0.05;
+    const int maxIterations = (argc > 5) ? std::atoi(argv[5]) : 1000;
+    const std::vector<double> alphaGrid =
+        (argc > 6) ? ParseAlphaList(argv[6]) : BuildAlphaGrid();
+
+    Geometry::HandoffContract contract;
+    try {
+        contract = Geometry::LoadHandoff(handoffPath);
+    } catch (const std::exception& error) {
+        std::cerr << "cannot load " << handoffPath << ": " << error.what() << "\n";
+        return 1;
+    }
+    if (!contract.Duct.IsStated || !(contract.Propulsion.DiskRadius > 0.0)) {
+        std::cerr << "contract states no duct or disk radius; nothing to induce with\n";
+        return 1;
+    }
+    contract.Mesh.ChordwisePanels = 1;
+
+    PB::LatticeOptions options;
+    options.BodyCircumferentialPanels = BodySectors;
+    options.CarryThroughLift = false;
+    PB::LatticeBuilder builder(contract, options);
+
+    const auto wing = builder.Build();
+    const auto body = builder.BuildBody();
+    const auto duct = builder.BuildDuct();
+    std::vector<Lattice::SourcePanel> sources = body;
+    sources.insert(sources.end(), duct.begin(), duct.end());
+
+    const double halfSpan = 0.5 * contract.Span;
+    const auto strips = StripsFromPanels(wing, halfSpan, contract.AirfoilSections);
+    const double trail = TrailSpans * contract.Span;
+    const auto prepared = S::Prepare(S::PanelSystem{wing, sources}, trail);
+
+    S::ReferenceGeometry ref;
+    ref.Area = builder.GrossPlanformArea();
+    ref.Span = contract.Span;
+    ref.Chord = ref.Area / contract.Span;
+    const double aspectRatio = contract.Span * contract.Span / ref.Area;
+
+    S::FreestreamConditions fc;
+    fc.Vinf = flightSpeed;
+    fc.rho = Rho;
+    fc.betaDeg = 0.0;
+    if (contract.MomentReferencePointStated)
+        fc.RefPoint = S::Vec3(-contract.MomentReferencePoint.x, contract.MomentReferencePoint.y,
+                              -contract.MomentReferencePoint.z);
+
+    S::PostStallSectionModel anchored;
+    anchored.AspectRatio = aspectRatio;
+    {
+        auto tables =
+            S::BuildSeparationTables(prepared, wing, strips, contract.AirfoilSections, fc, ref);
+        std::vector<double> etas;
+        etas.reserve(strips.size());
+        for (const S::StripSection& s : strips) etas.push_back(s.Eta);
+        anchored.SeparationPoint = S::MakeSeparationFunction(std::move(tables), std::move(etas));
+    }
+    const S::SectionModel model = anchored;
+
+    S::ViscousCouplingOptions coupling;
+    coupling.Relaxation = relaxation;
+    coupling.AndersonDepth = 0;
+    coupling.MaxIterations = maxIterations;
+
+    const double q = 0.5 * Rho * flightSpeed * flightSpeed;
+    const double qS = q * ref.Area;
+
+    // Report the geometry that makes this a real effect rather than a
+    // rounding error, so the run's own log states its premise.
+    {
+        const S::ActuatorDisk probe = MakeFanDisk(contract, qS, Rho, flightSpeed);
+        const double ductLEx = -(contract.Duct.Center.x + 0.5 * contract.Duct.Chord);
+        std::cout << "fan: R=" << probe.Radius << " hub=" << probe.HubRadius
+                  << " centre(solver x)=" << probe.Center.x
+                  << "  R/semi-span=" << probe.Radius / halfSpan
+                  << "  duct LE at solver x=" << ductLEx << "\n";
+    }
+
+    std::ofstream out(outPath);
+    if (!out) {
+        std::cerr << "cannot open " << outPath << " for writing\n";
+        return 1;
+    }
+    out.precision(9);
+    out << "{\n\"meta\":{\"designId\":\"" << contract.DesignId << "\",\"schema\":\""
+        << contract.SchemaVersion << "\",\"Vinf\":" << flightSpeed << ",\"rho\":" << Rho
+        << ",\"area\":" << ref.Area << ",\"span\":" << ref.Span << ",\"chord\":" << ref.Chord
+        << ",\"diskRadius\":" << contract.Propulsion.DiskRadius
+        << ",\"model\":\"semi-infinite vortex cylinder (Solver/DiskInduction.h)\""
+        << ",\"validityMinSpeedMps\":10"
+        << ",\"excludes\":\"uniform disk loading; no swirl (the rotor's axial wake"
+           " vorticity is downstream of the disk and contributes nothing ahead of"
+           " it)\"},\n\"rows\":[\n";
+
+    std::cout << "\nalpha   Tc      vi     dCX         dCZ         dCm      iters\n";
+
+    struct Chain {
+        double Tc;
+        std::vector<double> Warm;
+    };
+    std::vector<Chain> chains;
+    chains.push_back({0.0, {}});
+    for (const double tc : ThrustCoefficients) chains.push_back({tc, {}});
+
+    bool first = true;
+    int unconverged = 0;
+    for (const double alphaDeg : alphaGrid) {
+        fc.alphaDeg = alphaDeg;
+        S::BodyAxisCoefficients off;
+        double offFMean = 1.0, offFMin = 1.0, offFCorr = 0.0;
+        for (Chain& chain : chains) {
+            const double thrust = chain.Tc * qS;
+            const S::ActuatorDisk disk = MakeFanDisk(contract, thrust, Rho, flightSpeed);
+            std::function<S::Vec3(const S::Vec3&)> field;
+            if (chain.Tc > 0.0 && disk.Valid()) field = S::DiskInductionField(disk);
+
+            S::ViscousCouplingOptions opts = coupling;
+            opts.InitialGamma = chain.Warm;
+            const auto start = std::chrono::steady_clock::now();
+            const auto res = S::SolveViscousCoupled(wing, strips, fc, ref, trail, model, opts,
+                                                    sources, field);
+            const double seconds =
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+            chain.Warm = res.Base.gamma;
+            const S::BodyAxisCoefficients w = S::BodyAxisFromCoupled(res, q, ref);
+
+            // THE SEPARATION POINT, measured rather than inferred. The
+            // fan-induction question is how far the aft fan delays
+            // separation, and answering it from a lift increment means
+            // differencing two limit-cycle means -- which cannot support
+            // the claim. The coupled solve already knows the answer
+            // directly: the anchored model carries f(eta, alpha), the
+            // suction-side separation location as a chord fraction, and
+            // every strip has a converged local incidence.
+            //
+            // f = 1 is fully attached and f = 0 is separated at the
+            // leading edge, so a fan that delays separation RAISES f. The
+            // mechanism is available to a strip method even though the
+            // separation tables themselves know nothing about the fan:
+            // the induction accelerates the stream over the wing, which
+            // lowers each strip's local incidence, which moves its
+            // separation point aft through the table it was always going
+            // to consult.
+            //
+            // Reported two ways, because they answer different questions.
+            // The span mean says how much attached flow the wing has in
+            // total; the MINIMUM says how bad the worst strip is, and it
+            // is the worst strip that sheds first and sets the stall.
+            double fSum = 0.0, fMin = 1.0, wSum = 0.0;
+            for (std::size_t i = 0; i < strips.size() && i < res.Strips.size(); ++i) {
+                const double local = res.Strips[i].alphaEffDeg - strips[i].EffectiveAlpha0Deg();
+                const double f = anchored.SeparationPoint
+                                     ? anchored.SeparationPoint(strips[i].Eta, local)
+                                     : 1.0;
+                fSum += f * strips[i].Width;
+                wSum += strips[i].Width;
+                fMin = std::min(fMin, f);
+            }
+            const double fMean = (wSum > 0.0) ? fSum / wSum : 1.0;
+
+            // How big is the error just made?  fMean evaluates f on the
+            // CYCLE-MEAN incidence, but f is nonlinear, so f(alphabar) is not
+            // the mean of f(alpha).  Part II states that approximation; this
+            // bounds it.  Expanding f about the cycle mean, the leading error
+            // is second order in the cycle width:
+            //
+            //     mean f(alpha) - f(alphabar)  ~=  f''(alphabar) * Var(alpha) / 2
+            //
+            // and the solve now carries Var(alpha) per strip, so f'' by central
+            // difference on the same table finishes it.  Reported alongside
+            // fMean rather than folded into it: the correction is an estimate of
+            // a discretisation error, not a better value, and a consumer that
+            // silently received a corrected number could not tell how far it had
+            // been moved.  Zero for converged conditions, where the cycle -- and
+            // so the question -- does not exist.
+            double fCorr = 0.0;
+            if (!res.CycleVarAlphaEffDeg.empty() && wSum > 0.0) {
+                const double h = 0.5; // degrees; the tables are on a 2-degree grid
+                double corrSum = 0.0;
+                for (std::size_t i = 0; i < strips.size() && i < res.Strips.size(); ++i) {
+                    const double var = res.CycleVarAlphaEffDeg[i];
+                    if (var <= 0.0 || !anchored.SeparationPoint) continue;
+                    const double a =
+                        res.CycleMeanAlphaEffDeg[i] - strips[i].EffectiveAlpha0Deg();
+                    const double fm = anchored.SeparationPoint(strips[i].Eta, a - h);
+                    const double f0 = anchored.SeparationPoint(strips[i].Eta, a);
+                    const double fp = anchored.SeparationPoint(strips[i].Eta, a + h);
+                    const double d2 = (fp - 2.0 * f0 + fm) / (h * h);
+                    corrSum += 0.5 * d2 * var * strips[i].Width;
+                }
+                fCorr = corrSum / wSum;
+            }
+
+            // How these two may be read.  The LOCATIONS are the measurement:
+            // powered f exceeds power-off f at all 115 conditions from alpha
+            // -4 to 70, monotonically in Tc at each of them, peaking at alpha 30
+            // (+0.065 chord at Tc = 8).  Nothing in the code enforces that -- the
+            // separation tables know nothing about the fan, so the delay arrives
+            // entirely through local incidence.
+            //
+            // At alpha 80 and 90 the sign REVERSES: the fan advances separation
+            // (alpha 90, Tc 8: 0.0622 -> 0.0171).  That is not a defect.  dCZ
+            // reverses at exactly the same place -- negative at every attitude up
+            // to 80, then +0.012 to +0.098 across the alpha=90 column -- so the
+            // separation location and the load agree, independently, on where the
+            // mechanism inverts.  Broadside, the fan's axial induction is
+            // perpendicular to the free stream and no longer energises an
+            // attached layer, because there is no attached layer to energise.
+            //
+            // The shift is NOT monotone in alpha, and should not be expected to
+            // be: it peaks at 30 and decays as the wing runs out of attached flow
+            // to preserve.  Power-off fMean at alpha 90 (0.0622) also sits ABOVE
+            // its own alpha 70 and 80 values (0.0127, 0.0149) -- a property of the
+            // anchored section model at exactly broadside, not of the fan.  Treat
+            // the alpha 90 column as the model's edge, and quote it with that.
+            //
+            // Their RATIOS are not.  f(alpha) is steep at the knee, so a span
+            // mean of it amplifies a smooth input: across Tc 1->2 in deep stall
+            // dFMean jumps 4x while dCZ -- the same solve, the same conditions --
+            // grows by a flat 1.50-1.65 per thrust doubling at every alpha.  The
+            // tell is that the jump appears only where the wing is mostly
+            // separated (alpha 30, 40: fMeanOff 0.28, 0.11), and not at alpha 20
+            // where fMeanOff is 0.70 and the ratios run 1.20/1.23/1.24/1.23.
+            // The alpha=20 spike in dFMean has the same cause.  So: quote f as a
+            // location, and take the fan's SENSITIVITY to thrust from dCZ, which
+            // is smooth, never from dFMean, which is a nonlinear readout of it.
+            //
+            // fMin stops discriminating at alpha >= 20: some strip has separated
+            // at the leading edge and reads exactly 0 at every thrust setting,
+            // Tc = 8 included.  Those zero differences are the metric running out
+            // of range, NOT the fan failing to act -- the span mean goes on
+            // growing to +0.065 chord at alpha 30.  Do not difference saturated
+            // values.
+
+            if (chain.Tc == 0.0) {
+                off = w;
+                offFMean = fMean;
+                offFMin = fMin;
+                offFCorr = fCorr;
+                continue;
+            }
+            if (!res.Converged) ++unconverged;
+            if (!first) out << ",\n";
+            first = false;
+            out << R"( {"alphaDeg":)" << alphaDeg << R"(,"Tc":)" << chain.Tc
+                << R"(,"thrustN":)" << thrust << R"(,"viMps":)" << disk.InducedVelocity
+                << R"(,"dCX":)" << (w.CX - off.CX) << R"(,"dCY":)" << (w.CY - off.CY)
+                << R"(,"dCZ":)" << (w.CZ - off.CZ) << R"(,"dCl":)" << (w.Cl - off.Cl)
+                << R"(,"dCm":)" << (w.Cm - off.Cm) << R"(,"dCn":)" << (w.Cn - off.Cn)
+                << R"(,"converged":)" << (res.Converged ? "true" : "false")
+                << R"(,"fMean":)" << fMean << R"(,"fMin":)" << fMin
+                << R"(,"fMeanOff":)" << offFMean << R"(,"fMinOff":)" << offFMin
+                << R"(,"dFMean":)" << (fMean - offFMean)
+                << R"(,"dFMin":)" << (fMin - offFMin)
+                // ABSOLUTE coefficients, both power settings.  Exporting only
+                // increments made this map unable to regenerate the paper table
+                // built from it: a ratio needs its denominator, and borrowing one
+                // from the post-stall sweep does not work -- that reconstruction
+                // returns 1.74/1.84/6.78 percent where the driver itself reported
+                // 2.3/2.4/7.5, because the two sweeps' power-off states are not the
+                // same state.  Carry the denominator with the numerator.
+                << R"(,"CX":)" << w.CX << R"(,"CZ":)" << w.CZ
+                << R"(,"Cm":)" << w.Cm
+                << R"(,"CXoff":)" << off.CX << R"(,"CZoff":)" << off.CZ
+                << R"(,"CmOff":)" << off.Cm
+                << R"(,"fCorr":)" << fCorr << R"(,"fCorrOff":)" << offFCorr
+                << R"(,"dFMeanCorr":)" << ((fMean + fCorr) - (offFMean + offFCorr))
+                << R"(,"iterations":)" << res.Iterations << R"(,"residual":)"
+                << res.MaxResidual
+                << R"(,"cycleFluctuation":)" << res.CycleFluctuation()
+                << R"(,"seconds":)" << seconds << '}';
+            out.flush();
+
+            std::cout << alphaDeg << "\t" << chain.Tc << "\t" << disk.InducedVelocity << "\t"
+                      << (w.CX - off.CX) << "\t" << (w.CZ - off.CZ) << "\t" << (w.Cm - off.Cm)
+                      << "\t" << res.Iterations << (res.Converged ? "" : "  (cycle-mean)")
+                      << std::endl;
+        }
+    }
+
+    out << "\n]}\n";
+    std::cout << "\nwrote " << outPath << " (" << unconverged
+              << " conditions exported as cycle means)\n";
+    return 0;
+}

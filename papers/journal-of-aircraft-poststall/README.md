@@ -13,15 +13,17 @@ separation points, Viterna-Corrigan deep stall, Rayleigh centre of
 pressure). Author block and member grades must stay synchronized with
 Part I.
 
-**Scope (agreed 2026-08-11):** Part II carries the whole
-post-separation program — Phase 1 (this draft's anchored map, plus the
-still-pending Sheldahl–Klimas Re=3.6e5 / Ostowari–Naik validation and
-the up/down hysteresis map), Phase 2 (Maskew–Dvorak double-wake polars
-on the Hess–Smith section solve), Phase 3 (2D LESP discrete-vortex
-sections and a 3D particle wake from the computed separation line as
-the unsteady spot-check). The declared-but-pending pieces are outlined
-in the paper's "Validation and the remaining tiers" section with TODO
-markers; no number in the results sections depends on them.
+**Scope (agreed 2026-08-11, narrowed 2026-08-14):** Part II carries
+the quasi-steady post-separation program — Phase 1 (this draft's
+anchored map, plus the still-pending Ostowari–Naik validation and the
+up/down hysteresis map; the Sheldahl–Klimas Re=3.6e5 comparison is in)
+and Phase 2 (Maskew–Dvorak double-wake polars on the Hess–Smith
+section solve). The unsteady cross-check (Phase 3: 2D LESP
+discrete-vortex sections, 3D particle wake) was removed from the paper
+on 2026-08-14 — that work lives in the repo (TODO.md §3d/3e), not in
+this part. The declared-but-pending pieces are outlined in the paper's
+"Validation and the remaining tiers" section with TODO markers; no
+number in the results sections depends on them.
 
 **Headline numbers (2026-08-11 data):** σ-collapse across β within 13%;
 plate regime by α ≈ 55–65°; CN(90°) = 1.52 vs the Viterna ceiling 1.218

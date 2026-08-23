@@ -42,6 +42,7 @@
 
 #pragma once
 
+#include "Aeolion/Geometry/FlapEffectiveness.h"
 #include "Aeolion/Lattice/Panel.h"
 #include "Aeolion/Math/Constants.h"
 #include "Aeolion/Math/Vec3.h"
@@ -102,6 +103,61 @@ struct StripSection {
     double Width = 0.0;     ///< Spanwise/radial width [m].
     double Eta = 0.0;       ///< Span/radius fraction keying the section shape (e.g. r/R).
     double Alpha0Deg = 0.0; ///< Thin-airfoil zero-lift angle of the section's camber line.
+
+    /**
+     * A plain trailing-edge flap on this strip, if any: the hinge as a
+     * fraction of local chord, and the deflection (positive = trailing
+     * edge down about the strip's own lift direction). Both default to
+     * zero, so every consumer that does not set them is bit-identical.
+     *
+     * WHY THIS LIVES IN THE SECTION. A hinge cannot be represented
+     * geometrically on a single-row lattice -- PanelBuilder needs at
+     * least two chordwise rows to split a strip at the hinge line, while
+     * this coupling requires exactly one row per strip, since its whole
+     * premise is one section state per strip. The two contracts are
+     * individually reasonable and jointly exclude a control surface, and
+     * MEASURED (app/AileronEffectivenessExport.cpp), a deflection through
+     * the coupled path was exactly zero at every attitude while the solve
+     * converged and reported sensible forces.
+     *
+     * The resolution is not to fight the lattice but to state the flap
+     * where a strip method actually wants it. To thin-airfoil theory a
+     * deflected flap IS a camber change, so it shifts the zero-lift angle
+     * the section model is posed against; the lattice continues to supply
+     * the induced field, and the section model remains the authority on
+     * cl. That is the standard strip-theory treatment of a flapped wing.
+     */
+    double FlapChordFraction = 0.0;  ///< Flap chord / local chord; 0 = no flap.
+    double FlapDeflectionDeg = 0.0;  ///< Positive = trailing edge down.
+
+    /**
+     * The zero-lift angle the section model must be posed against: the
+     * camber line's own, shifted by the flap. Every section model reads
+     * THIS rather than Alpha0Deg, so a flap cannot be silently ignored by
+     * one model and honoured by another.
+     */
+    [[nodiscard]] double EffectiveAlpha0Deg() const {
+        if (FlapDeflectionDeg == 0.0 || FlapChordFraction <= 0.0) return Alpha0Deg;
+        return Alpha0Deg +
+               Geometry::FlapZeroLiftShift(1.0 - FlapChordFraction, FlapDeflectionDeg);
+    }
+
+    /**
+     * The flap's own quarter-chord moment increment. The zero-lift shift
+     * above is thin-airfoil theory's LIFT result; this is its companion,
+     * and leaving it out is not neutral -- the flap's load acts aft of
+     * the quarter chord, so a lift-only flap model silently loses a
+     * nose-down couple that grows with deflection.
+     *
+     * Added to the section model's own cm rather than replacing it: the
+     * section knows its camber, the flap is a change to that camber, and
+     * the two superpose in thin-airfoil theory because it is linear.
+     */
+    [[nodiscard]] double FlapSectionCm() const {
+        if (FlapDeflectionDeg == 0.0 || FlapChordFraction <= 0.0) return 0.0;
+        return Geometry::FlapMomentIncrement(1.0 - FlapChordFraction,
+                                             Math::DegToRad(FlapDeflectionDeg));
+    }
 };
 
 /** What a section model answers with, at one (alpha_eff, Re, Ma) state. */
@@ -161,14 +217,14 @@ struct AnalyticSectionModel {
 
     [[nodiscard]] SectionCoefficients operator()(const StripSection& strip, double alphaEffDeg,
                                                  double Re, double /*Ma*/) const {
-        const double alphaRad = Math::DegToRad(alphaEffDeg - strip.Alpha0Deg);
+        const double alphaRad = Math::DegToRad(alphaEffDeg - strip.EffectiveAlpha0Deg());
         const double reScale = (Re > 0.0) ? std::pow(ReferenceReynolds / Re, ReynoldsExponent) : 1.0;
 
         SectionCoefficients attached;
         attached.cl = ClMax * std::tanh(ClAlphaPerRad * alphaRad / ClMax);
         attached.cd = Cd0 * reScale + KCd * attached.cl * attached.cl;
 
-        const double fromZeroLift = std::fabs(alphaEffDeg - strip.Alpha0Deg);
+        const double fromZeroLift = std::fabs(alphaEffDeg - strip.EffectiveAlpha0Deg());
         if (fromZeroLift <= DeepStallStartDeg) return attached;
 
         const double cn = PlateNormal * std::sin(alphaRad);
@@ -256,6 +312,46 @@ struct ViscousCoupledResult {
     int Iterations = 0;
     bool Converged = false;
     double MaxResidual = 0.0;
+
+    /**
+     * The limit cycle's SPREAD, alongside the mean the loads already
+     * report. Deep post-stall solves do not converge to a steady state;
+     * they enter a cycle whose mean is reproducible (independent iteration
+     * paths agree to four digits) but whose instantaneous state is not.
+     * The reported loads are that mean, so a consumer needs to know how
+     * wide the cycle was in order to know how much to trust them.
+     *
+     * The sampled quantity is the sectional-lift sum
+     * sum(c_i w_i cl_i) = CL*S over the averaging window, a direct
+     * load-level measure. CycleSamples is zero for any solve that
+     * converged before the window opened -- so a converged condition
+     * honestly reports no fluctuation rather than a small fabricated one.
+     */
+    double CycleMeanClS = 0.0;
+    double CycleRmsClS = 0.0;
+    int CycleSamples = 0;
+
+    /**
+     * Per-strip local incidence over the same window: its mean, and its
+     * VARIANCE about that mean.
+     *
+     * These exist for one purpose. Anything a consumer evaluates on the
+     * cycle mean -- a separation point f(alpha), a section cl -- is a
+     * NONLINEAR function of a fluctuating argument, so evaluating it at
+     * the mean is not the mean of it: g(alphabar) != mean g(alpha). The
+     * gap is second order in the cycle width, g''(alphabar)*Var/2, so a
+     * consumer holding the variance can estimate the error it is making
+     * instead of merely declaring it. Empty for a solve that converged
+     * before the window opened, where the question does not arise.
+     */
+    std::vector<double> CycleMeanAlphaEffDeg;
+    std::vector<double> CycleVarAlphaEffDeg;
+
+    /** Relative cycle fluctuation, RMS/|mean|; zero when converged. */
+    [[nodiscard]] double CycleFluctuation() const {
+        if (CycleSamples < 2 || std::fabs(CycleMeanClS) < Math::Tiny) return 0.0;
+        return CycleRmsClS / std::fabs(CycleMeanClS);
+    }
 };
 
 /**
@@ -399,8 +495,10 @@ struct ViscousCoupledResult {
     // keeps the cycle's mismatch: the mean is reported, not declared
     // converged.
     std::vector<double> gammaMeanSum(n, 0.0);
+    std::vector<double> alphaSum(n, 0.0), alphaSumSq(n, 0.0);
     int gammaMeanCount = 0;
     bool finalSweep = false;
+    double cycleSumSq = 0.0; // second moment of the sectional-lift sum
     for (res.Iterations = 1; res.Iterations <= options.MaxIterations; ++res.Iterations) {
         updateSources();
         res.MaxResidual = 0.0;
@@ -569,12 +667,46 @@ struct ViscousCoupledResult {
         if (2 * res.Iterations > options.MaxIterations) {
             for (std::size_t i = 0; i < n; ++i) gammaMeanSum[i] += gamma[i];
             ++gammaMeanCount;
+            // The SPREAD of the limit cycle, alongside its mean. The
+            // sectional-lift sum sum(c_i w_i cl_i) is CL*S, so its
+            // relative RMS over the averaging window is a direct,
+            // load-level measure of how much the cycle moves -- which is
+            // exactly what a consumer of a cycle-MEAN table needs in
+            // order to know how much to trust it. Cheap: the cl values
+            // are already in hand.
+            double clS = 0.0;
+            for (std::size_t i = 0; i < n; ++i) {
+                clS += strips[i].Chord * strips[i].Width * res.Strips[i].cl;
+                const double aEff = res.Strips[i].alphaEffDeg;
+                alphaSum[i] += aEff;
+                alphaSumSq[i] += aEff * aEff;
+            }
+            res.CycleMeanClS += clS;
+            cycleSumSq += clS * clS;
+            ++res.CycleSamples;
         }
         if (res.Iterations == options.MaxIterations - 1 && gammaMeanCount > 0) {
             // Within the caps: a convex mix of capped iterates.
             for (std::size_t i = 0; i < n; ++i)
                 gamma[i] = gammaMeanSum[i] / static_cast<double>(gammaMeanCount);
             finalSweep = true;
+        }
+    }
+
+    // Finalise the cycle statistics: mean and RMS about it, of the
+    // sectional-lift sum sampled over the averaging window.
+    if (res.CycleSamples > 0) {
+        const double nSamp = static_cast<double>(res.CycleSamples);
+        res.CycleMeanClS /= nSamp;
+        const double variance =
+            std::max(cycleSumSq / nSamp - res.CycleMeanClS * res.CycleMeanClS, 0.0);
+        res.CycleRmsClS = std::sqrt(variance);
+        res.CycleMeanAlphaEffDeg.resize(n);
+        res.CycleVarAlphaEffDeg.resize(n);
+        for (std::size_t i = 0; i < n; ++i) {
+            const double m = alphaSum[i] / nSamp;
+            res.CycleMeanAlphaEffDeg[i] = m;
+            res.CycleVarAlphaEffDeg[i] = std::max(alphaSumSq[i] / nSamp - m * m, 0.0);
         }
     }
 
@@ -612,9 +744,14 @@ struct ViscousCoupledResult {
         // edge (at -ChordDir) toward LiftDir, so the axis is
         // LiftDir x ChordDir (for a wing at x-aft/z-up: z x x = +y, the
         // standard pitch axis). A couple is position-independent, so no arm.
+        // The section's own cm PLUS the flap's increment. Both are
+        // quarter-chord couples and thin-airfoil theory is linear, so
+        // they superpose; a strip with no flap contributes exactly what
+        // it did before.
+        const double sectionCm = state.cm + strip.FlapSectionCm();
         res.SectionMoment =
             res.SectionMoment + Cross(strip.LiftDir, strip.ChordDir) *
-                                    (q * strip.Chord * strip.Chord * strip.Width * state.cm);
+                                    (q * strip.Chord * strip.Chord * strip.Width * sectionCm);
 
         StationResult sr;
         sr.y = mid.y;

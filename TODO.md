@@ -1,646 +1,432 @@
-# TODO — stagnation points and attachment lines
+# TODO
 
-Branch: `feature/stagnation-attachment-lines`.
+Branch: `study/post-separation`.
 
-Goal of this work: identify stagnation streamlines on the wing and on the
-body so a boundary-layer method can be coupled to them later, across a
-sweep of angle of attack **and sideslip**.
+## How to read this
 
-What remains is section 4 (the boundary-layer coupling itself, which
-deliberately wants its own branch) and section 5's smaller items; the
-build, the docs and the paper are all current — see "How this was
-verified" at the bottom.
+This file is **forward-looking**: what is still open, roughly in the
+order it is worth doing. It replaces the running study log that occupied
+it through 2026-08-19. That log is preserved in git —
+`git show cfbfc75:TODO.md` — and its durable content has been moved to
+where it is actually read:
 
----
+- **measured results and traps** now live in the module headers that own
+  them (`Solver/BodyAxes.h`, `Solver/ViscousCoupling.h`,
+  `Solver/ParticleWake.h`, `app/AileronEffectivenessExport.cpp`, …) and
+  in the suites that pin them;
+- **the flight model's decisions of record** are in `models/README.md`,
+  which is normative;
+- **the study's narrative** is in the Journal of Aircraft drafts.
 
-## What is done and verified
-
-All 21 test suites pass under the real toolchain.
-
-### Plumbing
-
-- **`Lattice::SourcePanel::SectorIndex`** — new field. Together with the
-  existing `StationIndex` it makes a body-of-revolution's panelling a
-  structured *(station, sector)* grid. Set by `PanelBuilder::BuildBody`
-  and by the duct's `AnnularRingPanels`; deliberately left unset on the
-  fuselage base cap, which is a disc stacked in rings at one station and
-  so has no unique key (documented in place).
-- **`SolveResult::sigma`** — converged source strengths are now kept, not
-  discarded. `gamma` + `sigma` is the full state of the solved field.
-- **`Solver::FlowField`** (in `Solver.h`) — the velocity field as a
-  first-class object, evaluable anywhere after the solve. Three
-  evaluations: `Velocity(P)`, `BoundMidpointVelocity(i)` (own bound
-  segment excluded), `SourceSurfaceVelocity(k)` (analytic ½ sheet jump
-  substituted). **`SolveWithSystem` was refactored to go through it**, so
-  there is no second definition left to drift — this is the change most
-  worth re-reviewing, and `TestSolverCore` / `TestSourcePanel` /
-  `TestDenseSolve` all still pass against it.
-- **`FreestreamVelocity(fc)`** — moved the duplicated freestream
-  expression into `FreestreamConditions.h`.
-
-### Body — `solver/include/Aeolion/Solver/SurfaceFlow.h`
-
-Skin-flow topology of a source-panelled surface, in the panelling's own
-index space (never `atan2(z,y)`, which is silently wrong for an offset
-duct).
-
-- `BuildSurfaceGrid` — structured patch + metric + contravariant velocity.
-  Declines an incompletely indexed surface rather than guessing.
-- `FindCriticalPoints` / `AnalyzeSurfaceFlow` — locates and classifies
-  attachment/separation nodes, saddles, foci.
-- `TraceSurfaceStreamline` / `TraceFromCriticalPoint` — RK4 in index
-  space, carrying `U_e(s)` and the spreading metric `h(s)`.
-- `PrimaryAttachment` / `PrimarySeparation`, `AttachesUpstream` for the
-  zero-incidence apex case.
-
-### Wing
-
-- **`include/Aeolion/Geometry/SectionContour.h`** — the thick closed
-  contour from the same CST coefficients the camber line uses, plus
-  `r_LE/c = A0²/2` and `ToLeadingEdgeNormal`.
-- **`solver/include/Aeolion/Solver/SectionPanelMethod.h`** — Hess–Smith
-  source+vortex solve on that contour. Returns `U_e(s)`, the stagnation
-  point, its strain rate, and the two `SurfaceRun`s a BL march consumes.
-- **`solver/include/Aeolion/Solver/AttachmentLine.h`** — per-strip
-  attachment line in **leading-edge-normal** coordinates, with effective
-  sweep, Poll's `Rbar`, and root-kink detection.
-
-### Docs
-
-- `doc/theory.rst` — new section "Stagnation points and attachment lines"
-  (inserted before "Viscous drag buildup", ~line 1184).
-- `doc/tests.rst` — entries for the three new tests.
-- `doc/api.rst` — new types listed under Solver and Geometry.
-- `doc/references.bib` — Poll, Hess & Smith, Moran, Lighthill, Tobak &
-  Peake, Cebeci & Cousteix.
-
-### Paper
-
-- `papers/journal-of-aircraft/paper.tex` — full draft, AIAA JoA format
-  (`\documentclass[submit]{aiaa-tc}`), plus its own `references.bib`.
-  Sections I–V are written against implemented, tested code.
+A short index of settled findings is at the bottom, so nothing is
+re-derived by accident.
 
 ---
 
-## Two physics results worth not re-deriving
+## A. Promises not kept
 
-1. **Stagnation-point offset scales with `√r_LE`, not `r_LE`.**
-   `s_stag/c ~ √(2 r_LE/c) · α_e`. The intuitive "the nose is a cylinder
-   in a stream at angle α" reading gives `r_LE·α` and is wrong by an
-   order of magnitude (0.001c vs a true 0.013c for a NACA 0012 at 4°).
-   The nose sits inside the *outer* thin-airfoil leading-edge
-   singularity, `u ~ α√(c/s)`; matching against the parabolic nose's own
-   `√(s/r_LE)` gives the square root. Measured collapse constant ≈ √2,
-   verified across a 12× range of nose radius.
+Places where a shipped artifact claims more than it delivers. First
+because they are cheap, and because the cost of leaving them is a
+consumer trusting something that is not there.
 
-2. **Surface strain rates must be differenced in a local orthonormal
-   frame**, not from the contravariant components `(u,v)`. Those carry a
-   `1/r` chart factor near a nose that varies tens of percent per cell;
-   differencing them gives a sphere's *isotropic* stagnation node a 2:1
-   eigenvalue split that does **not** converge. With the orthonormal
-   frame the ratio converges 0.28 → 0.67 → 0.85 → 0.94 for N = 24, 32,
-   48, 64.
+- [x] **A1. Uncertainty bounds carry real data** — DONE 2026-08-20
+  (`c5f680b`). The solver measures the cycle WIDTH
+  (`CycleFluctuation()`), the drivers export it, and the assembler emits
+  12 DAVE-ML `uncertainty`/`normalPDF` elements with per-cell additive
+  bounds. 65 converged rows correctly get no bounds; 110 cycle-mean rows
+  get them, median 1.14e-7 but reaching **0.591 at α = 90, β = 30 against
+  CZ = −1.485** — a 40% bound, which is the honest number there.
+
+  The bound is deliberately the cycle width and NOT the residual: the
+  residual is a max over strips of a section mismatch and sits at 0.2–0.6
+  post-stall, while the load-level fluctuation is ~1e-6, so quoting it
+  would overstate uncertainty by five orders of magnitude.
+
+- [x] **A2. DTD check could silently skip in CI** — DONE:
+  `libxml2-utils` added to `sanitizers.yml`. *Original:* `verify-daveml.py`
+  uses `xmllint` when present and says so when it is not, but
+  `sanitizers.yml` — the only workflow that runs `ctest` — does not
+  install `libxml2-utils`. So the grammar validation that caught six
+  classes of real deviation may not be running on any push. Add the
+  package.
+- [x] **A3. `coupling*` is β = 0 only** — DONE: declared in the file
+  header alongside the other limits. *Original:* The interaction tables are
+  indexed by α and Tc and were swept at zero sideslip, but the buildup
+  applies them at every β. Either sweep β or declare the restriction in
+  the file header, as every other limit is declared.
+
+## B. Measurements that would settle an open question
+
+- [x] **B1. Powered vs power-off separation points, directly** — DONE
+  2026-08-20, and it changed a conclusion rather than confirming one.
+  125 conditions. The fan holds the separation point aft at every
+  attitude from −4° to 70°, monotone in thrust at each, peaking at
+  α = 30 with +0.065 chord at Tc = 8 — and it reaches the section
+  tables only through local incidence, since those tables contain no
+  representation of the fan. **The headline is negative**: Part II's
+  threefold lift step at 16° is *not* the separation-delay signature.
+  Across it the load grows ×3.38 while the delay moves ×1.09. The step
+  marks the onset of limit-cycle behaviour, exactly as Part II
+  suspected but could not show. Two traps recorded in
+  `InductionMapExport.cpp` and in the paper: `fMin` saturates at 0 from
+  α = 20 (differencing saturated values is not a measurement), and the
+  shift's *ratios* are not sensitivities (f(α) is steep at the knee;
+  take sensitivity from `dCZ`, which is flat at 1.50–1.65 per thrust
+  doubling). At 80–90° the sign reverses, corroborated independently by
+  `dCZ` reversing across the same two attitudes. Pinned by
+  `TestSeparationDelay`. Data: `separation-map.json` (force-added).
+  **Carried forward — now closed:** f(γ̄) ≠ mean f(γ) is bounded and
+  negligible, 1e-15 to 1e-10 against f of 0.7–0.86. The cycle is wide in
+  circulation and nearly stationary in the local incidence f is posed in.
+  `ViscousCoupledResult` now carries per-strip incidence mean+variance so
+  any consumer evaluating something nonlinear at the mean can estimate
+  its own error. **But see B5**, which bounding it uncovered.
+- [x] **B2. Duct separated drag at incidence** — DONE: the ring carries
+  a bluff-body crossflow term on its side-projected area, CD0(90°)
+  0.195 → 0.208. Only body-wake/wing interference now keeps `aeroCD0` a
+  lower bound. *Original:* `aeroCD0` covers body
+  friction, duct friction, and the body's slender-body crossflow branch.
+  An annular ring at 90° is a bluff body the slender-body form does not
+  describe, so the table is a declared lower bound at high α.
+- [x] **B3. The aileron's section pitching-moment increment** — DONE:
+  Δcm = −(δ/2)sinθ_h(1−cosθ_h), putting the flap load 0.21 chords aft of
+  the quarter chord. Gap leakage and viscous decay remain. *Original:* The flap
+  is carried as a zero-lift-angle shift, which is thin-airfoil theory's
+  lift result only. The same theory supplies the moment. Gap leakage and
+  viscous decay at large deflection are separate omissions; all three
+  push the tabulated authority the same way, upward.
+- [x] **B5. The alpha grid is a continuation path** — RESOLVED
+  2026-08-21 by repeating the whole sweep at half the incidence step.
+  **113 of 125 shared conditions agree to better than 1e-6**: the map is
+  grid-converged over ninety percent of its extent. The twelve that are
+  not are isolated bistable conditions, all post-stall, each a single
+  solve settling into a different limit cycle according to the attitude it
+  was reached from — α 20 (all Tc, power-off), α 24 (all Tc, power-off;
+  powered too at Tc ≤ 1), α 26 Tc 2, α 30 Tc 2. Named, so they can be
+  carried as an uncertainty rather than as a caveat over the whole map.
+
+  **The question B1 left open is answered, and the answer is "sometimes".**
+  Where only the power-off solve moves (α 20) its 0.011 shift passes
+  through every thrust column undiminished; where powered and power-off
+  move together (α 24, Tc ≤ 1) the increment cancels to 0.0005. Both
+  happen in one map, so cancellation is real but must not be assumed.
+  Worst case 0.027 against a 0.044 signal.
+
+  **B1's headline is not an artifact of the step.** The 14° and 16° rows
+  agree between grids to 1e-9…1e-7, and the step across them is ×3.39
+  against ×1.09 on the fine grid where it was ×3.38 against ×1.09 on the
+  coarse. Data: `separation-map-fine.json`; table generated into
+  `figures/tables/gridconv.tex`.
+
+- [x] **B4. Hysteresis — RESOLVED 2026-08-21, and a static table is
+  adequate.** Swept 90 → −4 against the shipped −4 → 90 at β = 0, same
+  speed and relaxation. Attached flow is path-independent (worst 6.6e-4 in
+  CZ below α = 14). **Only 7 of 25 attitudes differ by more than 1e-3**;
+  largest 1.65% of CZ at α = 24, 2.6% of Cm at α = 26.
+
+  **Not a classical hysteresis loop**, which is the part that decides the
+  model's shape. Two branches would part across the whole post-stall range
+  and rejoin at its ends. Instead six of seven cluster in 18–35, the
+  branches *agree* at 16 and 20 inside that band, and agree exactly from
+  40 through 70 — isolated bistable conditions, the same signature B5
+  produced by halving the incidence step. **The DAVE-ML tables need no
+  branch axis**; the named attitudes need wider uncertainty, and 1.65% is
+  well inside the ±10–20% already carried on parasite drag.
+
+  Unexplained: α = 80 is the only departure outside the stall band and the
+  largest in CZ (1.76%). It sits beside α = 90, where the fan's mechanism
+  inverts (B1), but no mechanism is offered. Data:
+  `models/data/aero-map-descending.json`.
+
+  Enabled by giving `rates` its own block selector — the rate block never
+  warm-starts, so it carries no branch and a reversed α list changes
+  nothing in it; paying for it in a hysteresis study buys data that cannot
+  answer the question.
+
+## C. Method extensions — each wants its own branch
+
+- [x] **C1. The section march starts from the stagnation state** — DONE
+  2026-08-21/22, both halves.
+
+  The item's premise needed correcting first. `theta = 0` is *not* the
+  defect: Thwaites started at a real stagnation point, where Ue ~ a·s,
+  produces θ₀ = √(0.075ν/a) unaided — which is why `MarchSurfaceRun` is
+  already right without a seed. The defect is that
+  `BoundaryLayerSectionModel` is a **camber line**: no thickness, so no
+  stagnation region exists, `ue` is finite at station 0, and starting
+  there discards the upstream run.
+
+  **Mechanism.** `StagnationStrain` supplies the nose strain; empty
+  reproduces the old march bit for bit. The seed had to enter the
+  **Thwaites integral**, not the variable — Thwaites is an integral
+  formula, so an assigned `theta` is overwritten at the first station. The
+  equivalent start is `I₀ = θ₀²Ue₀⁶Re/0.45`. The first version assigned it
+  and the test caught that it changed nothing.
+
+  **Supplier.** `Solver/StagnationStrainTables.h`, mirroring
+  `SeparationTables.h`: one Hess–Smith solve per (section, α) over ±20° at
+  1°, built once. It must not run per call — this model iterates inside
+  the coupling's own iteration, so a panel solve there would be paid tens
+  of thousands of times per condition for a number depending only on
+  (η, α). Two rules differ from the separation tables deliberately: the
+  table is **signed** in α (camber makes a nose asymmetric — measured
+  42.6 at +6° against 22.4 at −6°), and the edge rule **clamps** rather
+  than extrapolating, because extrapolated strain goes negative and
+  √(0.075ν/a) then has no real value.
+
+  **Nothing shipped moved, and that is not luck.** `BoundaryLayerSectionModel`
+  is Level-3 and appears only in its own test; every driver uses the
+  anchored `PostStallSectionModel`. So C1 had no destination to be wired
+  to — the tier is not in the production pipeline. Proven end to end
+  instead by `TestSectionBoundaryLayer`: real CST geometry → panel solve →
+  table → Thwaites → drag, cd 0.00840 → 0.01160.
+
+  Measured en route: the seed acts mostly **through transition**. At
+  Re = 5e5, a = 10 it is 1.2e-4 chords and moves cd 83%, because a thicker
+  leading-edge layer raises Re_θ, trips Michel earlier, and turns a longer
+  run turbulent. The magnitude check is a **vanishing-seed limit** rather
+  than a bound — a bound would only be a tripwire on where transition sits.
+
+- [~] **C2. Non-axial propulsor inflow — BOUNDED, not modelled.**
+  2026-08-22. The model itself still needs once-per-revolution loading and
+  that is genuinely a different solver: `BuildPropellerLattice` takes a
+  scalar `axialSpeed` and bakes an axial helical wake, so a disk at
+  incidence would need skewed wake legs *and* azimuthal averaging, and the
+  rotor–vane path is axisymmetric end to end besides. Fabricating an
+  alphaDisk sweep from either would be an artifact.
+
+  What *was* wrong is that `alphaDiskDeg` shipped as a "validity monitor"
+  with **no scale**: a consumer saw 25° and had no way to judge it. It now
+  states both errors, which are not the same size. **First order, and
+  correctable:** the propulsor tables are indexed by `advanceRatio` on the
+  full free stream while a propeller advances on the axial component only,
+  so they are read at a J high by 1/cos(alphaDisk) — 1.5% at 10°, 6.4% at
+  20°, 15.5% at 30°. `advanceRatioAxial` now carries the corrected value.
+  **Second, not correctable here:** the in-plane force and hub moment are
+  absent entirely.
+
+  **Decided 2026-08-22 by the user: take the better approximation.** All 26
+  propulsor function references now index on `advanceRatioAxial`. No
+  tabulated value changes — alphaDisk is zero at every solved condition, so
+  the two agree exactly there; it changes only where an off-axis consumer
+  lands.
+
+  That switch also exposed a coverage hole worth more than the switch: **no
+  staticShot exercised a propulsor table at all.** All six pinned `aero*`
+  quantities, so the entire prop path — breakpoints, ordering,
+  interpolation, and the variable the tables are indexed *by* — was
+  unpinned, and the rebinding verified green without any check having
+  looked at it. `propEncodingAtBreakpoint` closes that, at zero disk
+  incidence where the map was solved. An off-axis shot cannot be generated:
+  there is no solve at disk incidence to generate one from, which is C2
+  itself.
+
+  Corrected en route: I first reported the monitor did not exist. It does
+  — I had checked `PropulsionMapExport.cpp`, where alphaDisk is only a
+  comment, and not the assembler, which emits it.
+
+- [x] **C3. `SolveResult::CDi` does NOT become the Trefftz value** —
+  DECIDED 2026-08-21, against the change, for three independent reasons.
+  Propeller thrust is `-Di` (`PanelBuilder.h`) and `CDi = Di/(qS)`, so
+  changing one breaks the identity and changing both breaks the rotor. A
+  rotating-frame rotor sheds a *helical* wake, which is not what a plane
+  at downstream infinity models. And the coupled solver calls `Solve`
+  ~1000× per condition without ever reading `CDi`, so an O(strips²) wake
+  integral on every call would be paid entirely in sweeps that discard it.
+  The real defect was never the default — it was that `SolveResult::CDi`
+  documented itself as "induced drag" with no hint that it goes negative
+  at zero lift and fits e = 1.53 on a coupled configuration. That trap is
+  now documented at the point of use, pointing to `TrefftzPlane.h`, which
+  stays opt-in. A consumer who reads the field now learns the trap; one
+  who wants the far-field number asks for it by name.
+
+## D. Assumptions to revisit
+
+- [x] **D1. The rate-derivative taper** — RESOLVED 2026-08-19, and the
+  answer was that the taper was never implemented AND was wrong in
+  principle. Measured at two perturbation amplitudes: attached flow and
+  deep stall agree to a tenth of a percent, while α ≈ 20–35 disagrees by
+  34–252% with the sign not surviving. Across that band **no linear
+  coefficient exists**, so taper, clamp and measured value are equally
+  fabrications. `alphaRateBp` now omits those six breakpoints and a
+  lookup interpolates across an acknowledged gap.
+- [x] **D2. The sign of ΔC_l after roll authority collapses** —
+  RESOLVED 2026-08-20. The wobble (positive 40–45°, negative 50–80°,
+  positive at 90°) is **not** cycle-mean scatter: an independent
+  iteration path — damped relaxation 0.02 against 0.05, both running to
+  the ceiling as cycle means — reproduces every value to 0.1% and every
+  sign. The cycle means are iteration-path independent for the control
+  increments exactly as they are for the baseline map. Determinate
+  within the model; past stall the model still rests on the anchored
+  section model, so this is not yet a statement about the vehicle.
+
+- [x] **D3. Vane names settled** — 2026-08-22, by the user: the existing
+  `vaneDeflection_{Pitch,Yaw,Roll}` / `_{Bottom,Left,Top,Right}` coinage
+  stands. It follows Annex A's compound pattern (the same
+  `Name_Qualifier` shape as the genuine `bodyAngularRate_Roll`), and Annex
+  A has no propulsive-vane concept to align to, so any alternative would
+  be a different invention with no better claim.
+
+  **Not done, and needs the purchased text:** confirming the other Annex A
+  spellings against the published ANSI/AIAA S-119 standard rather than the
+  reference documentation's examples. Without the standard I can only
+  re-read the examples, which is the thing this item existed to stop.
+
+## E. Solver housekeeping
+
+- [x] **E1. A declined surface grid now says why** — DONE 2026-08-21
+  (`275eb83`). The original note was that streamline tracing assumes the
+  lateral fuselage surface and correctly declines the base cap. True, and
+  it hid a usability defect: `SurfaceGrid::Valid()` is derived from sample
+  counts, so **six distinct causes collapsed into one `false`** — and the
+  base cap being declined *by design* was indistinguishable from a
+  misspelled surface name. `SurfaceGridStatus` separates `NoSystem`,
+  `NoSuchSurface`, `Unindexed` (the cap), `TooSmall`, `IncompleteGrid`
+  and `DuplicateKey` across all six return paths, pinned by
+  `TestSurfaceFlow`.
+
+  **Still true and still conditional:** if the attachment analysis should
+  ever need to cross onto the base, that wants a second patch and a join.
+  Nothing needs it today.
+
+- [x] **E2. Axial nose resolution is a `LatticeOptions` knob** — DONE
+  2026-08-21. `BodyNoseRefineStations` / `BodyNoseRefineFraction`, default
+  zero so no existing mesh moves. The argument was the stated one: the
+  contract states shape, not mesh, and azimuthal resolution was already a
+  consumer choice while axial resolution was not. Refinement only — every
+  original station survives and added ones sit on the contract's own
+  radius law, so a coarsening knob is deliberately absent. Pinned by
+  `TestBodyNoseRefine`, which also recorded two real mesh facts: caps put
+  corners on the axis, and the base cap is panelled as **concentric
+  annuli**, so a single-valued-in-x radius law cannot describe its corners.
+
+- [x] **E4. The 380x condition was the MACHINE, not the solver** —
+  RESOLVED 2026-08-21, and the note it asked for is this one.
+
+  Re-running `alpha = 21, Tc = 0.5` on an idle machine took **113 s**
+  against the original 40,741 s. That alone was weak evidence, since a
+  cold start takes a different continuation path (B5) and `fMean` confirmed
+  the state differed (0.6737 vs 0.6787). The decisive evidence arrived
+  from the environment instead: the machine runs at **254 MB free of
+  8 GB** (3%), `Get-Process` itself threw `OutOfMemoryException`, and
+  **two long sweeps were killed mid-run** with truncated JSON and empty
+  stderr — the same silent kill that ended the first B4 attempt.
+
+  A machine thrashing at 3% free memory produces exactly the observed
+  signature: identical arithmetic, identical iterations, identical
+  results, orders of magnitude of wall time, because `seconds` is
+  `steady_clock` and measures wall rather than CPU. Denormal arithmetic —
+  the other candidate — would have slowed all five Tc rows at that
+  incidence, since they share the flow state. It slowed exactly one.
+
+  **Operational consequence, which is the part worth keeping:** long
+  sweeps on this machine are not reliable. Two of the last four were
+  killed. A multi-hour sweep should be chunked, or run when memory is
+  actually free, and a truncated JSON with empty stderr should be read as
+  a kill rather than as a solver fault.
+
+- [x] **E3. A malformed attachment-line call is now reported** — DONE
+  2026-08-21. `ComputeAttachmentLine` takes one Weissinger row per strip;
+  a multi-row chordwise lattice trips that and used to return an empty
+  station list, which is byte-for-byte what a wing with no resolvable
+  attachment line returns. `AttachmentLine::Status`
+  (`Ok`/`TooFewStations`/`SizeMismatch`) and `Valid()` separate them,
+  pinned by `TestAttachmentLine`.
+
+  **A worse trap surfaced while documenting it**, and no status can catch
+  it: passing the LE row is not just a slice. `StripLeadingEdge` steps a
+  quarter of `strip.Chord` ahead of the bound segment, which is the
+  leading edge only if that row spans the whole chord. On a multi-row
+  stack the LE row's bound vortex sits at a quarter of *its own* panel's
+  chord, so a caller who slices the LE row but keeps section-chord strips
+  gets a plausible wrong answer. Stated at the contract.
+
+## F. Papers
+
+Two items block **every** submission and should be settled once:
+
+- [ ] **F1. Author blocks.** Departments and AIAA member grades are
+  `TODO` in all four drafts. The blocks must stay synchronised across
+  Part I, Part II, SciTech and the fan-induction paper.
+- [ ] **F2. Regenerate `style/aiaa-tc.cls` and `style/aiaa.bst`** with
+  `latex aiaa.ins` before any real submission. The current files were
+  extracted by a hand-written docstrip equivalent.
+
+Then per paper:
+
+- [ ] **F3. Part I** (`journal-of-aircraft`): validation beyond
+  closed-form verification; the `CDi` note in §VI.E.
+- [ ] **F4. Journal of Propulsion and Power**: validation anchors are the
+  schedule gate for the whole paper — isolated-propeller thrust/torque
+  data, and a ducted-fan-with-vanes experiment or RANS comparison. Also
+  how the swirl momentum budget is presented, and the figure set.
+- [ ] **F5. SciTech**: abstract deadline for the target year, the
+  demonstration figure set, the validation anchor for the conference
+  version, and the scope split against the JPP article.
+- [~] **F6. Fan-induction paper** — operating points CONFIRMED and the
+  paper corrected, 2026-08-22.
+
+  **Internally consistent:** μ recomputed from the contract's own disk
+  geometry reproduces the published 0.26 / 0.62 / 1.04 / 1.86 to within
+  1%. The non-obvious part, now stated in the caption: `v_h` is referred
+  to the **annular** disk area, excluding the blade root at r/R = 0.42
+  (the motor hub). Recomputing with the full disk gives μ 8% low and looks
+  like an error.
+
+  **Not a transition, and the paper said it was.** Confirming these
+  bracket a *real* transition needs the thrust at each speed checked
+  against a trimmed condition, and **no mass is stated anywhere in the
+  repo** — the contract carries shape alone. The paper's own header
+  already said "the transition operating line… does not exist yet", while
+  its caption called these "four points along a transition" and its body
+  "the transition point". Corrected: they are a parametric sweep spanning
+  the transition's μ range. Thrust does fall monotonically with airspeed,
+  which is the right qualitative shape and is not a trim schedule.
+
+  **Lip suction — SETTLED 2026-08-22 by the user: not reported
+  separately, one paper carries it.** That is already the state: the
+  SciTech paper reports it quantitatively as one line of its thrust split
+  (+0.26 N of bore-lip suction), and nothing else reports it. The
+  fan-induction paper contains no lip force at all and cannot — it models
+  the fan as a bare actuator disk and panels no duct — so a scope note now
+  says so and points to the single account, since a reader who sees
+  "ducted fan" will otherwise wonder where the duct's own force went.
+
+  **Still open:** the AIAA duplicate-submission position against Part II.
+  The user's call.
+
+- [ ] **F7.** Cite the JOSS paper's DOI for the software once minted.
 
 ---
 
-## Remaining work
-
-### 1. ~~Verify the build under the real toolchain~~ — DONE (2026-08-08)
-
-Full `cmake --preset windows` build and all **21** ctest suites pass on
-the vcpkg machine against real OpenBLAS/LAPACK; `PanelBuilder.cpp`
-compiles with real nlohmann/json and the whole panelbuilder suite is
-green. One warning fixed along the way: dead `cosAlpha`/`sinAlpha`
-locals in `SectionPanelMethod.h`.
-
-### 2. ~~Sphinx build~~ — DONE (2026-08-08)
-
-Doxygen XML + `sphinx-build -b html` succeed; all 12 `references.bib`
-entries parse, every new `:cite:` key resolves (Poll renders as a linked
-`[Pol79]`), and the new theory section is present in the output. The
-only warnings are graphviz-missing (local machine; CI installs it).
-
-### 3. ~~Section VI "Application"~~ — DONE (2026-08-08)
-
-Written against a real α/β sweep: `aeolion_attachment_sweep`
-(app/AttachmentSweepExport.cpp) runs the coupled solve on the 1.8.0
-handoff across α ∈ {0,4,8}° × β ∈ {−10,0,+10}° and exports
-`papers/journal-of-aircraft/figures/attachment-sweep.json`;
-`render-attachment-figures.py` draws the four figures; the paper
-compiles to 18 pages with everything resolved. Findings worth knowing
-when rereading:
-
-- The fixture wing is exactly rectangular/unswept, so all effective
-  sweep is flow-induced: ~30° at the root junction at β = 0 (the body's
-  crossflow deflected around the wing root), decaying to <1° outboard;
-  `Rbar` peaks at the root (86–104) and stays a factor 2.4 below the
-  contamination threshold everywhere.
-- Sideslip splits the roots (windward keeps the spike, leeward passes
-  through a spanwise-flow null one station out) and leaves a ~2°
-  outboard asymmetry that grows with CL — induced, not geometric.
-- The body's station list is nose-refined in the driver (consumer-side
-  resampling of the contract's own radius law); with it the attachment
-  node resolves at 8 of 9 conditions (α = β = 0 honestly
-  AttachesUpstream at the apex).
-- MEASURED: raising BodyCircumferentialPanels to 24 walks flank control
-  points onto the no-carry-through wing's root trailing-leg line —
-  pivot ratio ×5 worse, CL inflated 80%. Keep 16, or keep control
-  points off that line (comment in AttachmentSweepExport.cpp).
-
-Still outstanding in the paper: author block (co-authors? the SciTech
-draft has three), AIAA member grades, acknowledgments/funding,
-external validation anchors, and regenerating `style/aiaa-tc.cls` +
-`aiaa.bst` via `latex aiaa.ins` before any real submission (see
-`papers/journal-of-aircraft/README.md`, whose status/open items are now
-current).
-
-### 3a. Separation and the coefficient/derivative matrix — DONE (2026-08-09)
-
-Section VI now reports what the whole method was for: a matrix of
-coefficients and stability derivatives over α ∈ [−4, 16]° × β ∈ [−10,
-10]°, restricted to attitudes where the flow is still attached, plus the
-separation boundary itself.
-
-- **New module** `solver/include/Aeolion/Solver/AttachmentBoundaryLayer.h`
-  marches each strip from its *real* attachment point (Thwaites → Michel
-  → Head/Ludwieg-Tillmann) and reports separation. Additive: it does not
-  touch `SectionBoundaryLayer.h`, so the tested fixed point is unchanged.
-  It may latch the first crossing precisely because nothing iterates on
-  it. `TestAttachmentBoundaryLayer` (new, 22nd suite) pins it on Blasius,
-  Howarth (s/L = 0.123, mesh-converged), and an unseeded Hiemenz θ₀.
-- **Separation criterion.** At Re_n ≈ 3e5 the laminar layer reaches
-  λ = −0.09 at *every* attitude including negative α, so "laminar
-  separation" draws no boundary. The bubble is treated as the transition
-  trigger and the verdict is turbulent separation (H ≥ 2.4). Onset is
-  α = 6° at every β tested (34% of span, x/c ≈ 0.88), reaching the whole
-  span by α = 8°. Bubble *bursting* is not modelled — stated in the paper
-  as making this an upper bound on usable incidence, not a stall
-  prediction.
-
-**Two bugs found and fixed on the way** (both pre-existing, neither
-pinned by any test):
-
-1. `StabilityDerivatives`' reduced-rate fields multiplied by
-   `length/(2V)` where the convention Cl_p = ∂Cl/∂(pb/2V) requires
-   `2V/length` — the reciprocal, wrong by (2V/b)² ≈ 2000 at these
-   numbers. It reported Cl_p = −2e−4 for an AR=6 wing whose textbook
-   value is −0.45; with the factor corrected it reads −0.452.
-   `TestSolverCore` now pins both the value and the identity, and also
-   pins that Cm_q is *exactly* zero for a single-row wing about its own
-   quarter chord (correct, not a missing term) while being negative about
-   a point two chords aft.
-2. `AttachmentSweepExport.cpp` passed the contract's moment reference
-   point into `FreestreamConditions::RefPoint` without the contract →
-   solver frame flip (x_solver = −x_frd). That put the reference point an
-   equal distance the wrong side of the origin — a spurious moment arm of
-   ~0.48 m, about one body length, inflating Cm_α by an order of
-   magnitude. Mine, introduced in this branch.
-
-**One real defect found — NOW FIXED on `fix/trefftz-induced-drag`:**
-
-`SolveResult::CDi` is not trustworthy on a coupled (wing + closed body)
-configuration. Forces are integrated in the near field (Kutta-Joukowski
-at each bound-vortex midpoint, see the header comment at the top of
-`Solver.h`), and near-field induced drag is a small difference of much
-larger quantities — the streamwise component of forces dominated by lift,
-so its relative error scales with L/D. Adding a body changes the induced
-velocity at the wing's bound vortices and adds a pressure integration over
-the body in a non-uniform field:
-
-- CDi is **negative** at zero lift (−0.006 at α = −4° where CL ≈ −0.013);
-- fitting CDi = CDi0 + k·CL² over the α sweep gives CDi0 = −0.0037 and
-  k = 0.0347, i.e. an apparent Oswald e of **1.53**, which is impossible
-  (e ≤ 1 for any planar wing).
-
-CL and the moments are unaffected — the lift slope (4.86) and roll damping
-(−0.458) both check out against theory.
-
-NOT a d'Alembert violation — that is the tempting explanation and it is
-measurably false. Closed bodies here carry zero net force in uniform flow
-to **machine precision** (|F|/qA ~ 1e-16, TestBodyPanels/TestDuctPanels),
-and the body's force in a coupled solve is physical: it sits in the wing's
-upwash and carries ~8% of the lift.
-
-**Fixed** by `solver/include/Aeolion/Solver/TrefftzPlane.h`: a far-field
-integration over the wake trace, which never evaluates the body at all
-because a closed body sheds no wake. On the coupled airframe the
-zero-lift intercept falls −0.0037 → −0.0003 and CDi is positive at every
-attitude. `TestTrefftzPlane` pins it on elliptic loading (e = 1 and
-CDi = CL²/(πAR)), the e ≤ 1 bound across five distributions, exact
-cancellation of chordwise stacks, and agreement with the near-field
-method to 0.4% on a wing alone.
-
-**The gotcha that cost an hour, so it is written down:** span efficiency
-must be formed with the LIFTING SYSTEM's lift, not the configuration's.
-Only the lifting system sheds a wake, so the far-field drag is its alone.
-The fuselage here carries ~9% of the lift, and comparing the whole CL
-against a wing-only CDi gives e = 1.17 — still above the bound, and
-looking exactly like a defect in a perfectly sound integral. Against the
-wing's own lift (`SolveResult::LiftBySurface["wing"]`) it is 0.965, with
-per-condition values 0.96–0.99.
-
-Still open: `SolveResult::CDi` remains the near-field number, with the
-Trefftz result computed alongside rather than replacing it. Making the
-far-field value the default is a behaviour change to a tested field and
-wants its own decision.
-
-### 3b. Third paper — aft-fan inflow induction (scoped 2026-08-09)
-
-Scoped in `papers/journal-of-aircraft-fan-induction/README.md`; no draft
-and no code yet. Target: a second Journal of Aircraft article asking **how
-far the aft ducted fan delays wing separation during tail-sitter
-transition**.
-
-Two findings from scoping that are worth not rediscovering:
-
-- **The fan is AFT of the wing** on the 1.8.0 handoff — duct LE at solver
-  x = 0.422, wing TE at 0.384, a gap of 0.21 chord. So the mechanism is
-  the fan's *upstream induction* (a favourable gradient over the wing),
-  **not** propwash blowing. Anyone scoping this as a blown-wing study is
-  describing a different aircraft.
-- **`Solver::SlipstreamField` cannot be used for it**: it returns zero for
-  `point.x < 0` by construction (momentum-theory wake only), so it would
-  report exactly zero effect on a wing that sits upstream of the disk —
-  an artifact, not a result. An upstream induction model has to be built;
-  the semi-infinite vortex cylinder has a closed-form upstream field and
-  is what would make the paper verifiable the way the first two are.
-
-The alignment that makes it a paper: duct outer radius / semi-span = 0.21,
-and the second paper's worst separation station is |2y/b| ≈ 0.15–0.23. The
-fan sits over exactly the span the wing sheds first.
-
-Deliberately NOT written: post-stall coefficients to 90 deg. No
-closed-form verification exists past separation, and the answer would be
-set by the four hand-tuned constants of `AnalyticSectionModel`'s
-deep-stall blend rather than by the method. Recorded here so the decision
-is not relitigated.
-
-### 3c. Post-separation study — Phase 0 (2026-08-10)
-
-A separate study from the papers: where does the configuration's behaviour
-converge to flat-plate scaling in alpha AND sideslip? Phase 0 built the
-scaffolding and the convergence metrics, ran the Level-2 coupled solve far
-past anything it had seen (alpha in [-4, 90] x beta in [0, 30]), and fixed
-what broke. The deep-stall NUMBERS are still set by AnalyticSectionModel's
-hand-tuned constants — the 3b caveat stands; Phase 1 replaces them.
-
-**New driver** `aeolion_poststall_sweep` (app/PostStallSweepExport.cpp):
-Level-2 coupled solve on the CLEAN lattice (a carry strip's bound midpoint
-is inside the fuselage where the source field is the interior continuation),
-warm-start continuation up each alpha column, body+duct sources coupled.
-Exports per condition: CN/CC/CL/CD/Cm, total and wing-only force/moment
-vectors, force angle off the chord-plane normal, sigma (total inclination),
-xcp, per-strip [eta, alpha_eff, cl, cd, residual], coupling diagnostics.
-CLI: handoff, out, Vinf, relaxation, andersonDepth, maxIterations, [beta].
-Reproduce the map:
-`aeolion_poststall_sweep tests/Data/AeolionGeometryHandoff-1.8.0.json out.json 25 0.05 0 1000`
-
-**Three failure modes found, all understood, two fixed:**
-
-1. **Spanwise checkerboard multistability.** The Anderson-accelerated fixed
-   point on 44 tightly packed wing strips lands on sawtooth equilibria
-   (alpha_eff alternating +-5 deg strip to strip; alpha=4 gave CL 0.35 or
-   0.93 depending on start). These are the classic spurious equilibria of
-   collocation nonlinear lifting-line. Plain damped iteration (omega=0.05,
-   AndersonDepth=0) converges the whole attached range to residual < 1e-4
-   in ~110 iterations; the propeller consumers (12 strips, kinematic-
-   dominated) never see this. NOT fixed in the solver — driver passes the
-   options. A spanwise-smoothed or Newton update is the real cure if the
-   wing becomes a first-class Level-2 consumer.
-2. **Camber double-count in strip frames** (driver-side, fixed). Building
-   ChordDir/LiftDir from the cambered panel geometry absorbs the lattice's
-   zero-lift shift, and Alpha0Deg then subtracts camber again: measured
-   coupled zero-lift at -7.8 deg = lattice -3.9 + thin-airfoil -4.2. The
-   driver now uses the true chord frame; coupled CL matches the inviscid
-   lattice to 4 digits at zero lift. The exact trap the ViscousCoupling.h
-   header warns about; a future PanelBuilder wing-strip builder must carry
-   the section plane for swept/twisted wings.
-3. **cl->Gamma inversion degeneracy at |alpha_eff| ~ 90 deg** (solver,
-   fixed in ViscousCoupling.h). The circulatory force is perpendicular to
-   the lift direction there, k passes through zero, and cl/k slammed the
-   target between +-gammaCap with the sign of k's noise (CN ~ 5 at
-   alpha=90, artifact), while the |k|~0 branch froze stale continuation
-   circulation. Fix: targets ramp to zero beyond the residual's own
-   contract edge (ResidualIncidenceLimitDeg, TargetDecayRampDeg=10). A
-   Tikhonov-damped inversion was tried first and REJECTED: its 0.25% bias
-   floors the residual above tolerance — TestViscousCoupling and
-   TestPropellerDuct caught it. With the decay, all suites pass and the
-   rotor-vane suites run ~20x faster (reversed vane tips stop chasing the
-   degenerate inversion): TestRotorVaneCoupling 137 s -> 7 s,
-   TestVaneCascade 191 s -> 17 s.
-
-**Deep-stall limit cycles are inherent, and the cycle means are
-reproducible**: independent iteration paths (Anderson vs plain damped)
-agree to 4+ digits on the cycle-mean loads at alpha 25..80. The map's
-deep-stall values are cycle means, exported with Converged=false and the
-residual — by design, not laundering.
-
-**The Phase-0 map** (donated constants and all): cross-beta collapse in
-total inclination sigma (sin sigma = sin alpha cos beta) holds to <5%
-spread from alpha ~ 6 deg through 75 deg — sideslip up to 30 deg only
-rescales the loads through cos beta. CN/sin sigma decays from ~7.5
-(attached) to the plate plateau ~2.1-2.3 by alpha ~ 55-65. CLmax = 1.39 at
-alpha = 20 (the analytic blend stalls 14 deg later than the computed
-separation onset at 6 — the gap Phase 1's Kirchhoff bridge closes).
-CN(90) = 2.11 vs Viterna CDmax(AR=6) = 1.22: +73%, the quantified cost of
-the AR-blind PlateNormal=1.8. xcp is structurally pinned at ~0.25c:
-SectionCoefficients has no cm, so the strip force acts at the quarter
-chord and the plate's walk to mid-chord CANNOT be represented — Phase 1
-must add cm to the section interface. Above alpha ~ 80 (and beta >= 15)
-the strip contract itself dies (most strips beyond the incidence limit);
-that corner of the map is scaffolding, not physics.
-
-**Phases agreed** (chat, 2026-08-10): 1 — anchored post-stall section
-models (Viterna AR-aware CDmax + Hoerner CN as the deep anchor, Kirchhoff
-attenuation driven by AttachmentBoundaryLayer's computed separation point,
-section cm, validation against Sheldahl & Klimas Re=3.6e5 / Ostowari-Naik;
-plus hysteresis map via up/down continuation). 2 — Maskew-Dvorak double
-wake on SectionPanelMethod's Hess-Smith solve. 3 — vortex particles (2D
-LESP discrete-vortex sections first, 3D particle wake from the computed
-separation line as an unsteady spot-check).
-
-### 3d. Phase 1 + the strip-frame paper correction (2026-08-11)
-
-**Phase 1 landed.** `Solver/PostStallSection.h`: Kirchhoff attenuation
-K(f) on the exact thin-airfoil cn/cc pair (both classical limits exact:
-f=1 is d'Alembert-clean, f=0 the plate quarter-slope), f interpolated
-per strip from AttachmentBoundaryLayer tables built over an inviscid
-alpha sweep; Viterna-Corrigan beyond the EMERGENT stall with AR-aware
-CdMax (2.01 at the AR=50 edge vs Hoerner's 1.98); Rayleigh's
-free-streamline xcp for the section cm. `SectionCoefficients` gained cm
-(additive; every existing consumer bit-identical) and the coupling
-applies it as a pure quarter-chord couple
-(`ViscousCoupledResult::SectionMoment`). `TestPostStallSection` (25th
-suite) pins the anchors, the exactness of the attached limit, emergent
-stall, junction continuity, and the couple identity. Docs: theory.rst
-section, api.rst, tests.rst, viternaCorrigan1982 in references.bib.
-
-Anchored map vs Phase-0 baseline (beta=0): CN(90) 2.11 -> 1.52 against
-the Viterna anchor 1.218 (+25% residual: local dynamic pressure at the
-inboard strips + cycle-mean circulation); xcp walks 0.25c -> 0.52c and
-LANDS ON Rayleigh's mid-chord — a metric the model was never fitted to;
-CLmax 1.76 at alpha=18, emergent from the separation tables and an
-upper bound (bubble bursting, see 3a); sigma-collapse across beta
-within 13% (baseline 6% — the sharper stall cycles harder).
-
-**Strip-frame bug, and the papers.** The Phase-0 camber double-count
-(3c, finding 2) also lived in AttachmentSweepExport: ComputeAttachmentLine
-measures alpha_n in the strip frame, the driver supplied camber-tilted
-panel axes, and the section contour carries the camber again — alpha_n
-biased HIGH by ~4.3 deg. Fixed (true chord frame). Consequences,
-verified by full-matrix diff: CL/Cm/derivatives BIT-IDENTICAL; the
-separation onset moves 6 -> 12 deg (55% span at 12, 82% at 14, ~full at
-16 with forwardmost x/c = 0.80); worst Rbar 104 -> 66 within the
-attached envelope (contamination margin 2.4x -> 3.7x), 135 over the
-whole matrix; stagnation offsets roughly halve at low alpha. SciTech
-lattice-solution.json: bit-identical after all solver changes (verified
-numerically) — no paper impact. Fan-induction fine sweeps regenerated
-with the corrected frames (delay table to be re-rendered; the Delta
-alpha result is a same-frame difference and needs re-measuring, not
-assuming).
-
-**Papers restructured as Part I / Part II** (user direction,
-2026-08-11): Part I = papers/journal-of-aircraft, "...Across the
-Separation Boundary — Part I: Attachment Lines, the Separation March,
-and the Attached-Flow Envelope" — everything up to the separation
-boundary, coefficient tables truncated there, all prose numbers
-corrected. Part II = papers/journal-of-aircraft-poststall (new) — the
-post-separation study as a paper: anchored section model, the
-alpha x beta map to 90/30, sigma-collapse, plate convergence, the two
-anchors. Both compile clean (26 pp / draft). Author blocks must stay
-synchronized.
-
-### 3e. Tier 3 — the unsteady cross-check (2026-08-12/13)
-
-("Cross-check", not "referee" — renamed by user direction; the tier
-judges the quasi-steady tiers at a handful of attitudes, it does not
-enter the production loop.)
-
-**2-D half — DONE, committed.** `Solver/DiscreteVortexSection.h`: the
-LDVM of Ramesh et al. at fixed incidence — Glauert coefficients from
-the wake downwash (no matrix), TEV every step, LEV while |A0| >
-LESP_crit, both strengths a LINEAR Kelvin/LESP system per step, loads
-from the 2-D impulse theorem. Pinned to Wagner (window mean, not the
-steady value), machine-zero Kelvin, the LESP switch, mirror symmetry,
-and the 2-D street band at 90 deg (~3.3 — the documented 2-D
-over-coherence, deliberately NOT the measured ~2). Part II carries the
-results: break between 10 and 20 deg with RMS cl jumping 0.005 → 0.57,
-fluctuation persisting to the plate.
-
-**3-D half — implemented, fixture-verified; configuration numbers
-pending long averaging.** `Solver/ParticleWake.h`: single-row ring
-lattice + one-step buffer ring + vector-particle wake with
-transpose-scheme stretching and impulse loads. The debugging arc is
-recorded in the header where each lesson lives; the short version of
-what was MEASURED, so nobody re-litigates it:
-
-- No buffer ring → the bound solve converges to 42% of the steady
-  VLM's circulation (uncancelled TE closer).
-- Naive 4-segment buffer conversion → impulse noise 30x the mean
-  (+/- full-strength pairs); merged conversion fixes it.
-- Local unsteady K-J loads → smooth but mean-zero at 90 deg (a line
-  force cannot carry bluff-plate drag); impulse restored.
-- Classical stretching → sum(d alpha) drift buries the loads;
-  TRANSPOSE scheme (conserves total strength) brings attached
-  impulse-vs-circulation agreement to 0.2%.
-- Index-based strip adjacency → the trim gap injects spurious
-  mid-span trailing vorticity, diverging the real-wing runs; adjacency
-  is now geometric, gap edges close like tips.
-- LE flux ~ V_loc^2 with V_loc fed by its own particles → quadratic
-  runaway at deep incidence on the real wing; PwLeFluxSpeedCap = 2.5
-  states the plate edge's potential-flow speedup rather than tuning.
-
-Headline (fixture, AR = 6): plate CN(90) = 0.4–0.9 across LE-flux
-variants at test-budget averaging vs the 2-D tier's 3.3 — spanwise
-breakup collapses the street toward the finite-plate ceiling's scale
-(1.22); the precise level is flux-model-sensitive at short averages
-and belongs to the declared long-averaging + sensitivity computation.
-TestParticleWake is the 28th suite; it pins the structural claim
-(positive bluff drag, far below 2-D), not a narrow band.
-
-**RESOLVED as a measured negative (2026-08-14), stated in Part II:**
-the six-attitude configuration runs do not yield converged means at
-this tier's fidelity, and the paper now says so instead of promising
-them. Two measurements on the way there:
-
-1. The TRIMMED wing cannot be the cross-check geometry — its two inner
-   tip-vortex streams face each other across the body gap with no body
-   occupying it, and their close-range dynamics dominate (RMS 13.5 on
-   an O(1) mean at alpha = 30, GROWING with the window). The driver now
-   builds a full-span contiguous wing from the contract's planform law;
-   absent the body, span continuity is the physical statement (it is
-   also what the carry-through solve asserts).
-2. Even full-span, the inviscid street's fluctuation-to-mean ratio runs
-   3–40 across the attitudes (duration-18 rows: alpha 30: RMS 3.6-3.8
-   on means ~0.1; alpha 60: RMS 8.6-46) and grows with incidence and
-   window. Converging configuration means to ~10% needs hundreds of
-   independent shedding periods + viscous core spreading + real
-   spanwise resolution — a production VPM, outside the cross-check's
-   charter. The tier's deliverables stand at the fixture-level
-   structural results and the fluctuation content; a mean-capable
-   comparison is identified, quantified future work.
-
-**Phase A (mean-capable upgrades) — built, piloted, verdict recorded
-(2026-08-14, commit 09f5c76 + follow-ups):** eddy-viscosity core
-spreading (coeff x Vinf x chord, 0 = inviscid), RK2 convection,
-Pedrizzetti relaxation (self-curl INCLUDED — excluding it injects
-energy), like-signed far-wake merging, batch-mean CIs, OpenMP (~5-6x).
-Fixture: plate RMS 247 -> ~6, sideslip mirrors to 0.02%/3%, attached
-untouched. Configuration pilots at alpha=60, duration 60, C=0/1e-3/3e-3:
-the nu=0 control is statistically useless as predicted (CN 1.2 +- 4.7);
-the viscous runs stay fluctuation-dominated (RMS 300-640, CI > mean) —
-coarse-lattice co-rotating consolidation outruns the model dissipation
-(quasi-2-D inverse cascade; each merge raises its own cap ceiling).
-VERDICT: regularization alone cannot converge configuration means at
-12-strip resolution; Phase B = resolution (treecode + finer shedding +
-smaller cores).
-
-**Phase B (2026-08-14): treecode DONE and kept; the resolution
-hypothesis MEASURED FALSE at feasible scale.** Solver/ParticleTree.h
-(Barnes-Hut, monopole + gradient, core-clearance acceptance) is pinned
-by TestParticleTree: machine-exact at theta=0, 0.45%/0.008% u/grad
-error at theta=0.5, 2.3x over direct at N=6000 single-thread; wired
-into ParticleWake above 2000 particles. The alpha=60 pilot at DOUBLED
-resolution (24 strips, dt 0.05, duration 60, C=1e-3) is categorically
-WORSE (CN -1315 +- 1511, RMS ~15000, 85k merges): refinement shrinks
-the cores and sharpens the close-range consolidation faster than it
-resolves the cascade. Three independent setups (coarse, honest-merge
-coarse, refined) now land in the same class. CONCLUSION: converged
-mid-alpha configuration means need the overlap-resolved VPM regime --
-several particles per shed structure per step, N ~ 1e6, subgrid
-dissipation, FMM/GPU -- a standalone project, not an increment of this
-tier. The cross-check's charter (attached exactness, fluctuation
-content, structural deep-stall results, and now the measured limits)
-is complete; the treecode stays as verified infrastructure for
-whatever comes next. **The overlap-resolved VPM now lives in its own
-repository, [onurtuncer/VPM](https://github.com/onurtuncer/VPM)**
-(private; the BEMT precedent — plain `VPM::` namespace, no dependency
-either way): GPU-first architecture (SoA, one host/device kernel
-definition, CUDA stub compiled on hosted CI, execution tests on a
-self-hosted runner when the NVIDIA machine joins), the physics core
-ported with all five recorded rules — and a sixth earned on its first
-day (N-body RK2 must advance sources to the midpoint; frozen sources
-demote it to first order, measured on the vortex-ring anchor test). TWO REJECTED SHORTCUTS, do not reintroduce: (a) merging
-without the alignment check annihilates counter-rotating pairs (=
-momentum parcels) and produced tightly converged means wrong by 10x
-(CL ~ 25-27 at alpha 60, CI shrinking around the bias); (b) hiding
-systematic strength-edit impulses without making the edits rare turns
-the ledger into a bias channel. Transient near-particles must never
-stretch, relax, or merge (filament stand-ins; rotating them injects
-full-strength residue at the TE). `aeolion_particle_crosscheck <handoff> <out.json>
-[duration]` is instrumented for it (unbuffered per-attitude progress,
-per-row JSON flush). Theory for both halves is in doc/theory.rst and
-as an equations block in Part II; method sketch
-figures/crosscheck-sketch.pdf.
-
-### 3f. The DAVE-ML flight model (2026-08-15/16)
-
-A tabulated flight model for simulator/trim/allocator use, spec in
-`models/README.md` (normative), 26-pp technical report in
-`models/report/` (data tables generated from solver JSON by
-`make-tables.py`; no number typed by hand). ANSI/AIAA S-119-2011, ONE
-file, varIDs namespaced `aero*`/`prop*`/`coupling*`.
-
-Declared absences, each because the method cannot support the axis: no
-Mach (incompressible throughout), no Reynolds (one reference condition),
-no disk incidence (the rotor-vane machinery is axisymmetric end to end;
-`alphaDisk` is exported as a VALIDITY MONITOR instead of faked as an
-axis). Speed and RPM collapse to advance ratio J.
-
-New drivers: `aeolion_aero_map`, `aeolion_propulsion_map`,
-`aeolion_parasite_drag`, `aeolion_aileron_effectiveness`.
-New shared headers: `Solver/BodyAxes.h`, `Solver/SeparationTables.h`
-(the latter extracted verbatim from PostStallSweepExport, which now uses
-it -- post-stall numbers unchanged). New suite: `TestBodyAxes` (30th).
-
-**Five measured results, none of them assumed. Do not re-derive:**
-
-1. **The vane mode-sum buildup is WRONG.** pitch+yaw superposes (0.09%),
-   but any pair involving roll is 6-33% off -- roll is the common mode
-   and re-deflects the SAME vanes, and a vane's load is nonlinear in its
-   own angle. That pitch+yaw superposes with all four vanes deflected
-   proves vane-to-vane interference is negligible, so the failure is
-   purely per-vane nonlinearity. **Per-vane summation verified at 1.4%
-   worst case, and needs 7 tables instead of 21.**
-2. **`aeroDC*` (aileron) tables are BLOCKED.** `MinRowsToResolveHinge = 2`
-   collides with `SolveViscousCoupled`'s one-row-per-strip contract, so a
-   deflection through the table-generating path is EXACTLY ZERO at every
-   attitude -- silently, with the solve converging and reporting sensible
-   forces. Shipped unchecked that is an aircraft with no roll control.
-   The inviscid 8-row lattice does give a real effect (0.0093 at alpha 0,
-   0.0032 at 60) but its decay is purely geometric with no stall break,
-   so it is not a substitute. FIX is solver-side: `StripSection::
-   Alpha0Deg` must carry the thin-airfoil flap increment.
-3. **Parasite drag cannot be a constant.** friction CD0 = 0.0106 (body
-   0.00521 ~ duct 0.00507 -- the duct's short chord raises its Cf),
-   crossflow branch 0.185, so **CD0(90 deg) = 0.195, 17.5x friction**. A
-   constant would omit 95% of parasite drag at 90 degrees. `DragEstimate`
-   had never been called by anything before this.
-4. **A rate derivative does NOT follow the wrench frame rule.** The flip
-   applies to both response and rate, so Clp/Clr/Cnp/Cnr/Cmq are frame
-   INVARIANT while CZq/CYp/CYr flip. Applying the wrench rule gave
-   Cl_p = +0.4547 against a textbook -0.45: right magnitude, wrong sign,
-   i.e. roll ANTI-damping. Now pinned by `TestBodyAxes` WITH the sign.
-5. **`SolveViscousCoupled` leaves its coefficient members at zero** and
-   reports dimensional forces only. Reading `res.Base.CL` gives a fully
-   converged alpha sweep of exactly zero. Also pinned.
-
-Two smaller measured items: positive roll at J = 0.6 does not converge
-and neither more passes (24 vs 48 identical) nor damping (0.35 -> 0.15)
-fixes it -- a sign-asymmetric limit cycle, carried as DAVE-ML
-uncertainty bounds from two iteration paths; and the S-119 Annex A
-"non-conformance" was a misreading -- `varID` is unconstrained, `name`
-carries the standard name, so both requirements are satisfiable at once.
-
-Papers I and II now carry the parasite drag (Part I "Parasite drag and
-the complete polar", Part II "The parasite branch, and why it cannot be
-a constant"), refs Raymer / Hoerner / Allen-Perkins NACA 1048 /
-Jorgensen NASA TR R-474.
-
-**Still to build:** the assembler `models/build-daveml.py` and the
-verifier `models/verify-daveml.py` (in-repo gridded-table + MathML
-evaluator, no Janus dependency), DTD validation in CI, and the
-`coupling*` interaction tables -- still blocked on the vortex-cylinder
-upstream-induction model of 3b, since `SlipstreamField` is zero upstream
-by construction.
-
-### 4. The actual boundary-layer coupling
-
-This work deliberately stopped at the *prerequisite*. Everything a march
-needs is now produced but nothing consumes it yet:
-
-- `SectionSolution::UpperRun()` / `LowerRun()` give `U_e(s)` from the
-  stagnation point; `StagnationMomentumThickness` gives `θ₀`.
-- `SurfaceStreamline` gives `U_e(s)` and `h(s)` on the body.
-- `AttachmentStation` gives `Rbar`, so the march knows whether it may
-  start laminar at all.
-
-`SectionBoundaryLayer.h` currently starts its march at the camber-line
-leading edge with `θ = 0` on both surfaces — i.e. it assumes the
-stagnation point is at `x/c = 0`, which is exactly the approximation this
-work removes. Wiring it to start at the real attachment point with the
-real `θ₀` is the natural next step, and is a behaviour change to an
-existing tested module, so it wants its own branch.
-
-### 5. Smaller items
-
-- Body streamline tracing assumes the *lateral* fuselage surface; the
-  base cap is (correctly) declined. If the attachment analysis should
-  ever cross onto the base, that needs a second patch and a join.
-- `MinSurfaceStations`/`MinSurfaceSectors` and the nose-resolution issue:
-  on a slender body at low incidence the stagnation point can fall inside
-  the first panel ring, where the honest answer is `AttachesUpstream`.
-  **Worked around consumer-side** in `AttachmentSweepExport.cpp`
-  (`RefineNoseStations` cosine-clusters the contract's station list toward
-  the apex, keeping every original breakpoint so the shape is unchanged),
-  which resolves the node at 8 of the paper's 9 conditions. Whether
-  `BuildBody` should offer this as a `LatticeOptions` knob rather than
-  leaving every caller to reimplement it is still open — the argument for
-  the knob is that axial spacing is exactly as much a consumer choice as
-  `BodyCircumferentialPanels` already is.
-- `AttachmentLine` takes one Weissinger row per strip (same contract as
-  `SolveViscousCoupled`). Multi-row chordwise lattices need the caller to
-  pass the leading-edge row.
+## Settled — do not re-derive
+
+Short index. Full detail lives where the work does.
+
+| Finding | Written down in |
+|---|---|
+| Stagnation offset scales as √r_LE, not r_LE | Part I; `SectionPanelMethod.h` |
+| Surface strain rates need a local orthonormal frame | `SurfaceFlow.h` |
+| Near-field `CDi` is untrustworthy on a coupled configuration; span efficiency must use the *lifting system's* lift | `TrefftzPlane.h`, `TestTrefftzPlane` |
+| Reduced-rate derivatives: the factor is 2V/ℓ, and inverting it is wrong by ~2000 | `StabilityDerivatives.h`, `TestSolverCore` |
+| Camber double-count: strip frames must be the **true chord frame** | `ViscousCoupling.h` — bit this repo twice |
+| Spanwise-checkerboard spurious equilibria; plain damped iteration suppresses them | `PostStallSweepExport.cpp` |
+| Deep-stall limit-cycle means are iteration-path independent **at fixed continuation** — warm-start history matters more than relaxation (B5) | Part II |
+| A rate derivative does **not** follow the wrench frame rule | `Solver/BodyAxes.h`, `TestBodyAxes` |
+| `SolveViscousCoupled` never populates coefficient members — read the dimensional fields | `Solver/BodyAxes.h` — bit this repo twice |
+| Vane mode-sum buildup is wrong (33%); per-vane summation verified (1.4%) | `models/README.md`, `PropulsionMapExport.cpp` |
+| Parasite drag cannot be a constant: CD0(90°) is 17.5× the friction term | `ParasiteDragExport.cpp`; Part I, Part II |
+| A hinge cannot live on one chordwise row; the flap belongs in the **section** | `ViscousCoupling.h`, `TestFlapSection` |
+| Past ~30°, the aileron is predominantly a **yaw** effector | `models/README.md`; technical report |
+| The fan's upstream induction needed no new physics — `DiskInduction.h` already had it | `InductionMapExport.cpp` |
+| The fan's separation delay is real and thrust-ordered, but the 16° lift step is **not** its signature (load ×3.38, delay ×1.09) | Part II; `InductionMapExport.cpp` |
+| A separation-point *location* is measurable where a lift *increment* across two cycle means is not | Part II; `TestSeparationDelay` |
+| `fMin` saturates at 0 past α = 20 — a difference of saturated values is not a measurement | `InductionMapExport.cpp` |
+| Overlap-resolved VPM is a separate project ([onurtuncer/VPM](https://github.com/onurtuncer/VPM)); five recorded rules plus the RK2 midpoint-source rule | `ParticleWake.h` |
+| BEMT is a separate project; no dependency either way | `CLAUDE.md` |
+| This machine runs at ~3% free memory; long sweeps get silently killed (truncated JSON, empty stderr) and wall-clock timings can be absurd | TODO E4 |
+| `assert()` is compiled out — the `windows` preset is Release, so NDEBUG. Tests must use the suites' own `CHECK` macro | `TestSeparationDelay.cpp` header note |
+| The base cap is panelled as concentric annuli; `RadiusAt` is single-valued in x and cannot describe its corners | `TestBodyNoseRefine` |
 
 ---
 
@@ -652,20 +438,14 @@ Current, on the vcpkg machine (real OpenBLAS/LAPACK, nlohmann/json):
 cmake --preset windows && cmake --build --preset windows && ctest --test-dir build/windows
 ```
 
-**21/21 tests pass** — the seven solver suites plus the whole panelbuilder
-suite (`TestBodyPanels`, `TestAirframe`, `TestVaneCascade`,
-`TestRotorVaneCoupling`, …), the logger, and the contract tests. Note the
-build must run inside the MSVC dev environment with `VCPKG_ROOT` re-set
-after `vcvars64.bat`, which overrides it to VS's bundled vcpkg.
+**34/34 suites pass.** The build must run inside the MSVC dev environment
+with `VCPKG_ROOT` re-set after `vcvars64.bat`, which overrides it to VS's
+bundled vcpkg.
 
-Docs: Doxygen XML + `sphinx-build -b html` succeed against
-`doc/requirements.txt` (graphviz is the only local gap; CI installs it).
+The flight model additionally validates against `models/DAVEfunc.dtd`
+(DAVE-ML 2.0.1) and passes 407 checks through `models/verify-daveml.py`,
+which runs as `TestDaveMLModel` — see A2 for the CI caveat.
 
-Paper: `pdflatex && bibtex && pdflatex && pdflatex` in
-`papers/journal-of-aircraft/` with `TEXINPUTS=./style;` — 18 pages, no
-undefined references. (`latexmk` does not work on this machine; no perl.)
-
-The three new solver tests check against closed-form answers, not against
-themselves — sphere stagnation points exact at any α/β, cylinder surface
-velocity exact, the `√r_LE` collapse, and the swept-vs-unswept sideslip
-asymmetry with its control case.
+Papers: `pdflatex && bibtex && pdflatex && pdflatex` in each paper's
+folder with `TEXINPUTS=./style;`. `latexmk` does not work on this machine
+(no perl). Part I 29 pp, Part II 13 pp, technical report 29 pp.

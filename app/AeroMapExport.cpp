@@ -28,23 +28,42 @@
 // converted at ingest. Those are the only two conversion sites, which is
 // the discipline the 2026-08-09 moment-arm bug earned.
 //
-// WHAT IS NOT HERE. Aileron increment tables (aeroDC*) are BLOCKED and
-// deliberately not emitted: PanelBuilder's MinRowsToResolveHinge = 2
-// collides with SolveViscousCoupled's one-row-per-strip contract, so a
-// deflection through this path is exactly zero at every attitude --
-// measured in app/AileronEffectivenessExport.cpp. Emitting them would
-// ship a flight model with no roll control. Parasite drag is its own
-// driver (aeolion_parasite_drag) since no solve produces it.
+//   AILERON INCREMENTS come from the same coupled solve with the flap
+//   carried in the SECTION (StripSection::FlapChordFraction), which is
+//   what makes them computable at all: a hinge cannot be represented on
+//   a single chordwise row, and before that fix a deflection through
+//   this path was exactly zero at every attitude, silently. Neutral and
+//   deflected are solved in the SAME pass, each warm-started up its own
+//   alpha column, because differencing two limit-cycle means taken from
+//   different continuation histories would add noise to the increment
+//   that has nothing to do with the control surface.
 //
-// Beta is swept one-sided; the assembler mirrors it using the unpowered
-// airframe's symmetry (CY, Cl, Cn odd in beta; CX, CZ, Cm even), which
-// the source sweeps confirmed numerically.
+// Parasite drag is NOT here -- it is its own driver
+// (aeolion_parasite_drag), since no solve produces it.
+//
+// TWO ONE-SIDED SWEEPS, both mirrored by the assembler on symmetry
+// arguments that this driver also checks numerically rather than
+// assuming. Beta: CY, Cl, Cn odd, CX, CZ, Cm even. Aileron: the
+// configuration is mirror-symmetric about xz and mirroring maps +delta
+// onto -delta, so the same odd/even split holds in deflection; the sweep
+// solves one negative deflection to verify it.
 //
 // Usage:
 //   aeolion_aero_map <handoff.json> <out.json> [Vinf] [relaxation]
-//                    [maxIterations] [beta|all]
+//                    [maxIterations] [beta|all] [all|baseline|rates|aileron]
+//                    [alpha list]
+//
+// The block selector takes ONE name, or `all`. Note that `baseline` and
+// `rates` are separate: they used to be one, so asking for the baseline map
+// also paid for a 25-station rate-derivative sweep whose cost is several
+// solves per station. That is dead weight for any study of the map itself --
+// and worse than dead weight for a hysteresis study, because the rate block
+// does NOT warm-start (it builds its own options without InitialGamma), so
+// it carries no branch information at all and a reversed alpha list changes
+// nothing in it.
 
 #include "Aeolion/Geometry/CstSurface.h"
+#include "Aeolion/Geometry/FlapEffectiveness.h"
 #include "Aeolion/Geometry/HandoffContract.h"
 #include "Aeolion/PanelBuilder/PanelBuilder.h"
 #include "Aeolion/Solver/BodyAxes.h"
@@ -74,6 +93,39 @@ constexpr int BodySectors = 16; // the measured value; see AttachmentSweepExport
 
 // The model's alphaBp: 2 degrees through the stall break, coarsening in
 // the plate regime where the loading varies slowly with attitude.
+// An explicit comma-separated alpha list overrides the grid.
+//
+// This is not only a cost control. The sweep is a CONTINUATION -- each solve
+// warm-starts from the preceding alpha (see the loop below) -- so the list is
+// walked in the order given, and the order is part of what gets computed. Two
+// consequences, one intended and one to guard against:
+//
+//   * A DESCENDING list yields the DESCENDING branch. That is the hysteresis
+//     measurement (TODO B4): the shipped map is the ascending branch by
+//     construction, and whether the descending branch differs materially
+//     decides whether a static gridded table can represent this vehicle near
+//     stall at all. No solver change is needed to ask the question -- reverse
+//     the list.
+//
+//   * A SUBSET of the ascending grid is not the ascending grid. Measured on
+//     the induction map: dropping intermediate attitudes moved a span-mean
+//     separation point by 0.013 against a signal of 0.018, and reversed a
+//     sign at one condition. Sound for exploring, unsound for reproducing a
+//     row of a shipped table. The canonical write-up is in models/README.md
+//     under the declared limits, and in doc/theory.rst.
+std::vector<double> ParseAlphaList(const std::string& spec) {
+    std::vector<double> alphas;
+    std::size_t pos = 0;
+    while (pos < spec.size()) {
+        const std::size_t comma = spec.find(',', pos);
+        const std::string tok = spec.substr(pos, comma - pos);
+        if (!tok.empty()) alphas.push_back(std::atof(tok.c_str()));
+        if (comma == std::string::npos) break;
+        pos = comma + 1;
+    }
+    return alphas;
+}
+
 std::vector<double> BuildAlphaGrid() {
     std::vector<double> alphas;
     for (double a = -4.0; a <= 26.0 + 1e-9; a += 2.0) alphas.push_back(a);
@@ -96,7 +148,9 @@ constexpr double RateDerivativeMaxAlphaDeg = 20.0;
 // frame is the solver frame itself; a swept or twisted wing needs a
 // PanelBuilder-side strip builder that carries the section plane.
 std::vector<S::StripSection> StripsFromPanels(const std::vector<S::Panel>& panels, double halfSpan,
-                                              const std::vector<Geometry::AirfoilSection>& sections) {
+                                              const std::vector<Geometry::AirfoilSection>& sections,
+                                              const Geometry::ControlSurface* aileron = nullptr,
+                                              double aileronDeg = 0.0) {
     std::vector<S::StripSection> strips;
     strips.reserve(panels.size());
     for (const S::Panel& panel : panels) {
@@ -108,6 +162,19 @@ std::vector<S::StripSection> StripsFromPanels(const std::vector<S::Panel>& panel
         strip.Width = panel.SpanwiseWidth;
         strip.Eta = std::fabs(mid.y) / halfSpan;
         strip.Alpha0Deg = Geometry::SectionZeroLiftAngleDeg(sections, strip.Eta);
+
+        // The aileron, carried in the SECTION rather than the panel
+        // geometry: a hinge cannot be represented on a single chordwise
+        // row, but to thin-airfoil theory a deflected flap is a camber
+        // change, so it shifts the zero-lift angle the section model is
+        // posed against (StripSection::FlapChordFraction). ANTISYMMETRIC:
+        // the right semi-span takes +delta and the left -delta, which is
+        // what makes it an aileron rather than a flaperon.
+        if (aileron && aileronDeg != 0.0 && strip.Eta >= aileron->EtaStart &&
+            strip.Eta <= aileron->EtaEnd) {
+            strip.FlapChordFraction = aileron->ChordFraction;
+            strip.FlapDeflectionDeg = (mid.y >= 0.0) ? aileronDeg : -aileronDeg;
+        }
         strips.push_back(strip);
     }
     return strips;
@@ -136,6 +203,19 @@ int main(int argc, char** argv) {
     const std::string betaArg = (argc > 6) ? argv[6] : "all";
     const bool betaFiltered = betaArg != "all";
     const double betaOnly = betaFiltered ? std::atof(betaArg.c_str()) : 0.0;
+    // Which blocks to compute. The baseline map is expensive and rarely
+    // needs regenerating alongside the aileron sweep, so they are
+    // selectable: "all" | "baseline" | "aileron".
+    const std::string blocks = (argc > 7) ? argv[7] : "all";
+    const std::vector<double> alphaGrid =
+        (argc > 8) ? ParseAlphaList(argv[8]) : BuildAlphaGrid();
+    const bool wantBaseline = (blocks == "all" || blocks == "baseline");
+    const bool wantRates = (blocks == "all" || blocks == "rates");
+    const bool wantAileron = (blocks == "all" || blocks == "aileron");
+    if (!wantBaseline && !wantRates && !wantAileron) {
+        std::cerr << "unknown block selector '" << blocks << "' (all | baseline | aileron)\n";
+        return 1;
+    }
 
     Geometry::HandoffContract contract;
     try {
@@ -224,22 +304,199 @@ int main(int argc, char** argv) {
            " chordwise row -- see AileronEffectivenessExport.cpp); parasite drag"
            " (aeolion_parasite_drag)\"},\n";
 
-    // --- rate derivatives, inviscid, beta = 0 --------------------------------
+    // --- rate derivatives ----------------------------------------------------
+    // TWO SETS, because neither alone covers the envelope honestly.
+    //
+    // The INVISCID set (central differences on the prepared system) is the
+    // path Part I validated and TestBodyAxes pins against the textbook
+    // Cl_p = -0.45. It is exact where the flow is attached and meaningless
+    // past separation, since the lattice contains no stall.
+    //
+    // The COUPLED set differences the Level-2 solve, so the section model's
+    // post-stall lift slope enters. That matters more than it sounds: past
+    // stall dcl/dalpha goes NEGATIVE, which can drive Cl_p POSITIVE -- roll
+    // ANTI-damping, i.e. autorotation, the mechanism of a spin. A table that
+    // tapered the attached value to zero would miss that; one that clamped
+    // at its last attached value (which is what an alphaRateBp ending at 20
+    // silently does) would grant a simulator full attached roll damping at
+    // 90 degrees. Both are worse than measuring.
+    //
+    // Post-stall the coupled solve returns a limit-cycle mean, so a
+    // derivative differenced across it is only meaningful if the signal
+    // exceeds the cycle's own width. The rate step is therefore enlarged
+    // past stall, and each row carries the cycle fluctuation of its own
+    // perturbed solves so the assembler can tell a resolved derivative from
+    // one lost in the cycle.
     out << "\"rates\":[\n";
     bool firstRate = true;
-    for (const double alphaDeg : BuildAlphaGrid()) {
-        if (alphaDeg > RateDerivativeMaxAlphaDeg + 1e-9) break;
+    for (const double alphaDeg : alphaGrid) {
+        // Six coupled solves per attitude, so this must not run for a study
+        // that will discard it -- originally that meant guarding it against
+        // blocks=aileron. It now has its own selector, because "the baseline
+        // map" and "the rate derivatives" are separate questions and asking
+        // for the first should not buy the second. A hysteresis study is the
+        // sharp case: the rate block builds its own options WITHOUT
+        // InitialGamma, so it never warm-starts, carries no branch, and a
+        // reversed alpha list changes nothing in it.
+        if (!wantRates) break;
         S::FreestreamConditions base = fc;
         base.alphaDeg = alphaDeg;
         base.betaDeg = 0.0;
-        const S::BodyAxisRateDerivatives d =
-            S::ComputeBodyAxisRateDerivatives(prepared, base, ref);
+
+        const bool attached = alphaDeg <= RateDerivativeMaxAlphaDeg + 1e-9;
+        S::BodyAxisRateDerivatives inv;
+        if (attached) inv = S::ComputeBodyAxisRateDerivatives(prepared, base, ref);
+
+        // Coupled roll damping, the derivative whose SIGN carries the
+        // physics. A bigger step past stall so the difference clears the
+        // cycle width; the attached range keeps the small step so the two
+        // sets are comparable there.
+// WHICH PATH IS AUTHORITATIVE, PER DERIVATIVE. Not a preference -- a
+        // structural property of a single-row strip method, measured rather than
+        // assumed (TestRollDamping::TestPitchRateReachesTheCoupledSolve).
+        //
+        // A roll or yaw rate gives a spanwise-VARYING incidence, which a strip
+        // method sees directly at its bound line. Those derivatives are taken
+        // from the COUPLED solve, and they are the ones that carry the physics
+        // the inviscid path structurally cannot: past stall the section lift
+        // slope goes negative and Cl_p REVERSES SIGN near alpha 24-26, which is
+        // autorotation.
+        //
+        // A pitch rate instead gives a UNIFORM incidence change proportional to
+        // the chordwise arm between the bound line and the reference point. The
+        // contract's moment reference point sits essentially ON the wing's
+        // quarter chord, so that arm is zero and the coupled CZ_q and Cm_q come
+        // out at ~0.08 and ~0.11 against inviscid -4.04 and 0.003. That is
+        // CORRECT for a single-row lattice, not a defect: with the reference
+        // point moved one chord aft the same solve returns CZ_q = -9.2. The
+        // inviscid path is nonzero here only because its control points sit a
+        // half chord behind its bound vortices, so it retains a crude image of
+        // the chordwise load redistribution a pitch rate causes.
+        //
+        // So the longitudinal pair is taken from the INVISCID path and is a
+        // FLOOR, exactly as Part I says of Cm_q: the chordwise redistribution
+        // that supplies most of a real wing's pitch damping is absent by
+        // construction, and recovering it needs a chordwise-resolved lattice
+        // that this coupling's one-row-per-strip contract forbids.
+        //
+        // STEP SIZING, per axis, and this matters more than it looks.
+        // A fixed rate step in rad/s does NOT give comparable perturbations
+        // across axes, because the reduced rates divide by different
+        // lengths: b/2V is six times c/2V here. MEASURED with a common
+        // 0.05 rad/s step: roll came out clean (-0.543 against the
+        // inviscid -0.455) while CZ_q read +0.055 against an inviscid
+        // -3.83 -- a factor of seventy and the wrong sign.
+        //
+        // The reason is not the frame but the signal-to-noise. Roll and
+        // yaw derivatives are differenced about a baseline that symmetry
+        // pins at ZERO, so even a tiny perturbation is clean. The pitch
+        // derivatives ride on CZ ~ -0.3 and Cm ~ -0.01, so a 3.5e-4 change
+        // in reduced rate moves them by well under a percent -- inside the
+        // coupled solve's own convergence noise.
+        //
+        // So the step is chosen to deliver the SAME reduced-rate
+        // perturbation on every axis, which is the quantity the derivative
+        // is taken with respect to in the first place.
+        const double targetReduced = attached ? 0.01 : 0.04;
+        const double q = 0.5 * Rho * flightSpeed * flightSpeed;
+        const double spanReduce = ref.Span / (2.0 * flightSpeed);
+        const double chordReduce = ref.Chord / (2.0 * flightSpeed);
+        const double stepRoll = targetReduced / spanReduce;
+        const double stepPitch = targetReduced / chordReduce;
+
+        // Perturb each body rate in turn. All six reduced-rate derivatives
+        // are measured across the WHOLE alpha grid, not only where the
+        // inviscid path is valid -- otherwise the breakpoint axis ends at
+        // the attached limit and a gridded lookup silently CLAMPS, handing
+        // a consumer attached-flow damping at 90 degrees.
+        enum class Axis { Roll, Pitch, Yaw };
+        const auto solveAtRate = [&](Axis axis, double rate) {
+            S::FreestreamConditions fcp = base;
+            if (axis == Axis::Roll) fcp.p = rate;
+            else if (axis == Axis::Pitch) fcp.q = rate;
+            else fcp.r = rate;
+            S::ViscousCouplingOptions opts = coupling;
+            return S::SolveViscousCoupled(wing, strips, fcp, ref, trail, model, opts, sources);
+        };
+
+        double fluct = 0.0;
+        // FRAME, and the trap this very measurement walked into. A moment
+        // and its rate BOTH flip under the solver->contract rotation, so
+        // the derivative is invariant -- but only when both sides are in
+        // the same frame. Here the moment is already FRD
+        // (BodyAxisFromCoupled) while the rate was set on
+        // FreestreamConditions in the SOLVER frame, so exactly one flip is
+        // outstanding for the x/z-axis rates (p, r) and the quotient needs
+        // negating. The pitch rate q is invariant, so its derivatives do
+        // NOT. Caught because the attached range must reproduce the
+        // inviscid Cl_p = -0.45 and instead read +0.54: right magnitude,
+        // wrong sign, the failure Solver/BodyAxes.h was written about.
+        const auto diff = [&](Axis axis, double reduce, bool flip, auto&& take) {
+            const double step = (axis == Axis::Pitch) ? stepPitch : stepRoll;
+            const auto rp = solveAtRate(axis, +step);
+            const auto rm = solveAtRate(axis, -step);
+            fluct = std::max({fluct, rp.CycleFluctuation(), rm.CycleFluctuation()});
+            const double d = (take(S::BodyAxisFromCoupled(rp, q, ref)) -
+                              take(S::BodyAxisFromCoupled(rm, q, ref))) /
+                             (2.0 * step * reduce);
+            return flip ? -d : d;
+        };
+
+        S::BodyAxisRateDerivatives cpl;
+        cpl.Clp = diff(Axis::Roll, spanReduce, true, [](const auto& w) { return w.Cl; });
+        cpl.Cnp = diff(Axis::Roll, spanReduce, true, [](const auto& w) { return w.Cn; });
+        cpl.CYp = diff(Axis::Roll, spanReduce, false, [](const auto& w) { return w.CY; });
+        cpl.Clr = diff(Axis::Yaw, spanReduce, true, [](const auto& w) { return w.Cl; });
+        cpl.Cnr = diff(Axis::Yaw, spanReduce, true, [](const auto& w) { return w.Cn; });
+        cpl.CYr = diff(Axis::Yaw, spanReduce, false, [](const auto& w) { return w.CY; });
+        cpl.Cmq = diff(Axis::Pitch, chordReduce, false, [](const auto& w) { return w.Cm; });
+        cpl.CZq = diff(Axis::Pitch, chordReduce, true, [](const auto& w) { return w.CZ; });
+
+        // LINEARITY, checked rather than assumed. A rate derivative is a
+        // linearization, and past stall that linearization can simply fail
+        // -- the section response is not linear over the perturbation
+        // range, so the quotient depends on how hard the aircraft is
+        // pushed. MEASURED: attached and deep-stall roll damping agree to
+        // four digits across a ninefold amplitude change, while between
+        // roughly 20 and 30 degrees the two differ by up to 196% and the
+        // SIGN does not survive. A first pass reported that small-amplitude
+        // sign reversal as autorotation; it is not established, and the
+        // guard against repeating the mistake is to carry both amplitudes.
+        //
+        // Only ROLL is re-measured, because it is the derivative whose
+        // sign was in question and because the cost is two extra solves
+        // per attitude rather than six. The flag it produces is reported
+        // for the whole lateral set, which shares the mechanism.
+        const double clpCoarse = cpl.Clp;
+        double clpFine = clpCoarse;
+        {
+            const double fineStep = stepRoll / 4.0;
+            const auto rp = solveAtRate(Axis::Roll, +fineStep);
+            const auto rm = solveAtRate(Axis::Roll, -fineStep);
+            clpFine = -(S::BodyAxisFromCoupled(rp, q, ref).Cl -
+                        S::BodyAxisFromCoupled(rm, q, ref).Cl) /
+                      (2.0 * fineStep * spanReduce);
+        }
+        const double spread =
+            std::fabs(clpCoarse - clpFine) / std::max(std::fabs(clpCoarse), 1e-9);
+        const bool linearizable = spread < 0.10;
+
         if (!firstRate) out << ",\n";
         firstRate = false;
-        out << R"( {"alphaDeg":)" << alphaDeg << R"(,"CZq":)" << d.CZq << R"(,"Cmq":)" << d.Cmq
-            << R"(,"Clp":)" << d.Clp << R"(,"Cnp":)" << d.Cnp << R"(,"CYp":)" << d.CYp
-            << R"(,"Clr":)" << d.Clr << R"(,"Cnr":)" << d.Cnr << R"(,"CYr":)" << d.CYr << '}';
+        out << R"( {"alphaDeg":)" << alphaDeg << R"(,"attached":)" << (attached ? "true" : "false")
+            << R"(,"CZq":)" << cpl.CZq << R"(,"Cmq":)" << cpl.Cmq << R"(,"Clp":)" << cpl.Clp
+            << R"(,"Cnp":)" << cpl.Cnp << R"(,"CYp":)" << cpl.CYp << R"(,"Clr":)" << cpl.Clr
+            << R"(,"Cnr":)" << cpl.Cnr << R"(,"CYr":)" << cpl.CYr
+            << R"(,"CZqInviscid":)" << inv.CZq << R"(,"CmqInviscid":)" << inv.Cmq
+            << R"(,"ClpInviscid":)" << inv.Clp << R"(,"CnpInviscid":)" << inv.Cnp
+            << R"(,"rateStepRoll":)" << stepRoll << R"(,"rateStepPitch":)" << stepPitch << R"(,"cycleFluctuation":)" << fluct
+            << R"(,"ClpFineStep":)" << clpFine
+            << R"(,"linearitySpread":)" << spread
+            << R"(,"linearizable":)" << (linearizable ? "true" : "false") << '}';
         out.flush();
+        std::cout << "rates alpha=" << alphaDeg << "  Clp=" << cpl.Clp << " (inv "
+                  << (attached ? inv.Clp : 0.0) << ")  Cmq=" << cpl.Cmq << "  Cnr=" << cpl.Cnr
+                  << "  fluct=" << fluct << std::endl;
     }
     out << "\n],\n\"baseline\":[\n";
 
@@ -248,12 +505,15 @@ int main(int argc, char** argv) {
     bool firstRow = true;
     int unconverged = 0;
     for (const double betaDeg : Betas) {
+        if (!wantBaseline) break;
         if (betaFiltered && std::fabs(betaDeg - betaOnly) > 1e-9) continue;
-        // Warm-start continuation UP each alpha column: the map is the
-        // ASCENDING branch, deliberately (hysteresis is a separate study,
-        // not an accident of cold starts landing either side of the fold).
+        // Warm-start continuation along the alpha column, in the order the
+        // grid supplies. With the default grid that is UP, so the shipped map
+        // is the ASCENDING branch deliberately -- not an accident of cold
+        // starts landing either side of the fold. Pass a descending list to
+        // compute the other branch; see ParseAlphaList above.
         std::vector<double> warmStart;
-        for (const double alphaDeg : BuildAlphaGrid()) {
+        for (const double alphaDeg : alphaGrid) {
             fc.alphaDeg = alphaDeg;
             fc.betaDeg = betaDeg;
             S::ViscousCouplingOptions opts = coupling;
@@ -276,7 +536,9 @@ int main(int argc, char** argv) {
                 << w.CX << R"(,"CY":)" << w.CY << R"(,"CZ":)" << w.CZ << R"(,"Cl":)" << w.Cl
                 << R"(,"Cm":)" << w.Cm << R"(,"Cn":)" << w.Cn << R"(,"converged":)"
                 << (res.Converged ? "true" : "false") << R"(,"iterations":)" << res.Iterations
-                << R"(,"residual":)" << res.MaxResidual << R"(,"seconds":)" << seconds << '}';
+                << R"(,"residual":)" << res.MaxResidual
+                << R"(,"cycleFluctuation":)" << res.CycleFluctuation()
+                << R"(,"seconds":)" << seconds << '}';
             out.flush();
 
             std::cout << alphaDeg << "\t" << betaDeg << "\t" << w.CX << "\t" << w.CZ << "\t"
@@ -285,7 +547,101 @@ int main(int argc, char** argv) {
         }
     }
 
-    out << "\n]}\n";
+    out << "\n]";
+
+    // --- aileron increments, beta = 0 ----------------------------------------
+    // ONE-SIDED in deflection. The configuration is mirror-symmetric about
+    // its xz-plane, and mirroring maps an antisymmetric command of +delta
+    // onto one of -delta while flipping the lateral wrench. So
+    //
+    //     dCY, dCl, dCn  are ODD in delta_a
+    //     dCX, dCZ, dCm  are EVEN
+    //
+    // and the assembler mirrors, exactly as it does for sideslip. That is
+    // an argument, not a measurement, so the sweep also solves one
+    // NEGATIVE deflection and checks it -- recorded in "aileronMirror".
+    //
+    // Neutral and deflected are solved in the SAME pass, each warm-started
+    // up its own alpha column. Differencing two limit-cycle means computed
+    // from different continuation histories would add noise to the
+    // increment that has nothing to do with the control surface.
+    if (wantAileron) {
+        out << ",\n\"aileron\":[\n";
+        const Geometry::ControlSurface* aileron = nullptr;
+        for (const Geometry::ControlSurface& cs : contract.ControlSurfaces)
+            if (cs.Name == "aileron") { aileron = &cs; break; }
+        if (!aileron) {
+            std::cerr << "contract states no surface named 'aileron'\n";
+            return 1;
+        }
+        const double tau = Geometry::FlapEffectiveness(1.0 - aileron->ChordFraction);
+        std::cout << "\naileron: chord fraction " << aileron->ChordFraction << ", eta "
+                  << aileron->EtaStart << "-" << aileron->EtaEnd
+                  << ", thin-airfoil tau = " << tau << "\n"
+                  << "alpha  delta     dCX        dCZ        dCl        dCn    iters\n";
+
+        // Positive deflections only; plus one negative, for the mirror check.
+        const std::vector<double> deltas = {5.0, 10.0, 20.0};
+        const double mirrorProbeDeg = -10.0;
+
+        struct Chain {
+            double Delta;
+            std::vector<S::StripSection> Strips;
+            std::vector<double> Warm;
+        };
+        std::vector<Chain> chains;
+        chains.push_back({0.0, StripsFromPanels(wing, halfSpan, contract.AirfoilSections), {}});
+        for (const double d : deltas)
+            chains.push_back(
+                {d, StripsFromPanels(wing, halfSpan, contract.AirfoilSections, aileron, d), {}});
+        chains.push_back({mirrorProbeDeg,
+                          StripsFromPanels(wing, halfSpan, contract.AirfoilSections, aileron,
+                                           mirrorProbeDeg),
+                          {}});
+
+        const double q = 0.5 * Rho * flightSpeed * flightSpeed;
+        bool firstAil = true;
+        fc.betaDeg = 0.0;
+        for (const double alphaDeg : alphaGrid) {
+            fc.alphaDeg = alphaDeg;
+            S::BodyAxisCoefficients neutral;
+            for (Chain& chain : chains) {
+                S::ViscousCouplingOptions opts = coupling;
+                opts.InitialGamma = chain.Warm;
+                const auto res = S::SolveViscousCoupled(wing, chain.Strips, fc, ref, trail, model,
+                                                        opts, sources);
+                chain.Warm = res.Base.gamma;
+                const S::BodyAxisCoefficients w = S::BodyAxisFromCoupled(res, q, ref);
+                if (chain.Delta == 0.0) {
+                    neutral = w;
+                    continue;
+                }
+                if (!res.Converged) ++unconverged;
+                if (!firstAil) out << ",\n";
+                firstAil = false;
+                out << R"( {"alphaDeg":)" << alphaDeg << R"(,"deltaDeg":)" << chain.Delta
+                    << R"(,"dCX":)" << (w.CX - neutral.CX) << R"(,"dCY":)" << (w.CY - neutral.CY)
+                    << R"(,"dCZ":)" << (w.CZ - neutral.CZ) << R"(,"dCl":)" << (w.Cl - neutral.Cl)
+                    << R"(,"dCm":)" << (w.Cm - neutral.Cm) << R"(,"dCn":)" << (w.Cn - neutral.Cn)
+                    << R"(,"converged":)" << (res.Converged ? "true" : "false")
+                    << R"(,"iterations":)" << res.Iterations << R"(,"residual":)"
+                    << res.MaxResidual
+                    << R"(,"cycleFluctuation":)" << res.CycleFluctuation() << '}';
+                out.flush();
+
+                std::cout << alphaDeg << "\t" << chain.Delta << "\t" << (w.CX - neutral.CX) << "\t"
+                          << (w.CZ - neutral.CZ) << "\t" << (w.Cl - neutral.Cl) << "\t"
+                          << (w.Cn - neutral.Cn) << "\t" << res.Iterations
+                          << (res.Converged ? "" : "  (cycle-mean)") << std::endl;
+            }
+        }
+        out << "\n],\n\"aileronMirrorProbeDeg\":" << mirrorProbeDeg
+            << ",\n\"aileronTau\":" << tau
+            << ",\n\"aileronEtaStart\":" << aileron->EtaStart
+            << ",\n\"aileronChordFraction\":" << aileron->ChordFraction;
+    }
+
+    out << "\n}\n";
     std::cout << "\nwrote " << outPath << " (" << unconverged
               << " conditions exported as cycle means)\n";
     return 0;

@@ -319,6 +319,42 @@ void TestNoSectionDataYieldsNoAttachmentPoint() {
               "with no section data there is no thickness, so no stagnation point may be claimed");
 }
 
+// A multi-row chordwise lattice hands ComputeAttachmentLine more panels than
+// strips. That used to return an empty station list, which is exactly what a
+// wing with no resolvable attachment line returns -- so a caller could not
+// tell a malformed call from a geometric outcome. Pin that they now differ.
+void TestSizeMismatchIsReportedNotSilent() {
+    const Wing wing = BuildSweptWing(8.0, 1.0, 0.0, 12);
+    const auto sections = SymmetricSections(0.17);
+
+    // Stand in for a two-row chordwise stack: twice the panels, same strips.
+    std::vector<S::Panel> doubled = wing.Panels;
+    doubled.insert(doubled.end(), wing.Panels.begin(), wing.Panels.end());
+    std::vector<S::Vec3> velocity(doubled.size(), S::Vec3(1.0, 0.0, 0.0));
+
+    const S::AttachmentLine bad =
+        S::ComputeAttachmentLine(doubled, wing.Strips, velocity, sections);
+    CHECK(bad.Stations.empty(), "a malformed call must not produce stations");
+    CHECK(bad.Status == S::AttachmentLineStatus::SizeMismatch,
+          "a multi-row lattice must report SizeMismatch, not look like empty geometry");
+    CHECK(!bad.Valid(), "Valid() must be false on a malformed call");
+
+    // And a well-formed call still reports Ok, so the status is not merely
+    // always-set-to-something.
+    const S::AttachmentLine good = SolveWing(wing, sections, 4.0, 0.0);
+    CHECK(good.Status == S::AttachmentLineStatus::Ok, "a well-formed call must report Ok");
+    CHECK(good.Valid(), "Valid() must be true on a well-formed call");
+
+    // One strip cannot have a leading-edge direction: it has no neighbours.
+    std::vector<S::Panel> one{wing.Panels.front()};
+    std::vector<S::StripSection> oneStrip{wing.Strips.front()};
+    std::vector<S::Vec3> oneVel{S::Vec3(1.0, 0.0, 0.0)};
+    const S::AttachmentLine tooFew =
+        S::ComputeAttachmentLine(one, oneStrip, oneVel, sections);
+    CHECK(tooFew.Status == S::AttachmentLineStatus::TooFewStations,
+          "a single strip must report TooFewStations, distinct from SizeMismatch");
+}
+
 } // namespace
 
 int main() {
@@ -329,6 +365,7 @@ int main() {
     TestSideslipLeavesUnsweptWingSymmetric();
     TestAttachmentLineStateThresholds();
     TestNoSectionDataYieldsNoAttachmentPoint();
+    TestSizeMismatchIsReportedNotSilent();
 
     if (failures == 0) std::cout << "PASS: TestAttachmentLine\n";
     return failures == 0 ? 0 : 1;

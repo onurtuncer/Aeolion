@@ -75,7 +75,7 @@ is reached by $\alpha \approx 55$--$65^\circ$, the computed
 $C_N(90^\circ) = 1.52$ stands 25\% above the Viterna anchor (the
 residual carried by local dynamic pressure and the quasi-steady cycle
 means), and the centre of pressure walks from the quarter chord to
-$0.52\,c$ at $90^\circ$, on Rayleigh's mid-chord value. Two properties
+$0.52\,c$ at $90^\circ$, on Rayleigh's mid-chord value. Three properties
 of the coupling itself are established on the way: collocation strip
 coupling on a densely panelled wing possesses spanwise-checkerboard
 spurious equilibria that plain damped iteration suppresses, and its
@@ -258,7 +258,7 @@ with the separated fraction $(1-f)$: $5/16$ at small incidence, exactly
 mid-chord at $90^\circ$. Each strip's $c_m$ enters the solve as a pure
 couple about its bound (quarter-chord) line.
 
-The model and its plumbing are pinned by unit tests against the anchors
+The model and its implementation are verified against the anchors
 themselves: Viterna continuity and endpoints, $K(0) = 1/4$ against the
 $\pi\alpha/2$ plate slope, Rayleigh's $5/16$ and mid-chord limits,
 d'Alembert exactness of the attached branch, and the quarter-chord
@@ -272,8 +272,9 @@ $20^\circ$, $5^\circ$ beyond) by $\beta \in [0^\circ, 30^\circ]$
 ($5^\circ$ steps), on the same tail-sitter configuration as Part~I
 ($A\!R = 6$ rectangular wing, body of revolution, aft duct,
 $V_\infty = 25$~m/s), ascending in $\alpha$ with warm-started
-continuation --- the map is the ascending branch; the descending branch
-and its hysteresis band are a deliberate later study.
+continuation --- the map is the ascending branch. The descending branch is
+reported in Sec.~\ref{sec:hysteresis}; the two agree except at seven of
+twenty-five attitudes, by at most $1.65\%$.
 
 \begin{figure}[tb]
   \centering
@@ -291,7 +292,7 @@ and its hysteresis band are a deliberate later study.
 \begin{figure}[tb]
   \centering
   \includegraphics[width=\linewidth]{figures/poststall-beta0.pdf}
-  \caption{The $\beta = 0$ column against the Phase-0 baseline (the
+  \caption{The $\beta = 0$ column against the inviscid baseline (the
     hand-tuned deep-stall blend this construction replaces). Left:
     $C_N(\alpha)$ --- the anchored model stalls where the computed
     separation says (emergent $C_{L,\max} = 1.76$ at $18^\circ$) and
@@ -391,13 +392,236 @@ Two boundaries on the statement. First, this is a
 \emph{section-level} Viterna comparison of
 Section~\ref{sec:map}: that anchor concerns the wing section's deep-stall
 drag, and the body's crossflow wake is a separate contribution to a
-separate quantity. Second, the estimate is deliberately incomplete in one
-direction only. The duct's own separated drag at incidence is not
-modelled --- an annular ring at $90^\circ$ is a bluff body, but the
-slender-body form of Eq.~\eqref{eq:crossflow} does not apply to it ---
-and neither is any interference between the body wake and the wing.
-Both omissions push the same way, so Eq.~\eqref{eq:cd-total} is a lower
-bound on parasite drag at high incidence.
+separate quantity. Second, the ducted shroud is a bluff body at incidence
+too, and the slender-body form of Eq.~\eqref{eq:crossflow} does not
+describe an annular ring meeting the flow edge-on, so the ring carries a
+term of its own on its side-projected area. That is a bluff-body
+estimate rather than a computation --- it borrows the crossflow
+coefficient and the finite-length factor from the body rather than
+claiming independent knowledge of an annulus --- and it raises
+$C_{D_0}(90^\circ)$ from $0.195$ to $0.208$. What remains unmodelled is
+the interference between the body wake and the wing, so
+Eq.~\eqref{eq:cd-total} is still a lower bound at high incidence, though
+by less than while the duct was absent from the crossflow term entirely.
+
+\subsection{Rate derivatives do not exist across the stall band}
+\label{sec:ratelinearity}
+
+A tabulated flight model carries stability derivatives, and the natural
+assumption is that they exist everywhere the coefficients do. On this
+configuration they do not, and the failure is confined to precisely the
+band a tail-sitter transits.
+
+A rate derivative is a linearization. Whether the linearization holds is
+testable at the cost of one extra pair of solves: difference the coupled
+solve at two perturbation amplitudes and see whether the quotient is the
+same. Doing so for roll damping at amplitudes a factor of four apart
+gives Table~\ref{tab:ratelinearity}.
+
+\begin{table}[tb]
+  \centering
+  \caption{Roll damping differenced at two roll-rate amplitudes. The
+    spread is the relative difference between them.}
+  \label{tab:ratelinearity}
+  \begin{tabular}{rrrr}
+    \hline
+    $\alpha$ [deg] & coarse step & fine step & spread \\
+    \hline
+    0  & $-0.545$ & $-0.545$ & 0.0\% \\
+    12 & $-0.517$ & $-0.517$ & 0.0\% \\
+    18 & $-0.374$ & $-0.374$ & 0.0\% \\
+    20 & $-0.168$ & $+0.255$ & 252\% \\
+    24 & $-0.159$ & $+0.063$ & 140\% \\
+    30 & $-0.086$ & $-0.115$ & 34\% \\
+    35 & $-0.129$ & $-0.193$ & 49\% \\
+    40 & $-0.233$ & $-0.234$ & 0.6\% \\
+    60 & $-0.329$ & $-0.329$ & 0.0\% \\
+    90 & $-0.425$ & $-0.425$ & 0.0\% \\
+    \hline
+  \end{tabular}
+\end{table}
+
+The separation is sharp. Either the two amplitudes agree to a tenth of a
+percent, or they disagree by tens to hundreds of percent; nothing sits in
+between. That the boundary is this clean argues the band is a property of
+the flow rather than of the tolerance chosen to detect it. Below
+$18^\circ$ and above $40^\circ$ roll damping is a well-defined
+derivative; between $20^\circ$ and $35^\circ$ it is not one at all.
+
+The most direct statement of that is the row at $\alpha = 20^\circ$,
+where the coarse step returns $-0.168$ and the fine step $+0.255$: the
+\emph{sign} is set by the perturbation amplitude alone. A single-amplitude
+measurement in that band will report roll anti-damping or roll damping
+according to how hard the aircraft was pushed, and either result looks
+perfectly respectable in isolation. The physical reading is that sections
+are crossing into and out of stall over the perturbation, so the response
+is not merely nonlinear but non-smooth at the scale of the difference.
+
+The consequence for a tabulated model is stronger than a caveat. Across
+that band a taper to zero, a hold at the last attached value, and a
+directly measured number are equally fabrications, because the quantity
+being tabulated does not exist. The honest treatment is to carry the two
+well-defined ranges and leave the band empty, which is what the flight
+model derived from this work does --- its breakpoint axis simply omits
+those attitudes, and a lookup interpolates across a gap that the model's
+own header explains.
+
+This is a third property of the coupling itself, alongside the spurious
+spanwise equilibria and the iteration-path independence of the cycle
+means, and it is arguably the most consequential of the three: the other
+two concern how faithfully a number is computed, while this one concerns
+whether the number is defined.
+
+\subsection{The aft fan across the separation boundary}
+\label{sec:faninduction}
+
+The map above is power-off. That is the right baseline, but on this
+configuration it is not the whole aircraft, and the omission is largest
+in exactly the regime this paper describes.
+
+The ducted fan sits aft of the wing, so it does not blow it; what it does
+is induce an accelerating stream \emph{ahead} of itself, over the wing---a
+favourable gradient, and therefore a separation-delaying one. Part~I
+records the effect over the attached range, where it is a few percent of
+$C_L$ and both solves converge cleanly. Across the separation boundary it
+is several times larger. Modelling the fan as the annular actuator disk
+it is, equivalent to a pair of semi-infinite cylindrical vortex sheets,
+and adding that field to the same coupled solve gives the lift increments
+of Table~\ref{tab:faninductionp2}.
+
+\begin{table}[tb]
+  \centering
+  \caption{Fan-induced lift increment as a percentage of the power-off
+    $C_L$ at $T_c = 2$, through and beyond the stall. Rows at
+    $\alpha \geq 16^\circ$ are limit-cycle means in both the powered and
+    power-off solves.}
+  \label{tab:faninductionp2}
+  \begin{tabular}{rrl}
+    \hline
+    $\alpha$ [deg] & $\Delta C_L / C_L$ & \\
+    \hline
+    12 & 2.3\% & converged \\
+    14 & 2.4\% & converged \\
+    16 & 7.5\% & cycle mean \\
+    20 & 8.8\% & cycle mean \\
+    26 & 7.5\% & cycle mean \\
+    35 & 6.9\% & cycle mean \\
+    50 & 4.7\% & cycle mean \\
+    70 & 1.8\% & cycle mean \\
+    90 & $-5.2$\% & cycle mean \\
+    \hline
+  \end{tabular}
+\end{table}
+
+The shape is physically coherent. The increment peaks at
+$\alpha = 20^\circ$, immediately past the map's own $C_{L,\max}$ at
+$18^\circ$, which is where a delayed separation should pay most. It then
+decays as the wing becomes a fully separated plate with less and less
+attachment left to preserve, and it \emph{reverses sign} by $90^\circ$:
+with the plate broadside the fan's axial induction is perpendicular to
+the free stream, so it slightly reduces the effective incidence rather
+than energising an attached layer. A model that simply scaled the
+power-off loads by a thrust-dependent factor would get that reversal
+wrong.
+
+\paragraph{What the step at $16^\circ$ does and does not show.} The
+increment jumps roughly threefold between $14^\circ$ and $16^\circ$, and
+it is tempting to read that as the separation-delay signature. It is not,
+and the direct measurement---stated as the next step in an earlier
+revision of this section, and since performed---is what shows it.
+
+The coupled solve computes a separation point on every strip, so the
+powered and power-off locations can be compared outright instead of
+inferring a delay from a lift increment taken across two limit cycles.
+Doing that over $125$ conditions, at the same $T_c = 2$ as
+Table~\ref{tab:faninductionp2}, separates the step cleanly: across
+$14^\circ \rightarrow 16^\circ$ the normal-force increment grows by a
+factor of $3.38$ while the span-mean separation point moves by a factor
+of $1.09$. The step is in the \emph{loads} and not in the separation
+delay. It coincides exactly with the onset of limit-cycle behaviour in
+both solves---residuals rise from $10^{-4}$ to $0.2$--$0.6$---and that,
+rather than any change in the flow's attachment, is what it marks.
+
+What the measurement does establish is the delay itself, on its own
+schedule. The fan holds the separation point aft at every attitude from
+$-4^\circ$ to $70^\circ$, monotonically in thrust at each of them, by
+$+0.007$ chord at $16^\circ$ and rising to a peak of $+0.044$ chord at
+$\alpha = 30^\circ$ ($+0.065$ at $T_c = 8$), then decaying as the wing
+runs out of attached flow to preserve. Nothing in the formulation
+enforces any of this: the separation tables are functions of $(\eta,
+\alpha_{\text{local}})$ alone and contain no representation of the fan,
+so the delay reaches them only through the local incidence the induction
+field changes.
+
+Two features of the measurement are worth stating because both would
+otherwise be read as physics. The worst strip's separation point
+saturates at the leading edge from $\alpha = 20^\circ$ upward at every
+thrust setting, so differences taken there are the metric running out of
+range rather than the fan ceasing to act---which is why the span mean is
+quoted. And the ratios of the separation shift are not sensitivities:
+$f(\alpha)$ is steep at the knee, so a span mean of it amplifies a smooth
+input, and the same solve that moves $f$ by a factor of four across one
+thrust step moves $C_Z$ by a flat $1.50$--$1.65$ per thrust doubling at
+every incidence.
+
+At $80^\circ$ and $90^\circ$ the sign reverses and the fan advances
+separation rather than delaying it. This corroborates the reversal
+already visible in Table~\ref{tab:faninductionp2} rather than
+contradicting it: the normal-force increment changes sign across the same
+two attitudes, so the separation location and the load agree,
+independently, on where the mechanism inverts. Broadside, the fan's axial
+induction is perpendicular to the free stream and has no attached layer
+left to energise.
+
+One approximation is carried throughout, and it is the same one the load
+tables already make. The separation point is evaluated on the final sweep
+at the cycle-mean circulation, and $f$ is nonlinear, so $f(\bar{\gamma})$
+is not $\overline{f(\gamma)}$. Expanding about the cycle mean, the leading
+error is second order in the cycle width, $f''(\bar\alpha)\,
+\mathrm{Var}(\alpha)/2$, and the solve carries that variance per strip, so
+the error can be estimated rather than merely declared. It is negligible:
+$10^{-15}$ to $10^{-10}$ against $f$ values of $0.7$ to $0.86$. The limit
+cycle is wide in circulation and very nearly stationary in \emph{local
+incidence}, which is the argument $f$ is posed in.
+
+A larger sensitivity sits beside it and is worth stating plainly, because
+it is not the one this section would have predicted. The $\alpha$ grid is
+a continuation path---each solve is warm-started from the preceding
+incidence---so the sequence of attitudes visited is part of the
+specification of a post-stall condition, not merely the order in which
+conditions are computed. Repeating the entire sweep at half the incidence
+step and comparing the $125$ shared conditions puts a number on it: $113$
+agree to better than $10^{-6}$, and the twelve that do not are isolated
+bistable conditions, all past the stall, each a single solve settling into
+a different limit cycle according to the attitude it was reached from.
+
+Two features of that list bear on how the increments should be read. Where
+only the power-off solve moves---as at $\alpha = 20^\circ$, at every
+thrust setting---its shift of $0.011$ passes through every column
+undiminished. Where powered and power-off move together, as at
+$\alpha = 24^\circ$ and $T_c \leq 1$, the difference very nearly cancels,
+to $0.0005$ and $0.0010$. Cancellation in the increment is therefore real
+but not reliable, and cannot be assumed in either direction; the affected
+attitudes should carry an uncertainty of order $0.01$ in separation
+location, rising to $0.027$ in the worst case against a fan effect of
+$0.044$ there.
+
+None of this disturbs the comparison above. The conditions at $14^\circ$
+and $16^\circ$ agree between the two grids to between $10^{-9}$ and
+$10^{-7}$, and the step across them is $3.39$ against $1.09$ on the finer
+grid where it was $3.38$ against $1.09$ on the coarser. The finding is not
+an artifact of the incidence step.
+
+It does qualify the earlier result that limit-cycle means are
+iteration-path independent: that holds at fixed continuation, and
+warm-start history evidently matters a good deal more than the relaxation does.
+
+The honest summary is therefore stronger than the previous one. Power
+adds several percent of lift through the stall in a thrust-ordered way;
+its mechanism \emph{is} a separation delay, measured directly as a
+displacement of the separation point and thrust-ordered at every
+attitude---and the threefold step at $16^\circ$, which would have been
+the natural evidence for that conclusion, is not evidence for it.
 
 \section{Validation and the remaining tiers}
 \label{sec:outlook}
@@ -496,18 +720,51 @@ declared $10\%$ criterion on the $90^\circ$ ceiling's $AR$ trend
 stands unchanged.
 
 \subsection{The static hysteresis band}
+\label{sec:hysteresis}
 
-% TODO(Phase 1): rerun the map descending in alpha with warm-started
-% continuation (ViscousCouplingOptions::InitialGamma) and report where
-% the ascending and descending branches disagree -- the bistable band
-% around stall. Nearly free with the existing driver.
-The map of Section~\ref{sec:map} is the ascending branch by
-construction. The section response past stall is multivalued, the
-coupling supports warm-started continuation in either direction, and
-the width of the resulting hysteresis band in $(\alpha, \beta)$ ---
-where the two branches disagree --- is a result the quasi-steady tier
-can produce at essentially no additional cost. It will be reported
-here.
+The map of Section~\ref{sec:map} is the ascending branch by construction:
+every solve is warm-started from the attitude below it. The section
+response past stall is multivalued and the coupling supports continuation
+in either direction, so the width of the band where the two branches
+disagree is a result this tier can produce directly. Sweeping the same
+grid downward from $90^\circ$ at $\beta = 0$, at the same speed and
+relaxation, gives it.
+
+The band is narrow, and it is not a band. Below $\alpha = 14^\circ$ the
+two branches agree to $6.6 \times 10^{-4}$ in $C_Z$---attached flow is
+path-independent, as it must be. Only seven of twenty-five attitudes
+differ by more than $10^{-3}$ at all, and the largest departures are
+$1.65\%$ of $C_Z$ at $\alpha = 24^\circ$ and $2.6\%$ of $C_m$ at
+$26^\circ$.
+
+The shape of that disagreement is the substantive result, and it is not
+the shape the term \emph{hysteresis band} implies. A two-valued system
+would show the branches parting on entry to the stall, remaining apart
+across it, and rejoining on exit, so that the disagreeing attitudes form a
+contiguous interval. They do not. Six of the seven lie between $18^\circ$
+and $35^\circ$, but the branches \emph{agree} at $16^\circ$ and at
+$20^\circ$---inside that range---and agree exactly from $40^\circ$ through
+$70^\circ$. What the sweep finds is a small number of isolated bistable
+conditions rather than two branches of a multivalued system.
+
+That is the same signature this study met from an unrelated direction.
+Halving the incidence step of the ascending sweep, a far smaller
+perturbation than reversing it, moved twelve of a hundred and twenty-five
+conditions and left the rest identical to $10^{-6}$. Two different
+perturbations of the continuation therefore produce the same kind of
+answer: most post-stall conditions have a unique reachable solution, and a
+few, individually identifiable, do not.
+
+The practical consequence is that a static gridded representation of this
+vehicle near stall is adequate, and needs no branch axis. The affected
+attitudes want wider uncertainty, and $1.65\%$ is well inside the
+$\pm10$--$20\%$ that a component drag buildup carries in any case. One
+departure is left unexplained rather than absorbed into that summary:
+$\alpha = 80^\circ$ is the only attitude outside the stall band at which
+the branches differ, and at $1.76\%$ of $C_Z$ it is the largest departure
+in the sweep. It lies beside the attitude at which the fan's induction
+reverses its effect on separation, which is suggestive and is not an
+explanation.
 
 \subsection{Method-generated polars: the double-wake tier}
 

@@ -407,7 +407,7 @@ inline Vec3 SegmentVelocityUnit(const Vec3& at, const Vec3& p1, const Vec3& p2, 
             const double alphaEff =
                 Math::RadToDeg(std::atan2(Dot(vLoc, strips[i].LiftDir),
                                           Dot(vLoc, strips[i].ChordDir))) -
-                strips[i].Alpha0Deg;
+                strips[i].EffectiveAlpha0Deg();
             bool separated;
             if (options.SeparationPoint)
                 separated = options.SeparationPoint(strips[i].Eta, std::fabs(alphaEff)) <

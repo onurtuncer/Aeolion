@@ -28,6 +28,35 @@ struct SolveResult {
     /**
      * INDUCED drag only -- VLM is a potential-flow method and cannot predict
      * viscous/profile drag. Total CD = CDi + your own CD0 estimate.
+     *
+     * NEAR-FIELD, and on a COUPLED CONFIGURATION that is not the number you
+     * want. This is the streamwise component of the Kutta-Joukowski forces,
+     * so it is a small difference of much larger lift-dominated quantities,
+     * and adding a source-panelled body to a lifting surface degrades it
+     * visibly: it goes NEGATIVE at zero lift, where induced drag must vanish,
+     * and an alpha sweep of the airframe in tests/Data fits to an Oswald
+     * efficiency of 1.53, which is impossible for a planar wing. CL and the
+     * moments are unaffected -- the same absolute error is negligible beside
+     * lift and comparable with induced drag. For a bare wing near and far
+     * field agree to 0.4% and this field is fine.
+     *
+     * Use Solver::TrefftzInducedDrag (Solver/TrefftzPlane.h) when the induced
+     * drag itself matters on a configuration with a body. The far-field
+     * integral cannot inherit this error by construction: a closed body sheds
+     * no trailing vorticity, so it puts nothing through a plane at downstream
+     * infinity and is never evaluated. That header carries the full argument,
+     * including why d'Alembert is NOT the explanation (closed bodies here
+     * carry zero net force in uniform flow to machine precision).
+     *
+     * It is deliberately not computed here, and deliberately does not replace
+     * this field. Three reasons, each sufficient on its own. Propeller thrust
+     * is -Di (PanelBuilder.h) and CDi = Di/(q S), so changing one without the
+     * other breaks the identity and changing both breaks the rotor. A
+     * rotating-frame rotor sheds a helical wake, which is not what a plane at
+     * downstream infinity models. And the coupled solver calls Solve on the
+     * order of a thousand times per condition without ever reading CDi, so
+     * an O(strips^2) wake integral on every call would be paid entirely in
+     * sweeps that discard it.
      */
     double CDi = 0.0;
     double CY = 0.0;

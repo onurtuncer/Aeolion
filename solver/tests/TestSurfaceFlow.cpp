@@ -391,6 +391,39 @@ void TestUnstructuredSurfaceIsDeclined() {
     CHECK(!grid.Valid(), "a surface without a stated topology must be declined, not reconstructed");
     CHECK(S::AnalyzeSurfaceFlow(grid).CriticalPoints.empty(),
           "an invalid grid must yield no critical points");
+    CHECK(grid.Status == S::SurfaceGridStatus::Unindexed,
+          "withheld topology must report Unindexed");
+}
+
+// Valid() answers "can I index this?", not "why not?", and the causes are not
+// interchangeable. The fuselage BASE CAP is declined by design -- a flat disc
+// stacked in rings at one axial station, so (station, sector) is not a unique
+// key -- and a caller that cannot tell that from a misspelled surface name
+// will make the natural guess, which is the wrong one.
+void TestDeclineReasonsAreDistinguishable() {
+    const std::vector<SourcePanel> panels = BuildSphere(1.0, 12, 12);
+    const S::PanelSystem system{{}, panels};
+    const S::PreparedSystem prepared = S::Prepare(system, 0.0);
+    S::FreestreamConditions fc;
+    fc.alphaDeg = 5.0;
+    const S::FlowField field = SolveBody(prepared, fc);
+
+    // A well-formed request still reports Ok, so the status is not merely
+    // always-set-to-something.
+    const S::SurfaceGrid good = S::BuildSurfaceGrid(field, "body");
+    CHECK(good.Valid() && good.Status == S::SurfaceGridStatus::Ok,
+          "a well-formed surface must report Ok");
+
+    // A name no panel carries is a DIFFERENT failure from a declined patch.
+    const S::SurfaceGrid missing = S::BuildSurfaceGrid(field, "no_such_surface");
+    CHECK(!missing.Valid(), "an unknown surface must not be valid");
+    CHECK(missing.Status == S::SurfaceGridStatus::NoSuchSurface,
+          "an unknown surface must report NoSuchSurface, not the cap's reason");
+
+    // No solved system at all is a third.
+    const S::SurfaceGrid nosys = S::BuildSurfaceGrid(S::FlowField{}, "body");
+    CHECK(nosys.Status == S::SurfaceGridStatus::NoSystem,
+          "a field with no system must report NoSystem");
 }
 
 } // namespace
@@ -401,6 +434,7 @@ int main() {
     TestSphereStreamlineSpreading();
     TestSpheroidWindwardMeridian();
     TestUnstructuredSurfaceIsDeclined();
+    TestDeclineReasonsAreDistinguishable();
 
     if (failures == 0) std::cout << "PASS: TestSurfaceFlow\n";
     return failures == 0 ? 0 : 1;

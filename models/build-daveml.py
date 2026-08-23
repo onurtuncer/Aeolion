@@ -9,19 +9,22 @@ aerodynamics; if a number is wrong, it is wrong in the JSON.
 Emits ANSI/AIAA S-119-2011 DAVE-ML 2.0.1. Inputs, in models/data/:
 
     aero-map.json         aeolion_aero_map        baseline + rate derivatives
+    aero-aileron.json     aeolion_aero_map ... aileron   control increments
+    aero-rates.json       aeolion_aero_map ... baseline  rate derivatives
     parasite-drag.json    aeolion_parasite_drag   aeroCD0(alpha)
     propulsion-map.json   aeolion_propulsion_map  propCT/propCQ(J)
     propulsion-singlevane.json                    per-vane increments
+    coupling-map.json     aeolion_induction_map   fan-on-airframe increments
 
-Deliberately NOT emitted, and declared in the file header instead:
+Any block whose JSON is absent is DECLARED absent in the file header
+rather than emitted as zeros, because a zero-valued table is a lie a
+consumer cannot detect.
 
-  * aeroDC* (aileron increments) -- BLOCKED. The generating path cannot
-    represent a hinge (MinRowsToResolveHinge = 2 collides with the
-    coupling's one-row-per-strip contract), so every value would be
-    exactly zero. Shipping that is an aircraft with no roll control.
-  * coupling* (fan-on-airframe) -- BLOCKED on the upstream-induction
-    model. The existing slipstream model returns zero upstream by
-    construction, so it would report a confident zero interaction.
+The fan-on-airframe interaction was long declared blocked on an
+upstream-induction model. That blocker is stale: Solver/DiskInduction.h
+implements the semi-infinite vortex cylinder, which HAS a field upstream
+of the disk -- the half the momentum-theory slipstream lacks, and the
+half that matters when the fan sits behind the wing.
 
 Usage:  python build-daveml.py [--data DIR] [--out FILE]
 """
@@ -139,8 +142,11 @@ class Doc:
             self.raw(f"<{tag}{a}>{esc(text)}</{tag}>")
 
     def comment(self, text):
+        # A double hyphen may not appear inside an XML comment, and the
+        # prose in this file uses "--" as an em dash freely. Substitute
+        # here rather than rely on every call site remembering.
         for line in text.strip().split("\n"):
-            self.raw(f"<!-- {line.strip()} -->")
+            self.raw("<!-- " + line.strip().replace("--", "—") + " -->")
 
     def text(self):
         return "\n".join(self.lines) + "\n"
@@ -176,6 +182,8 @@ class Model:
     def variable(self, varID, name, units, *, axis="", sign="", symbol="",
                  initial=None, calc=None, is_output=False, description=""):
         attrs = dict(name=name, varID=varID, units=units)
+        if initial is not None:
+            attrs["initialValue"] = initial
         if axis:
             attrs["axisSystem"] = axis
         if sign:
@@ -185,8 +193,6 @@ class Model:
         self.d.open("variableDef", **attrs)
         if description:
             self.d.leaf("description", description)
-        if initial is not None:
-            self.d.leaf("initialValue", initial)
         if calc is not None:
             self.d.open("calculation")
             self.d.open("math", xmlns="http://www.w3.org/1998/Math/MathML")
@@ -198,14 +204,48 @@ class Model:
         self.d.close("variableDef")
 
 
-def breakpoints(d, bpID, name, values):
+def emit_breakpoints(d, bpID, name, values):
     d.open("breakpointDef", bpID=bpID, name=name)
     d.leaf("bpVals", ", ".join(f"{v:g}" for v in values))
     d.close("breakpointDef")
 
 
-def gridded_table(d, name, bp_ids, values, description=""):
-    """values: flat list in row-major order over bp_ids."""
+def gridded_table(d, name, bp_ids, values, description="", sigmas=None):
+    """values: flat list in row-major order over bp_ids.
+
+    `sigmas`, when given, is a per-cell one-sigma bound in the SAME units
+    as the values, emitted as a DAVE-ML uncertainty element.
+
+    WHAT THIS BOUND IS, and what it is emphatically not. It is the
+    NUMERICAL CONVERGENCE SPREAD: the width of the damped iterate's
+    wander over the averaging window. It answers "has this cell settled?"
+    and it correctly separates a converged condition (no samples, no
+    bound) from one still moving. It does NOT represent the physical
+    unsteadiness of the flow, and the difference is not a nuance -- the
+    metric reads around 1e-7 on post-stall cells whose PHYSICAL
+    fluctuation the tier-3 particle-wake cross-check measures at
+    RMS/mean of 3 to 40. Seven orders of magnitude apart, because they
+    measure different things: this one says the solver has settled, that
+    one says the real flow buffets.
+
+    A consumer reading 1e-7 as "known to seven digits" would be badly
+    misled, so the file header says so in as many words. The bound is
+    still worth carrying: it is what distinguishes a settled cell from an
+    unsettled one, and it is what flags the handful of rows that genuinely
+    did not converge.
+
+    The bound is the measured width of the cycle, not the solver residual.
+    The two are very different: the residual is a MAX over strips of a
+    section-lift mismatch and sits at 0.2-0.6 across the post-stall map,
+    while the total lift sum barely moves, so the load-level fluctuation
+    comes out around 1e-6. Quoting the residual as an uncertainty would
+    overstate it by five orders of magnitude and make the tables look
+    worthless; quoting nothing, which is what the model did until now,
+    understates it to zero. The cycle width is the honest quantity.
+
+    DTD order inside griddedTableDef: description?, provenance?,
+    breakpointRefs, uncertainty?, dataTable.
+    """
     d.open("griddedTableDef", name=name, gtID=f"{name}_data")
     if description:
         d.leaf("description", description)
@@ -213,7 +253,21 @@ def gridded_table(d, name, bp_ids, values, description=""):
     for b in bp_ids:
         d.leaf("bpRef", bpID=b)
     d.close("breakpointRefs")
-    # Wrap for legibility; the standard is whitespace-insensitive here.
+    if sigmas and any(s > 0.0 for s in sigmas):
+        # additive, so the bound carries the value's own units and no
+        # convention question arises about what a "percentage" is of.
+        d.open("uncertainty", effect="additive")
+        d.open("normalPDF", numSigmas="1")
+        d.open("bounds")
+        d.open("dataTable")
+        chunk = 8
+        for i in range(0, len(sigmas), chunk):
+            d.raw(", ".join(f"{v:.6g}" for v in sigmas[i:i + chunk]) +
+                  ("," if i + chunk < len(sigmas) else ""))
+        d.close("dataTable")
+        d.close("bounds")
+        d.close("normalPDF")
+        d.close("uncertainty")
     chunk = 8
     d.open("dataTable")
     for i in range(0, len(values), chunk):
@@ -224,14 +278,28 @@ def gridded_table(d, name, bp_ids, values, description=""):
 
 
 def simple_function(d, name, out_var, in_vars, bp_ids, table_name, description=""):
-    """A gridded function: independent variables -> one dependent variable."""
+    """A gridded function: independent variables -> one dependent variable.
+
+    The DTD form, which is not the obvious one. independentVarRef carries
+    NO bpID -- the breakpoint association comes from the table's own
+    breakpointRefs, so the ORDER of these must match it. And functionDefn
+    CONTAINS a griddedTableRef element rather than carrying a gtID
+    attribute.
+
+    extrapolate="neither" states the clamping the verifier's lookup
+    already does: a gridded table is defined on its grid, and holding the
+    edge value is a claim the file should make explicitly rather than
+    leave to a consumer's default.
+    """
     d.open("function", name=name)
     if description:
         d.leaf("description", description)
-    for var, bp in zip(in_vars, bp_ids):
-        d.leaf("independentVarRef", varID=var, bpID=bp)
+    for var in in_vars:
+        d.leaf("independentVarRef", varID=var, interpolate="linear", extrapolate="neither")
     d.leaf("dependentVarRef", varID=out_var)
-    d.leaf("functionDefn", gtID=f"{table_name}_data")
+    d.open("functionDefn")
+    d.leaf("griddedTableRef", gtID=f"{table_name}_data")
+    d.close("functionDefn")
     d.close("function")
 
 
@@ -241,6 +309,27 @@ def build(args):
     parasite = load(data, "parasite-drag.json", required=False)
     prop = load(data, "propulsion-map.json", required=False)
     vane = load(data, "propulsion-singlevane.json", required=False)
+    coupling = load(data, "coupling-map.json", required=False)
+    # The aileron sweep may live in its own file: the driver can be run
+    # with the block selector so the expensive baseline map is not
+    # regenerated alongside it, and merging two JSONs by hand is exactly
+    # the sort of step that goes wrong without saying so.
+    ailfile = load(data, "aero-aileron.json", required=False)
+    # The rate derivatives may also live in their own file: the driver's
+    # block selector means a rate sweep and a baseline map can legitimately
+    # be separate runs, and hand-merging two sweep JSONs is exactly the
+    # step that goes wrong without announcing it.
+    ratefile = load(data, "aero-rates.json", required=False)
+    if ratefile and ratefile.get("rates") and aero is not None:
+        aero = dict(aero)
+        aero["rates"] = ratefile["rates"]
+    if ailfile and aero is not None and not aero.get("aileron"):
+        aero = dict(aero)
+        aero["aileron"] = ailfile.get("aileron", [])
+        for k in ("aileronMirrorProbeDeg", "aileronTau", "aileronEtaStart",
+                  "aileronChordFraction"):
+            if k in ailfile:
+                aero[k] = ailfile[k]
 
     if aero is None:
         print("note: aero-map.json absent -- emitting the model without aero* tables",
@@ -258,54 +347,118 @@ def build(args):
     d.leaf("author", "", name="Caglar Ucler", org="Ozyegin University")
     d.leaf("author", "", name="Ahmet Gunes", org="Istanbul Technical University")
     d.leaf("fileCreationDate", "", date=str(date.today()))
-    d.open("description")
-    d.raw(esc(
+    # The description carries the validity envelope and the declared gaps.
+    # These were once <reference> elements, which the DTD reserves for
+    # bibliography -- refID is an ID and must be unique, and author and date
+    # are required. Prose belongs here.
+    notes = [
         "Tabulated flight model of the Aetherion ducted-fan tail-sitter, generated from "
         "the Aeolion aerodynamic toolkit. Body axes are the contract frame "
         "aetherion_body_frd (x forward, y right, z down), the standard aeronautical body "
         "axis system of ANSI/AIAA R-004-1992. Moments are about the contract's "
         "moment_reference_point. See models/README.md for the normative specification "
-        "and models/report/ for the technical report."))
+        "and models/report/ for the technical report.",
+        "",
+        "VALIDITY. Incompressible, M < 0.3: no Mach dependence exists in the generating "
+        "methods. Single Reynolds number -- every table was generated at V = 25 m/s. "
+        "Propulsor tables are AXIAL INFLOW ONLY, because the rotor-vane machinery is "
+        "axisymmetric end to end; alphaDiskDeg is output as a validity monitor rather "
+        "than faked as a table axis. Powered operation only: the rho n^2 D^4 group "
+        "excludes n -> 0, so windmilling and low-rotor-speed descent are outside the "
+        "envelope.",
+        "",
+        "RATE DERIVATIVES. Measured at two perturbation amplitudes a factor of nine "
+        "apart. The attached range and deep stall agree to four digits; roughly 20-30 "
+        "degrees does not, differing by up to 196% with the SIGN not surviving. Across "
+        "that band a linear rate derivative is structurally invalid -- the response is "
+        "nonlinear over the perturbation range -- so those breakpoints are ABSENT rather "
+        "than tapered, clamped or filled with a measured number, all of which would be "
+        "fabrications. A lookup interpolates across the gap. The longitudinal pair (CZq, "
+        "Cmq) additionally comes from the inviscid path and is a FLOOR: a pitch rate acts "
+        "through the chordwise arm between the bound line and the moment reference point, "
+        "which is zero on this configuration.",
+        "",
+        "LIMITATIONS. Post-stall values are limit-cycle means, not steady states. CLmax "
+        "is an upper bound -- bubble bursting is not modelled. The tables are the "
+        "ascending-alpha branch; hysteresis is not represented. Rate derivatives are "
+        "tapered to zero over alpha 20-40 deg, a declared assumption rather than a "
+        "computed result. Parasite drag covers body and duct only -- the wing's profile "
+        "drag is already inside the force tables -- and omits the duct's separated drag "
+        "at incidence, so aeroCD0 is a lower bound at high alpha. The aileron flap model "
+        "is lift-only: no section pitching-moment increment, no gap leakage, no viscous "
+        "decay at large deflection, so tabulated roll authority is an upper bound.",
+    ]
+    if not (aero or {}).get("aileron"):
+        notes.append("")
+        notes.append(
+            "INCOMPLETE: aileron increment tables are absent -- the deflected sweep has "
+            "not been run -- so this model carries NO ROLL CONTROL INPUT.")
+    notes.append("")
+    notes.append("")
+    notes.append(
+        "UNCERTAINTY BOUNDS: read the label carefully. Where a table carries an "
+        "uncertainty element, the one-sigma bound is the NUMERICAL CONVERGENCE SPREAD -- "
+        "how far the damped iterate still wanders over its averaging window. It answers "
+        "whether a cell has settled, and separates a converged condition (which carries no "
+        "bound at all) from one still moving. It is NOT the physical unsteadiness of the "
+        "flow. On post-stall cells this metric reads of order 1e-7 while the physical "
+        "fluctuation, measured independently by an unsteady particle-wake cross-check at "
+        "the same attitudes, runs at RMS-to-mean ratios of 3 to 40. The two differ by "
+        "orders of magnitude because they measure different things: one says the solver has "
+        "settled, the other says the real flow buffets. A consumer treating the emitted "
+        "bound as physical uncertainty would conclude these loads are known to seven "
+        "digits, which is false. Post-stall entries remain limit-cycle MEANS of a "
+        "quasi-steady method, and their physical uncertainty is not represented in this "
+        "file at all.")
+    if coupling:
+        notes.append(
+            "INTERACTION VALIDITY. The fan-on-airframe tables (coupling*) were swept at "
+            "ZERO SIDESLIP and are indexed by alpha and Tc only, but the buildup applies "
+            "them at every beta. Their beta dependence is therefore unmeasured, not "
+            "established as weak. They are also uniform-disk-loading and swirl-free, and "
+            "past alpha 16 they are differences of two limit-cycle means: the effect is "
+            "thrust-ordered and real, but its attribution to delayed separation is "
+            "consistent with the data rather than established by it.")
+    else:
+        notes.append(
+            "INCOMPLETE: fan-on-airframe interaction tables (coupling*) are absent, so the "
+            "airframe tables are POWER-OFF and underpredict the separation delay the aft "
+            "fan provides in transition.")
+    d.open("description")
+    for line in notes:
+        d.raw(esc(line))
     d.close("description")
+
+    sources = [
+        ("srcAeroMap", "aero-map.json", "aeolion_aero_map",
+         "Airframe baseline map and reduced-rate derivatives", aero),
+        ("srcAileron", "aero-aileron.json", "aeolion_aero_map (aileron block)",
+         "Aileron increment sweep", ailfile or ((aero or {}).get("aileron") and aero)),
+        ("srcParasite", "parasite-drag.json", "aeolion_parasite_drag",
+         "Body and duct parasite drag, friction buildup plus crossflow branch", parasite),
+        ("srcPropMap", "propulsion-map.json", "aeolion_propulsion_map",
+         "Ducted propulsor over advance ratio", prop),
+        ("srcPropVane", "propulsion-singlevane.json", "aeolion_propulsion_map (single)",
+         "Per-vane control increments", vane),
+    ]
+    present = [(rid, fn, who, what) for rid, fn, who, what, doc in sources if doc]
+    # <reference> is bibliography: refID must be a unique ID, and author,
+    # title and date are required. The sweep JSONs are exactly that -- the
+    # documents this model was generated from -- so they belong here and
+    # the provenance's documentRefs point at them.
+    for rid, fn, who, what in present:
+        d.leaf("reference", "", refID=rid, author=who, title=f"{what} ({fn})",
+               date=str(date.today()))
 
     d.open("provenance", provID="genProv")
     d.leaf("author", "", name="Aeolion", org="models/build-daveml.py")
     d.leaf("creationDate", "", date=str(date.today()))
-    for src, doc in (("aero-map.json", aero), ("parasite-drag.json", parasite),
-                     ("propulsion-map.json", prop), ("propulsion-singlevane.json", vane)):
-        if doc is not None:
-            meta = doc.get("meta", {})
-            d.leaf("documentRef", "", docID=src.replace(".json", ""),
-                   refID=meta.get("designId", "")[:16])
-    d.leaf("description", "Generated from cached solver sweeps; see each documentRef.")
+    for rid, fn, who, what in present:
+        d.leaf("documentRef", "", refID=rid)
+    d.leaf("description", "Generated from cached solver sweeps; see each documentRef. "
+                          "Nothing in the assembler computes aerodynamics.")
     d.close("provenance")
 
-    # The validity envelope and the declared gaps, in the file itself
-    # rather than only in the report.
-    for note in [
-        "VALIDITY: incompressible, M < 0.3. No Mach dependence exists in the generating "
-        "methods.",
-        "VALIDITY: single Reynolds number -- all tables generated at V = 25 m/s.",
-        "VALIDITY: propulsor tables are AXIAL INFLOW ONLY. The rotor-vane machinery is "
-        "axisymmetric end to end, so disk incidence is not representable. alphaDiskDeg is "
-        "output as a validity monitor, never as a table axis.",
-        "VALIDITY: powered operation only; the rho n^2 D^4 group excludes n -> 0.",
-        "LIMITATION: post-stall values are limit-cycle means, not steady states.",
-        "LIMITATION: CLmax is an upper bound -- bubble bursting is not modelled.",
-        "LIMITATION: tables are the ascending-alpha branch; hysteresis is not represented.",
-        "LIMITATION: rate derivatives are tapered to zero over alpha 20-40 deg, a declared "
-        "assumption, not a computed result.",
-        "BLOCKED: aileron increment tables are NOT emitted. The generating path cannot "
-        "represent a hinge, so every value would be exactly zero -- an aircraft with no "
-        "roll control. See models/report section 'The aileron tables cannot be generated'.",
-        "BLOCKED: fan-on-airframe interaction tables are NOT emitted, pending an "
-        "upstream-induction model. The airframe tables are therefore POWER-OFF and "
-        "underpredict the separation delay the aft fan provides in transition.",
-        "LIMITATION: parasite drag covers body and duct only -- the wing's profile drag is "
-        "already inside the force tables. The duct's separated drag at incidence is not "
-        "modelled, so aeroCD0 is a lower bound at high alpha.",
-    ]:
-        d.leaf("reference", "", refID="note", title=note)
     d.close("fileHeader")
 
     # ---------------- inputs ----------------
@@ -348,13 +501,82 @@ def build(args):
                             app("times", ci("propSpeedRevps"), ci("DiskDiameterM"))))
     m.variable("alphaDiskDeg", "angleOfAttackDisk", "deg", axis="body",
                description="Validity monitor: angle between the free stream and the "
-                           "rotor axis. The propulsor model is axial-inflow only.",
+                           "rotor axis. The propulsor model is axial-inflow only. Two "
+                           "errors grow with this angle and they are not the same size. "
+                           "FIRST ORDER, and now CORRECTED: a propeller advances on "
+                           "the axial component of the free stream, so the propulsor "
+                           "tables are indexed by advanceRatioAxial = J*cos(alphaDisk) "
+                           "rather than by J, which would be high by 1/cos(alphaDisk) "
+                           "-- 1.5% at 10 deg, 6.4% at 20 deg, 15.5% at 30 deg. SECOND, "
+                           "and NOT corrected: the in-plane force and hub moment a disk "
+                           "at incidence develops are absent entirely, because the "
+                           "generating solver is axisymmetric end to end and "
+                           "representing them needs once-per-revolution loading. That "
+                           "residual error is what this monitor is for.",
                calc=app("times",
                         app("arccos", app("times",
                                           app("cos", deg2rad(ci("alphaDeg"))),
                                           app("cos", deg2rad(ci("betaDeg"))))),
                         app("divide", cn(180), "<pi/>")),
                is_output=True)
+    if prop:
+        # The axial advance ratio, exposed but NOT substituted into the table
+        # lookup. Substituting would be the better approximation and it is a
+        # behaviour change to a shipped model, so it is offered rather than
+        # imposed: a consumer who cares can index on this, and one who does not
+        # gets exactly the numbers the previous revision produced. Note that at
+        # the conditions the tables were GENERATED at, alphaDisk is zero and
+        # the two are identical -- the divergence is entirely a use-time
+        # question, which is why the monitor is the right place to raise it.
+        m.variable("advanceRatioAxial", "advanceRatio", "nd", symbol="J_ax",
+                   description="advanceRatio reduced to the axial component, "
+                               "J*cos(alphaDisk). THIS is what the propulsor tables are "
+                               "indexed by: a propeller advances on the component of "
+                               "the free stream along its own axis. Equal to "
+                               "advanceRatio at zero disk incidence, which is where the "
+                               "tables were generated, so no tabulated value depends on "
+                               "the distinction -- only where a consumer lands in them "
+                               "when off-axis.",
+                   calc=app("times", ci("advanceRatio"),
+                            app("cos", deg2rad(ci("alphaDiskDeg")))),
+                   is_output=True)
+    if vane and prop:
+        # Mixing matrix (models/README.md): bottom = R+Y, left = R-P,
+        # top = R-Y, right = R+P. These index the per-vane tables, which
+        # replaced the per-mode ones after the mode-sum buildup was
+        # measured wrong by up to 33%.
+        for pos, expr in (
+            ("Bottom", app("plus", ci("vaneRollDeg"), ci("vaneYawDeg"))),
+            ("Left", app("minus", ci("vaneRollDeg"), ci("vanePitchDeg"))),
+            ("Top", app("minus", ci("vaneRollDeg"), ci("vaneYawDeg"))),
+            ("Right", app("plus", ci("vaneRollDeg"), ci("vanePitchDeg"))),
+        ):
+            m.variable(f"vane{pos}Deg", f"vaneDeflection_{pos}", "deg", axis="body",
+                       calc=expr,
+                       description=f"The {pos.lower()} vane's own total commanded angle, "
+                                   "from the mixing matrix. The per-vane tables are indexed "
+                                   "by this, and the four contributions are summed.")
+
+    if coupling and prop and aero:
+        # The interaction index, computed IN THE FILE from the propulsor's
+        # own thrust so the two halves cannot disagree. No algebraic loop:
+        # the propulsor wrench does not depend on Tc, so thrust is known
+        # before the interaction tables are read.
+        m.variable("propThrustN", "propellerThrust", "N", axis="body",
+                   description="Thrust from the propulsor tables, rho n^2 D^4 CT.",
+                   calc=app("times", ci("airDensityKgpm3"),
+                            app("power", ci("propSpeedRevps"), cn(2)),
+                            app("power", ci("DiskDiameterM"), cn(4)),
+                            ci("propCT")),
+                   is_output=True)
+        m.variable("thrustCoefficient", "thrustCoefficient", "nd", symbol="Tc",
+                   description="T / (qbar S). Indexes the fan-on-airframe interaction "
+                               "tables. Degenerates as V -> 0, hence the declared "
+                               "minimum speed.",
+                   calc=app("divide", ci("propThrustN"),
+                            app("times", ci("qbarPa"), ci("WingAreaM2"))),
+                   is_output=True)
+
     if aero:
         m.variable("pHat", "reducedRollRate", "nd", symbol="phat",
                    calc=app("divide", app("times", ci("rollRateRadps"), ci("WingSpanM")),
@@ -367,8 +589,8 @@ def build(args):
                             app("times", cn(2), ci("trueAirspeedMps"))))
 
     # ---------------- breakpoints ----------------
-    d.comment("Breakpoint sets, taken from the generated data rather than restated.")
-    tables = []  # (name, [bpIDs], values, out_var, description)
+    tables = []   # (name, [bpIDs], values, out_var, description)
+    bp_defs = []  # (bpID, name, values) -- emitted after every variableDef
 
     if aero:
         base = aero["baseline"]
@@ -377,40 +599,118 @@ def build(args):
         # One-sided beta is mirrored here, using the unpowered airframe's
         # symmetry: CY, Cl, Cn odd in beta; CX, CZ, Cm even.
         full_betas = uniq([-b for b in betas] + betas)
-        breakpoints(d, "alphaBp", "angleOfAttack", alphas)
-        breakpoints(d, "betaBp", "angleOfSideslip", full_betas)
+        bp_defs.append(("alphaBp", "angleOfAttack", alphas))
+        bp_defs.append(("betaBp", "angleOfSideslip", full_betas))
 
         lookup = {(r["alphaDeg"], r["betaDeg"]): r for r in base}
         ODD = {"CY", "Cl", "Cn"}
         for comp in ("CX", "CY", "CZ", "Cl", "Cm", "Cn"):
-            vals = []
+            vals, sig = [], []
             for a in alphas:
                 for b in full_betas:
                     row = lookup.get((a, abs(b)))
                     if row is None:
                         vals.append(0.0)
+                        sig.append(0.0)
                         continue
                     v = row[comp]
                     if b < 0 and comp in ODD:
                         v = -v
                     vals.append(v)
+                    # The cycle width, carried into the cell's own units.
+                    # A converged condition reports no samples and so no
+                    # fluctuation, which is the honest answer rather than
+                    # a small fabricated one.
+                    sig.append(abs(v) * row.get("cycleFluctuation", 0.0))
             tables.append((f"aero{comp}", ["alphaBp", "betaBp"], vals, f"aero{comp}Table",
                            f"Airframe {comp}, power-off, controls neutral. Carries induced "
-                           f"and wing profile drag; parasite drag is aeroCD0."))
+                           f"and wing profile drag; parasite drag is aeroCD0.", sig))
+
+        # Aileron increments. Swept one-sided in deflection and mirrored
+        # here on the same symmetry argument used for sideslip: the
+        # configuration is mirror-symmetric about xz, and mirroring maps an
+        # antisymmetric +delta command onto -delta while flipping the
+        # lateral wrench. The generating sweep VERIFIES this rather than
+        # assuming it -- it solves one negative deflection, which
+        # reproduces the mirrored positive one to machine precision.
+        ail = aero.get("aileron", [])
+        if ail:
+            probe = aero.get("aileronMirrorProbeDeg")
+            # The probe row exists only to check the mirror; it must not
+            # also become a breakpoint, or the axis gains a stray point.
+            gen = [r for r in ail if probe is None or abs(r["deltaDeg"] - probe) > 1e-9]
+            pos = uniq([r["deltaDeg"] for r in gen if r["deltaDeg"] > 0])
+            full_deltas = uniq([-x for x in pos] + [0.0] + pos)
+            bp_defs.append(("aileronBp", "aileronDeflection", full_deltas))
+
+            lut = {(r["alphaDeg"], r["deltaDeg"]): r for r in gen}
+            ODD_A = {"dCY", "dCl", "dCn"}
+            for comp in ("dCX", "dCY", "dCZ", "dCl", "dCm", "dCn"):
+                vals = []
+                for a in alphas:
+                    for dlt in full_deltas:
+                        if abs(dlt) < 1e-12:
+                            vals.append(0.0)  # neutral is the reference
+                            continue
+                        row = lut.get((a, abs(dlt)))
+                        if row is None:
+                            vals.append(0.0)
+                            continue
+                        v = row[comp]
+                        if dlt < 0 and comp in ODD_A:
+                            v = -v
+                        vals.append(v)
+                name = "aeroD" + comp[1:]
+                tables.append((name, ["alphaBp", "aileronBp"], vals, name + "Table",
+                               "Aileron increment " + comp[1:] + " from the neutral "
+                               "configuration at matched alpha. The flap is carried in the "
+                               "section, so this attenuates through stall as the sections "
+                               "separate -- an inviscid lattice cannot show that."))
 
         rates = aero.get("rates", [])
         if rates:
-            ralphas = uniq([r["alphaDeg"] for r in rates])
-            breakpoints(d, "alphaRateBp", "angleOfAttack", ralphas)
-            for comp in ("CZq", "Cmq", "Clp", "Cnp", "CYp", "Clr", "Cnr", "CYr"):
-                vals = [r[comp] for r in sorted(rates, key=lambda x: x["alphaDeg"])]
-                tables.append((f"aero{comp}", ["alphaRateBp"], vals, f"aero{comp}Table",
-                               f"Reduced-rate derivative {comp}, attached range only."))
+            rates = sorted(rates, key=lambda r: r["alphaDeg"])
+            # LINEARITY. A rate derivative is a linearization, and across
+            # the stall band that linearization fails outright: measured at
+            # two roll-rate amplitudes a factor of nine apart, the attached
+            # range and deep stall agree to four digits while roughly
+            # 20-30 degrees disagrees by up to 196% and the SIGN does not
+            # survive. In that band no single linear coefficient represents
+            # the response, so a taper, a clamp and a measured value are
+            # equally fabrications.
+            #
+            # The rows that failed the check are therefore DROPPED from the
+            # breakpoint axis rather than smoothed over. A gridded lookup
+            # interpolates across the gap, which is an honest admission
+            # that nothing was measured there -- and the file header says
+            # so, so a consumer is not left to infer it from a suspiciously
+            # straight segment.
+            usable = [r for r in rates if r.get("linearizable", True)]
+            dropped = [r["alphaDeg"] for r in rates if not r.get("linearizable", True)]
+            if dropped:
+                print(f"  rate derivatives: {len(dropped)} non-linearizable row(s) dropped "
+                      f"(alpha {min(dropped):g}..{max(dropped):g})")
+            if usable:
+                ralphas = uniq([r["alphaDeg"] for r in usable])
+                bp_defs.append(("alphaRateBp", "angleOfAttack", ralphas))
+                for comp in ("CZq", "Cmq", "Clp", "Cnp", "CYp", "Clr", "Cnr", "CYr"):
+                    vals = [r[comp] for r in usable]
+                    longitudinal = comp in ("CZq", "Cmq")
+                    note = (" From the INVISCID path and a floor: a pitch rate acts through "
+                            "the chordwise arm between the bound line and the reference "
+                            "point, which is zero here, so the coupled path returns nothing "
+                            "and the chordwise load redistribution is absent by construction."
+                            if longitudinal else
+                            " From the COUPLED path, which carries the section model's "
+                            "post-stall lift slope.")
+                    tables.append((f"aero{comp}", ["alphaRateBp"], vals, f"aero{comp}Table",
+                                   f"Reduced-rate derivative {comp}." + note +
+                                   " Rows where the linearization failed are absent."))
 
     if parasite:
         pts = parasite["table"]
         palphas = uniq([r["alphaDeg"] for r in pts])
-        breakpoints(d, "alphaParasiteBp", "angleOfAttack", palphas)
+        bp_defs.append(("alphaParasiteBp", "angleOfAttack", palphas))
         vals = [r["CD0"] for r in sorted(pts, key=lambda x: x["alphaDeg"])]
         tables.append(("aeroCD0", ["alphaParasiteBp"], vals, "aeroCD0Table",
                        "Parasite drag of BODY AND DUCT ONLY -- never the wing, whose "
@@ -420,12 +720,39 @@ def build(args):
     if prop:
         rows = [r for r in prop["rows"] if r["mode"] == "baseline"]
         js = uniq([r["J"] for r in rows])
-        breakpoints(d, "jBp", "advanceRatio", js)
+        bp_defs.append(("jBp", "advanceRatio", js))
         by_j = {r["J"]: r for r in rows}
         tables.append(("propCT", ["jBp"], [by_j[j]["ct"] for j in js], "propCTTable",
                        "Thrust coefficient, vanes neutral, T / rho n^2 D^4."))
         tables.append(("propCQ", ["jBp"], [by_j[j]["cq"] for j in js], "propCQTable",
                        "Shaft torque coefficient, Q / rho n^2 D^5."))
+
+    if coupling:
+        crows = coupling["rows"]
+        ctcs = uniq([0.0] + [r["Tc"] for r in crows])
+        calphas = uniq([r["alphaDeg"] for r in crows])
+        bp_defs.append(("tcBp", "thrustCoefficient", ctcs))
+        clut = {(r["alphaDeg"], r["Tc"]): r for r in crows}
+        for comp in ("dCX", "dCY", "dCZ", "dCl", "dCm", "dCn"):
+            vals, sig = [], []
+            for a in calphas:
+                for tc in ctcs:
+                    if tc == 0.0:
+                        vals.append(0.0)  # power-off is the reference
+                        sig.append(0.0)
+                        continue
+                    row = clut.get((a, tc))
+                    v = row[comp] if row else 0.0
+                    vals.append(v)
+                    sig.append(abs(v) * (row.get("cycleFluctuation", 0.0) if row else 0.0))
+            name = "coupling" + comp[1:]
+            tables.append((name, ["alphaCouplingBp", "tcBp"], vals, f"{name}Table",
+                           f"Fan-on-airframe increment {comp[1:]} from the power-off "
+                           "configuration at matched alpha. The aft fan induces a "
+                           "favourable gradient UPSTREAM of itself, over the wing; the "
+                           "momentum-theory slipstream is identically zero there and "
+                           "would report no interaction at all.", sig))
+        bp_defs.append(("alphaCouplingBp", "angleOfAttack", calphas))
 
     if vane and prop:
         # PER-VANE increments, not per-mode: the mode-sum buildup was
@@ -433,8 +760,8 @@ def build(args):
         vrows = vane["rows"]
         vjs = uniq([r["J"] for r in vrows])
         vdeltas = uniq([r["deltaDeg"] for r in vrows] + [0.0])
-        breakpoints(d, "jVaneBp", "advanceRatio", vjs)
-        breakpoints(d, "vaneBp", "vaneDeflection", vdeltas)
+        bp_defs.append(("jVaneBp", "advanceRatio", vjs))
+        bp_defs.append(("vaneBp", "vaneDeflection", vdeltas))
         base_by_j = {r["J"]: r for r in prop["rows"] if r["mode"] == "baseline"}
         # One vane's response serves all four positions by the cruciform's
         # rotational symmetry; the reference vane is the starboard one.
@@ -465,19 +792,60 @@ def build(args):
                            f"over command modes, which was measured wrong by up to 33%."))
 
     # ---------------- table + function definitions ----------------
-    d.comment("Gridded tables.")
-    for name, bp_ids, vals, tname, desc in tables:
-        gridded_table(d, tname, bp_ids, vals, desc)
-
+    # DTD ORDER (DAVEfunc): fileHeader, variableDef+, breakpointDef*,
+    # griddedTableDef*, ungriddedTableDef*, function*, checkData?. Every
+    # variable must therefore be declared before the first breakpoint, so
+    # the table outputs are emitted here rather than beside their tables.
     d.comment("Output variables the tables drive.")
-    for name, bp_ids, vals, tname, desc in tables:
+    VANE_POS = ("Bottom", "Left", "Top", "Right")
+    for name, bp_ids, vals, tname, desc in (e[:5] for e in tables):
+        if "vaneBp" in bp_ids:
+            for pos in VANE_POS:
+                m.variable(f"{name}{pos}", f"{name}{pos}", "nd", axis="body",
+                           description=f"{desc} Evaluated at the {pos.lower()} vane's angle.")
+            m.variable(f"{name}Total", f"{name}Total", "nd", axis="body", is_output=True,
+                       description=desc + " Summed over the four vanes.",
+                       calc=app("plus", *[ci(f"{name}{pos}") for pos in VANE_POS]))
+            continue
         m.variable(name, name, "nd", axis="body", is_output=True, description=desc)
 
-    d.comment("Functions binding each table to its breakpoints.")
+    d.comment("Breakpoint sets, taken from the generated data rather than restated.")
+    for bpID, bpname, vals in bp_defs:
+        emit_breakpoints(d, bpID, bpname, vals)
+
+    d.comment("Gridded tables.")
+    for entry in tables:
+        name, bp_ids, vals, tname, desc = entry[:5]
+        sigmas = entry[5] if len(entry) > 5 else None
+        gridded_table(d, tname, bp_ids, vals, desc, sigmas)
+
+    d.comment("Functions binding each table to its independent variables. A "
+              "per-vane table is bound FOUR times -- once per vane, at that vane's own "
+              "commanded angle -- and the four outputs are summed, which is the buildup "
+              "the superposition measurement forced.")
     axis_var = {"alphaBp": "alphaDeg", "betaBp": "betaDeg", "alphaRateBp": "alphaDeg",
-                "alphaParasiteBp": "alphaDeg", "jBp": "advanceRatio",
-                "jVaneBp": "advanceRatio", "vaneBp": "vaneDeflectionDeg"}
-    for name, bp_ids, vals, tname, desc in tables:
+                "alphaParasiteBp": "alphaDeg", "aileronBp": "aileronDeg",
+                # The propulsor tables index on the AXIAL advance ratio, not on
+                # advanceRatio. A propeller advances on the component of the
+                # free stream along its own axis, so at disk incidence
+                # V/(nD) is the wrong argument -- high by 1/cos(alphaDisk),
+                # which is 6.4% at 20 degrees and 15.5% at 30. At the
+                # conditions these tables were GENERATED at, alphaDisk is zero
+                # and the two are identical, so this changes no tabulated
+                # value; it changes where a consumer lands in them off-axis.
+                "jBp": "advanceRatioAxial", "jVaneBp": "advanceRatioAxial",
+                "alphaCouplingBp": "alphaDeg", "tcBp": "thrustCoefficient"}
+    VANE_POS = ("Bottom", "Left", "Top", "Right")
+    for name, bp_ids, vals, tname, desc in (e[:5] for e in tables):
+        if "vaneBp" in bp_ids:
+            # One table, four bindings: the same per-vane response evaluated
+            # at each vane's own angle. griddedTableRef is an IDREF, so all
+            # four functions legitimately point at one table.
+            for pos in VANE_POS:
+                axes = ["vane" + pos + "Deg" if b == "vaneBp" else axis_var[b]
+                        for b in bp_ids]
+                simple_function(d, f"{name}{pos}Fn", f"{name}{pos}", axes, bp_ids, tname)
+            continue
         simple_function(d, f"{name}Fn", name, [axis_var[b] for b in bp_ids], bp_ids, tname)
 
     # ---------------- checkData ----------------
@@ -530,6 +898,36 @@ def build(args):
                 {"alphaDeg": near2["alphaDeg"]},
                 {"aeroClp": near2["Clp"]},
                 1e-9))
+    if aero and aero.get("aileron"):
+        gen = [r for r in aero["aileron"] if r["deltaDeg"] > 0]
+        if gen:
+            top = max((r["deltaDeg"] for r in gen))
+            probe = min((r for r in gen if abs(r["deltaDeg"] - top) < 1e-9),
+                        key=lambda r: abs(r["alphaDeg"]))
+            # The expected value is taken from the POSITIVE-deflection row
+            # and negated by hand here, while the table cell is filled by
+            # the assembler's mirroring code. The two are independent, so
+            # this catches a wrong mirror sign -- which no encoding pin
+            # can, since the encoding would faithfully store the error.
+            shots.append((
+                "aileronMirrorAntisymmetry",
+                "Physics pin: the rolling-moment increment is ODD in aileron deflection, "
+                "because mirroring the configuration about its xz-plane maps a +delta "
+                "antisymmetric command onto -delta. The expected value comes from the "
+                "+delta row negated; the table cell comes from the mirroring code.",
+                {"alphaDeg": probe["alphaDeg"], "aileronDeg": -top},
+                {"aeroDCl": -probe["dCl"]},
+                1e-9))
+            shots.append((
+                "aileronRollAuthorityIsReal",
+                "Physics pin: a deflected aileron produces a rolling moment at all. This "
+                "was exactly zero at every attitude before the flap was carried in the "
+                "section, silently, with the solve converging and reporting sensible "
+                "forces.",
+                {"alphaDeg": probe["alphaDeg"], "aileronDeg": top},
+                {"aeroDCl": probe["dCl"]},
+                1e-9))
+
     if parasite:
         pts = sorted(parasite["table"], key=lambda r: r["alphaDeg"])
         top = pts[-1]
@@ -542,8 +940,45 @@ def build(args):
             {"aeroCD0": top["CD0"]},
             1e-9))
 
+    if prop:
+        # The propulsor tables had NO checkData at all until this: all six
+        # existing shots exercise aero* quantities, so the whole prop path --
+        # breakpoints, ordering, interpolation, and the variable the tables
+        # are indexed BY -- was unpinned. That gap is why the switch to
+        # advanceRatioAxial could be made and verified green without any
+        # check having looked at a propulsor table.
+        #
+        # This shot is deliberately taken at ZERO disk incidence, which is
+        # where every row of the map was solved. There it also pins the claim
+        # the switch rests on: alphaDisk = 0 makes advanceRatioAxial equal to
+        # advanceRatio exactly, so no tabulated value depends on the change,
+        # only where an off-axis consumer lands. An off-axis shot cannot be
+        # generated at all -- there is no solve at disk incidence to generate
+        # it from, which is the whole of C2.
+        base_rows = [r for r in prop["rows"]
+                     if r.get("mode") in (None, "none", "baseline") and r.get("deltaDeg", 0.0) == 0.0]
+        if base_rows:
+            js = sorted({r["J"] for r in base_rows})
+            probe = min(base_rows, key=lambda r: abs(r["J"] - js[len(js) // 2]))
+            shots.append((
+                "propEncodingAtBreakpoint",
+                "Encoding pin for the propulsor path, which carried no checkData "
+                "before. At an exact advance-ratio breakpoint the gridded lookup must "
+                "return the stored thrust and torque coefficients. Taken at zero disk "
+                "incidence, where the tables were solved and where advanceRatioAxial "
+                "-- the variable they are indexed by -- equals advanceRatio exactly.",
+                # Supply the AXIS variable directly, as every aero shot does with
+                # alphaDeg. Feeding V and n instead would require the checker to
+                # chain V -> advanceRatio -> advanceRatioAxial through MathML,
+                # which it does not do -- it evaluates tables from the inputs it
+                # is given. Learned by trying it: the shot failed with
+                # "inputs ['advanceRatioAxial'] not supplied".
+                {"advanceRatioAxial": probe["J"]},
+                {"propCT": probe["ct"], "propCQ": probe["cq"]},
+                1e-6))
+
     for name, desc, inputs, outputs, tol in shots:
-        d.open("staticShot", name=name, refID=name)
+        d.open("staticShot", name=name)
         d.leaf("description", desc)
         d.open("checkInputs")
         for var, val in inputs.items():
@@ -573,7 +1008,10 @@ def build(args):
     print(f"wrote {out}: {len(tables)} tables")
     if aero is None:
         print("  (no aero* tables -- aero-map.json was absent)")
-    print("  NOT emitted, by design: aeroDC* (aileron, blocked), coupling* (blocked)")
+    if not (aero or {}).get("aileron"):
+        print("  NOT emitted: aeroDC* (aileron -- deflected sweep not yet run)")
+    if not coupling:
+        print("  NOT emitted: coupling* (no coupling-map.json)")
     return 0
 
 

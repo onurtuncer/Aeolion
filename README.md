@@ -407,6 +407,15 @@ GitHub Pages on every push to `main`.
   `Aeolion::DragEstimate::EstimateCD0()`'s component buildup added on top
   -- there is no CLI flag for this yet, it is a library call you make
   yourself (see `doc/theory.rst`).
+- **CDi is the NEAR-FIELD value, and a body degrades it.** Induced drag is
+  the streamwise component of forces dominated by lift, so its relative
+  error is amplified by L/D. On a wing that is benign (near and far field
+  agree to 0.4%); add the fuselage and CDi goes negative at zero lift and
+  fits an Oswald efficiency of 1.53, which no planar wing can have. CL and
+  the moments are unaffected. When the induced drag itself matters on a
+  configuration with a body, use `Solver::TrefftzInducedDrag` -- the
+  far-field integral, which a closed body cannot contribute to because it
+  sheds no trailing vorticity.
 - **Linear, attached-flow method.** No stall, no separation physics.
   Don't trust it near stall.
 - **Wake trails along the global x-axis**, not the true local freestream

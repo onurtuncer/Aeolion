@@ -64,21 +64,52 @@
 // roll authority deep into stall -- the departure-recovery failure the
 // DAVE-ML report warns about, in the opposite direction.
 //
-// Neither available source is usable as it stands. The fix is
-// solver-side, not driver-side: a deflected strip must carry the flap in
-// its SECTION description, i.e. StripSection::Alpha0Deg shifted by the
-// thin-airfoil flap increment for its hinge position and deflection (and
-// ideally a flap-shifted stall angle), so the section model the coupling
-// drives the lattice onto actually knows the flap is down. That is a
-// behaviour change to a tested module and wants its own branch.
+// FIXED (2026-08-16), and the fix is validated rather than asserted. A
+// deflected strip now carries the flap in its SECTION description --
+// StripSection::FlapChordFraction / FlapDeflectionDeg, shifting the
+// zero-lift angle by the thin-airfoil increment -tau*delta. The lattice
+// geometry is still unchanged (one row cannot hold a hinge); what
+// changed is that the section model, which is the AUTHORITY on cl in the
+// coupled solve, now knows the flap is down.
+//
+// Measured, with both columns in FRD (dCl flips sign under the frame
+// rotation, so the earlier mixed-frame comparison differed by a sign
+// that was pure bookkeeping):
+//
+//   alpha   dCl (8 rows, inviscid)   dCl (coupled)   ratio
+//       0                -0.009254       -0.009384   1.014
+//       6                -0.009361       -0.008322   0.889
+//      12                -0.009261       -0.006620   0.715
+//      20                -0.008815       -0.004184   0.475
+//
+// Two things are worth reading off that table. At low incidence the
+// coupled solve reproduces the RESOLVED-HINGE lattice to 1.4% -- an
+// independent geometric representation of the same flap, which is what
+// makes this a validation rather than a plausible-looking curve. And the
+// ratio then falls monotonically as separation develops, which is the
+// physics the inviscid column structurally cannot contain. By alpha = 30
+// only ~12% of the attached-flow roll authority survives (TestFlapSection
+// pins this), against the inviscid lattice's ~84%.
+//
+// ONE EARLIER MEASUREMENT WAS WRONG, and it is recorded because the
+// failure mode recurs: the original coupled column read res.Base.Croll,
+// which SolveViscousCoupled never populates, so it differenced two zeros
+// and reported "no control effect" for a reason that had nothing to do
+// with the hinge. The hinge finding stands on the SINGLE-ROW INVISCID
+// column, which uses SolveWithSystem and is genuinely zero. Coefficients
+// now come from Solver/BodyAxes.h, which TestBodyAxes pins.
 // ---------------------------------------------------------------------
+//
+// Usage:
 //
 // Usage:
 //   aeolion_aileron_effectiveness <handoff.json> <out.json> [deltaDeg] [Vinf]
 
 #include "Aeolion/Geometry/CstSurface.h"
+#include "Aeolion/Geometry/FlapEffectiveness.h"
 #include "Aeolion/Geometry/HandoffContract.h"
 #include "Aeolion/PanelBuilder/PanelBuilder.h"
+#include "Aeolion/Solver/BodyAxes.h"
 #include "Aeolion/Solver/Solver.h"
 #include "Aeolion/Solver/ViscousCoupling.h"
 
@@ -112,7 +143,9 @@ std::vector<double> BuildAlphaGrid() {
 // this repo. The handoff wing is rectangular, unswept and untwisted, so
 // its chord frame is the solver frame.
 std::vector<S::StripSection> StripsFromPanels(const std::vector<S::Panel>& panels, double halfSpan,
-                                              const std::vector<Geometry::AirfoilSection>& sections) {
+                                              const std::vector<Geometry::AirfoilSection>& sections,
+                                              const Geometry::ControlSurface* aileron = nullptr,
+                                              double deltaDeg = 0.0) {
     std::vector<S::StripSection> strips;
     strips.reserve(panels.size());
     for (const S::Panel& panel : panels) {
@@ -124,6 +157,16 @@ std::vector<S::StripSection> StripsFromPanels(const std::vector<S::Panel>& panel
         strip.Width = panel.SpanwiseWidth;
         strip.Eta = std::fabs(mid.y) / halfSpan;
         strip.Alpha0Deg = Geometry::SectionZeroLiftAngleDeg(sections, strip.Eta);
+
+        // The flap, stated in the SECTION rather than in the panel
+        // geometry -- see StripSection::FlapChordFraction. Antisymmetric:
+        // the right semi-span (y > 0 in the solver frame) takes +delta,
+        // the left takes -delta, which is what makes it an aileron rather
+        // than a flaperon.
+        if (aileron && strip.Eta >= aileron->EtaStart && strip.Eta <= aileron->EtaEnd) {
+            strip.FlapChordFraction = aileron->ChordFraction;
+            strip.FlapDeflectionDeg = (mid.y >= 0.0) ? deltaDeg : -deltaDeg;
+        }
         strips.push_back(strip);
     }
     return strips;
@@ -191,7 +234,19 @@ int main(int argc, char** argv) {
 
     const double halfSpan = 0.5 * contract.Span;
     const auto stripsNeutral = StripsFromPanels(wingNeutral, halfSpan, contract.AirfoilSections);
-    const auto stripsDeflected = StripsFromPanels(wingDeflected, halfSpan, contract.AirfoilSections);
+    // The deflected strips carry the flap in their SECTION description --
+    // the fix for the blocker this driver measured. The lattice geometry
+    // is unchanged (a single row cannot hold a hinge); the section model,
+    // which is the authority on cl in the coupled solve, now knows the
+    // flap is down.
+    const auto stripsDeflected = StripsFromPanels(
+        wingDeflected, halfSpan, contract.AirfoilSections,
+        &contract.ControlSurfaces[aileronIndex], deltaDeg);
+    const double tau = Geometry::FlapEffectiveness(
+        1.0 - contract.ControlSurfaces[aileronIndex].ChordFraction);
+    std::cout << "aileron: chord fraction " << contract.ControlSurfaces[aileronIndex].ChordFraction
+              << ", thin-airfoil effectiveness tau = " << tau << " -> zero-lift shift "
+              << -tau * deltaDeg << " deg at " << deltaDeg << " deg deflection\n";
 
     const double trail = TrailSpans * contract.Span;
     const auto preparedNeutral = S::Prepare(S::PanelSystem{wingNeutral, sources}, trail);
@@ -247,17 +302,29 @@ int main(int argc, char** argv) {
 
         const auto natNeutral = S::SolveWithSystem(preparedNativeNeutral, fc, ref);
         const auto natDeflected = S::SolveWithSystem(preparedNativeDeflected, fc, ref);
-        const double dClNative = natDeflected.Croll - natNeutral.Croll;
+        // In FRD, like the coupled column: Cl flips sign under the
+        // solver->contract frame rotation, so comparing a solver-frame
+        // Croll against a body-axis Cl would differ by a sign that is
+        // pure bookkeeping.
+        const double dClNative = -(natDeflected.Croll - natNeutral.Croll);
 
         const auto invNeutral = S::SolveWithSystem(preparedNeutral, fc, ref);
         const auto invDeflected = S::SolveWithSystem(preparedDeflected, fc, ref);
-        const double dClInviscid = invDeflected.Croll - invNeutral.Croll;
+        const double dClInviscid = -(invDeflected.Croll - invNeutral.Croll);
 
         const auto cplNeutral = S::SolveViscousCoupled(wingNeutral, stripsNeutral, fc, ref, trail,
                                                        model, coupling, sources);
         const auto cplDeflected = S::SolveViscousCoupled(wingDeflected, stripsDeflected, fc, ref,
                                                          trail, model, coupling, sources);
-        const double dClCoupled = cplDeflected.Base.Croll - cplNeutral.Base.Croll;
+        // Via the tested extractor, NOT res.Base.Croll: the coupled
+        // result's coefficient members are never populated, so the
+        // earlier version of this driver differenced two zeros and
+        // reported "no control effect" for a reason that had nothing to
+        // do with the hinge. Solver/BodyAxes.h and TestBodyAxes exist
+        // because of that class of defect.
+        const double q = 0.5 * Rho * flightSpeed * flightSpeed;
+        const double dClCoupled = S::BodyAxisFromCoupled(cplDeflected, q, ref).Cl -
+                                  S::BodyAxisFromCoupled(cplNeutral, q, ref).Cl;
 
         // Retention against the resolved-hinge lattice: what fraction of the
         // real geometric control effect each single-row path still carries.

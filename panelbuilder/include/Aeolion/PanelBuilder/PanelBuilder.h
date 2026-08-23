@@ -308,6 +308,34 @@ struct LatticeOptions {
     int DuctCircumferentialPanels = 16;
 
     /**
+     * Extra AXIAL stations clustered toward the nose, cosine-spaced over
+     * BodyNoseRefineFraction of the body length. Zero (the default) leaves
+     * the contract's own station list alone.
+     *
+     * Why this is a consumer choice at all: the handoff contract states the
+     * SHAPE, not the mesh. Azimuthal resolution has always been a consumer
+     * knob (BodyCircumferentialPanels); axial resolution was not, which left
+     * one mesh direction dictated by however finely the contract's author
+     * happened to tabulate the radius law. That asymmetry is the whole of
+     * this option.
+     *
+     * What it is for: at moderate incidence the stagnation point sits a few
+     * millimetres from the apex, inside the first panel ring of a 25-station
+     * list, where an attachment-line search can only honestly answer
+     * "upstream of the first station" rather than locate a node.
+     *
+     * REFINEMENT ONLY, and that restriction is load-bearing. Every original
+     * station is kept and the added ones are evaluated on the contract's own
+     * piecewise-linear radius law, so the discretization changes and the
+     * geometry does not. A coarsening knob would silently cut corners off
+     * the shape, which is why none is offered.
+     */
+    int BodyNoseRefineStations = 0;
+
+    /** Fraction of body length the nose refinement spans. */
+    double BodyNoseRefineFraction = 0.10;
+
+    /**
      * Axial divisions along the duct's chord, on the two cylindrical walls
      * only (the end caps are a single radial band -- see BuildDuct()). The
      * duct schema states a single chord, not a station list like the

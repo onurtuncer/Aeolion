@@ -355,7 +355,7 @@ The quantity that matters is not the induction at a point but its
 variation \emph{along the chord}, because that variation is the pressure
 gradient. The wing trailing edge sits roughly three times closer to the
 disk than its leading edge, so the induction rises substantially across
-the chord: at the transition point $V_\infty = 12$~m/s, $T = 25$~N, the
+the chord: at the mid-range condition $V_\infty = 12$~m/s, $T = 25$~N, the
 rise is $23\%$ of freestream at $2y/b = 0.10$, $14.5\%$ at $0.20$ and
 $5\%$ at $0.30$. It is a favourable gradient, and it is strongest at the
 trailing edge, which is where turbulent separation begins and from which
@@ -364,8 +364,13 @@ it marches forward.
 \begin{table}[tb]
   \centering
   \caption{Chordwise rise in axial velocity across the wing, as a
-    percentage of freestream, at four points along a transition. The
-    velocity ratio $\mu = V_\infty / v_h$ runs from near-hover to cruise.}
+    percentage of freestream, at four operating points spanning the
+    transition's range of velocity ratio $\mu = V_\infty / v_h$, from
+    near-hover to cruise. These are a parametric sweep in $\mu$, not trim
+    points on a computed trajectory: no transition operating line exists
+    yet (Sec.~\ref{sec:limits}). $v_h$ is referred to the \emph{annular}
+    disk area, which excludes the blade root at $r/R = 0.42$; using the
+    full disk instead lowers $\mu$ by 8\%.}
   \label{tab:operating}
   \input{figures/tables/operating.tex}
 \end{table}
@@ -449,7 +454,79 @@ The benefit scales as expected with the velocity ratio: at cruise speed
 the same comparison returns roughly a third of the transition value,
 consistent with the induction scaling as $v_i/V_\infty$.
 
+\subsection{The same effect measured across the envelope}
+\label{sec:directmap}
+
+The measurement above is a horizontal shift of the separation curve at one
+operating point, on a fine incidence grid. It answers ``how much incidence
+does the fan buy'' precisely, and says nothing about what happens once the
+wing is past stall, where the curve it shifts no longer exists in the same
+form. A second measurement, from a different computation and a different data
+path, covers that range.
+
+The coupled post-stall solve carries a separation point on every strip, so
+the powered and power-off locations can be compared outright at any
+attitude the solver will run. Doing that over $125$ conditions --- $\alpha$
+from $-4^\circ$ to $90^\circ$, thrust coefficient $T_c$ from $0.5$ to
+$8$ --- gives Fig.~\ref{fig:map} and Table~\ref{tab:map}. This is a
+\emph{vertical} shift, the chord fraction held attached, where
+Fig.~\ref{fig:shift} is a horizontal one. The two are corroboration rather
+than duplication: they share no code beyond the geometry, and neither
+subsumes the other.
+
+\begin{figure}[tb]
+  \centering
+  \includegraphics[width=\linewidth]{figures/separation-map.pdf}
+  \caption{Span-mean separation point read directly off the coupled solve.
+    Left: absolute location, fan off against the strongest thrust ---
+    the delay is a small displacement of a curve that is itself
+    collapsing. Right: the delay alone, one line per thrust. The dotted
+    zero line is drawn because the sign reverses beyond $70^\circ$.}
+  \label{fig:map}
+\end{figure}
+
+\begin{table}[tb]
+  \centering
+  \caption{Span-mean separation point, fan off and on, at $T_c = 8$. Rows
+    are marked according to whether the coupled solve converged or returned
+    a limit-cycle mean, because the two are not the same kind of number.}
+  \label{tab:map}
+  \input{figures/tables/map.tex}
+\end{table}
+
+Three features are worth drawing out. The delay grows to a peak of
+$+0.065$ chord near $\alpha = 30^\circ$ and decays after it, which is what
+a delay must do once there is little attached flow left to preserve. It is
+monotone in thrust at every attitude up to $70^\circ$, and nothing in the
+formulation enforces that: the section tables are functions of $(\eta,
+\alpha_{\text{local}})$ alone and contain no representation of the fan, so
+the delay reaches them only through the local incidence the induction field
+changes. And beyond $70^\circ$ the sign reverses --- the fan advances
+separation rather than delaying it --- because with the plate broadside the
+axial induction is perpendicular to the free stream and there is no
+attached layer left to energise.
+
+Two properties of the metric are stated here because both would otherwise
+read as physics. The \emph{worst} strip's separation point saturates at the
+leading edge from $\alpha = 20^\circ$ upward at every thrust setting, so
+differences taken on it past that incidence measure the metric running out
+of range rather than the fan ceasing to act; the span mean is quoted for
+that reason. And ratios of the separation shift are not sensitivities:
+$f(\alpha)$ is steep at the knee, so a span mean of it amplifies a smooth
+input, and the same solve that moves $\bar f$ by a factor of four across
+one thrust step moves the normal force by a flat $1.50$--$1.65$ per thrust
+doubling at every incidence. Sensitivity should be read from the load.
+
 \section{Limitations}
+\label{sec:limits}
+
+The duct's own lip suction is not in any number reported here, and that is
+a scope boundary rather than an omission. This study models the fan as the
+loaded actuator disk whose upstream field reaches the wing; the duct is not
+panelled in that solve, so no lip force can appear in it. Lip suction is a
+question about the thrust split of the propulsor itself, it is reported as
+such in the companion propulsion study, and it is not treated separately
+anywhere --- there is one account of it, not two.
 
 The coupling is one-way, so the reported shift is a lower bound. The
 induction model assumes uniform disk loading; real loading tapers at both
@@ -463,6 +540,72 @@ not modelled, so
 the separation boundary is an upper bound on usable incidence rather than
 a predicted stall.
 
+The operating points of Table~\ref{tab:operating} span the transition's
+range of velocity ratio but are not a trajectory through it. Confirming
+that they bracket a \emph{real} transition would require checking the
+thrust at each speed against a trimmed flight condition, and that check
+cannot be made here: no mass is stated anywhere in the geometry contract,
+which carries shape alone. What can be confirmed is internal consistency,
+and it holds --- $\mu$ recomputed from the contract's own disk geometry
+reproduces the tabulated values to within one percent at all four points.
+The thrust schedule also falls monotonically with airspeed, which is the
+qualitative shape a transition must have. Neither of those makes the set a
+trim schedule, and the caption no longer implies otherwise.
+
+Two limitations attach specifically to the post-stall map of
+Sec.~\ref{sec:directmap}, and not to the fine-grid measurement that
+precedes it. Beyond roughly $\alpha = 16^\circ$ the coupled solve does not
+reach a steady state; it enters a limit cycle whose mean is reported, and
+the separation point is evaluated on a final sweep at that mean
+circulation. Since $f$ is nonlinear, $f(\bar\gamma)$ is not
+$\overline{f(\gamma)}$. That gap is bounded here rather than assumed small:
+the leading term is second order in the cycle width, and with the per-strip
+incidence variance carried through the solve it evaluates to $10^{-15}$ to
+$10^{-10}$ against $f$ of order unity. The cycle is wide in circulation and
+very nearly stationary in the local incidence $f$ is posed in.
+
+The second concerns the incidence sweep, which is a continuation: each
+solve is warm-started from the preceding attitude, so the sequence of
+attitudes visited forms part of the specification of a post-stall
+condition rather than merely the order of computation. Whether that
+matters was settled by repeating the entire sweep on a $1^\circ$ grid and
+comparing the $125$ conditions the two share.
+
+It mostly does not. $113$ of the $125$ agree to better than $10^{-6}$ ---
+the map is grid-converged over ninety percent of its extent, including
+every condition underlying the comparison in Sec.~\ref{sec:directmap}: the
+rows at $14^\circ$ and $16^\circ$ agree to between $10^{-9}$ and
+$10^{-7}$, and the step across them is $3.39$ against $1.09$ on the finer
+grid where it was $3.38$ against $1.09$ on the coarser.
+
+The twelve that disagree are listed in Table~\ref{tab:gridconv}, and they
+are isolated bistable conditions rather than a drift. All lie past the
+stall; each is a single solve settling into a different limit cycle
+depending on the attitude it was approached from. Two features of that
+list are worth stating because they bear on how the increments should be
+read. At $\alpha = 20^\circ$ only the \emph{power-off} solve moves, so its
+shift of $0.0108$ passes through every thrust column undiminished. At
+$\alpha = 24^\circ$, $T_c \leq 1$, powered and power-off move together and
+the difference very nearly cancels, to $0.0005$ and $0.0010$. Cancellation
+in the increment is therefore real but not reliable, and cannot be assumed
+in either direction. The largest single disagreement is $0.0267$ at
+$\alpha = 30^\circ$, $T_c = 2$, against a fan effect of $0.0436$ at the
+same condition.
+
+\begin{table}[tb]
+  \centering
+  \caption{Conditions at which the $2^\circ$ map and a $1^\circ$ repeat of
+    the same sweep disagree by more than $10^{-6}$, with the solve
+    responsible. All are past the stall.}
+  \label{tab:gridconv}
+  \input{figures/tables/gridconv.tex}
+\end{table}
+
+The practical reading is that the tabulated increments are sound except at
+the listed attitudes, where an uncertainty of order $0.01$ in $\bar f$ ---
+and $0.027$ in the worst case --- should be carried.
+
+
 \section{Conclusions}
 \label{sec:conclusions}
 
@@ -471,7 +614,7 @@ a predicted stall.
 % where a real transition walks a coupled schedule). See README.md.
 
 \emph{[Draft: conclusions pending the two-way coupling and the transition
-operating line. See the repository README.]}
+operating line.]}
 
 \section*{Acknowledgments}
 

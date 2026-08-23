@@ -55,6 +55,12 @@ Known limitations (read before trusting results on a new geometry)
   averaging.
 - ``CDi`` **is induced drag only.** VLM is inviscid; total drag needs the
   ``Aeolion::DragEstimate`` buildup added on top.
+- ``CDi`` **is also the near-field value, which a body degrades.** It is
+  the streamwise component of lift-dominated forces, so on a coupled
+  configuration it goes negative at zero lift and fits an Oswald
+  efficiency above one. Lift and the moments are unaffected. Use
+  ``Solver::TrefftzInducedDrag`` when the induced drag itself matters and
+  a body is present; see :doc:`theory`.
 - **Linear, attached-flow method.** No stall, no separation physics.
 
 Nomenclature
@@ -77,7 +83,9 @@ Nomenclature
    * - ``CL``
      - Lift coefficient
    * - ``CDi``
-     - Induced drag coefficient (VLM is inviscid -- this is not total drag)
+     - Induced drag coefficient, near-field (VLM is inviscid -- this is not
+       total drag, and with a body present it is not the trustworthy
+       induced drag either; see the limitations above)
    * - ``Cm``
      - Pitching moment coefficient about the reference point
        (positive: nose up)

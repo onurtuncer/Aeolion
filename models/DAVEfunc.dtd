@@ -1,0 +1,1124 @@
+<?xml version="1.0" encoding="UTF-8"?><!-- =================================================================
+
+                   Dynamic Aerospace Vehicle Exchange DTD            
+                        Function Data Representation                   
+                                                                
+                              Version: 2.0.1
+                               31 March 2011                                       
+                                                                
+    This DTD module is identified by these PUBLIC and SYSTEM       
+    identifiers:                                                   
+                                                                
+    PUBLIC "-//AIAA//DTD for Flight Dynamic Models - Functions 2.0//EN" 
+    SYSTEM "http://daveml.org/DTDs/2p0/DAVEfunc.dtd"
+                                                                
+    Developed by:
+
+      American Institute of Aeronautics and Astronautics (AIAA)
+      Modeling & Simulation Technical Committee
+      Simulation Modeling Standards Subcommittee
+
+    Contact information:
+
+      E. Bruce Jackson <mailto:bruce.jackson@nasa.gov>
+      Bruce L. Hildreth <mailto:bhildreth@jfti.com>                         
+      Persistent DAVE-ML contact <mailto:info@daveml.org>
+      <http://daveml.org>
+
+    Purpose: 
+
+      Proposed standard for exchanging dynamic models of aerospace
+      vehicles, including aero, engine, gear, inertia, and control
+      models.
+                                                                
+      This preliminary version defines static models typically
+      associated with aerodynamic subsystem models, but can be used to
+      describe any non-linear multi-dimensional function.
+                                                                
+    Status:                                                         
+      Publicly released as an element of the ANSI/AIAA-S-119-2011 standard.
+
+  
+     ================================================================= -->
+
+<!-- =================================================================
+
+
+    Acknowledgments:                                                
+
+    The editors would like to acknowledge the contributions,
+    encouragement and helpful suggestions from Dennis Linse
+    (originally SAIC, now Vuelo Software Analysis), Jon Berndt (Jacobs
+    Sverdrup), Brent York (Indra), Bill Cleveland (NASA Ames), Geoff
+    Brian (Australia's DSTO), J. Dana McMinn (NASA Langley), Peter
+    Grant (UTIAS), Giovanni A. Cignoni (University of Pisa), Daniel
+    M. Newman (formerly Ball Aerospace, now Quantitative Aeronautics),
+    Hilary Keating (Fortburn Pty. Ltd.), Riley Rainey (SDS
+    International), Jeremy Furtek (Delphi Research) and Randy
+    Brumbaugh (Indigo Innovations).
+
+  
+     ================================================================= -->
+
+<!-- =================================================================
+
+    Include the MathML2 DTD for any math markup
+  
+     ================================================================= -->
+
+<!ENTITY % mathml2 PUBLIC "-//W3C//DTD MathML 2.0//EN"
+        "http://www.w3.org/Math/DTD/mathml2/mathml2.dtd">
+%mathml2;
+
+
+<!-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+<!--                         Level 0 Elements                         -->
+<!-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+
+<!-- =================================================================
+
+      Root element is DAVEfunc, composed of a file header element
+      followed by one or more variable definitions and zero or more
+      breakpoint definitions, gridded or ungridded table definitions,
+      and function elements.
+    
+     ================================================================= -->
+
+<!ELEMENT DAVEfunc (
+      fileHeader, 
+      variableDef+, 
+      breakpointDef*, 
+      griddedTableDef*, 
+      ungriddedTableDef*, 
+      function*, 
+      checkData?
+    )
+>
+<!ATTLIST DAVEfunc
+     xmlns	CDATA	#FIXED	'http://daveml.org/2010/DAVEML'
+>
+
+
+<!-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+<!--                         Level 1 Elements                         -->
+<!-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+
+<!-- =================================================================
+
+      The header element requires at least one author and a creation date;
+      optional content includes version indicator, description,
+      references, and modification records.
+    
+     ================================================================= -->
+
+<!ELEMENT fileHeader (
+      author+, 
+      (creationDate | fileCreationDate), 
+      fileVersion?, 
+      description?, 
+      reference*, 
+      modificationRecord*, 
+      provenance*
+    )
+>
+<!ATTLIST fileHeader
+     name	CDATA	#IMPLIED
+>
+
+<!-- =================================================================
+
+      variableDef elements provide wiring information (i.e., they
+      identify the input and output signals used by these function
+      blocks). They also provide MathML content markup to indicate any
+      calculation required to arrive at the value of the variable,
+      using other variables as inputs.  The variable definition can
+      include statistical information regarding the uncertainty of the
+      values which it might take on, when measured after any
+      calculation is performed. Information about the reason for
+      inclusion or change to this element can be included in an
+      optional provenance sub-element.
+
+      If either or both min or max attributes are specified, the
+      implementer must limit the final value of the variable to remain
+      within the specified bound(s). These attributes imply a one- or
+      two-sided limiter function downstream of any specified
+      calculation, input signal, or initial value.
+
+      Min and max attributes may only be fixed numeric values. To
+      provide variable limits, the modeler should employ the piecewise
+      MathML element in a calculation subelement.
+    
+    
+     ================================================================= -->
+
+<!ELEMENT variableDef (
+      description?, 
+      (provenance | provenanceRef)?, 
+      calculation?, 
+      (isInput | isControl | isDisturbance)?, 
+      isState?, 
+      isStateDeriv?, 
+      isOutput?, 
+      isStdAIAA?, 
+      uncertainty?
+    )
+>
+<!ATTLIST variableDef
+     name	CDATA	#REQUIRED
+     varID	ID	#REQUIRED
+     units	CDATA	#REQUIRED
+     axisSystem	CDATA	#IMPLIED
+     sign	CDATA	#IMPLIED
+     alias	CDATA	#IMPLIED
+     symbol	CDATA	#IMPLIED
+     initialValue	CDATA	#IMPLIED
+     minValue	CDATA	#IMPLIED
+     maxValue	CDATA	#IMPLIED
+>
+
+<!ELEMENT variableRef EMPTY>
+<!ATTLIST variableRef
+     varID	IDREF	#REQUIRED
+>
+
+<!-- =================================================================
+
+      A breakpointDef lists gridded table breakpoints.
+      Since these are separate from function data they may be reused.
+    
+     ================================================================= -->
+
+<!ELEMENT breakpointDef (
+      description?, 
+      bpVals
+    )
+>
+<!ATTLIST breakpointDef
+     name	CDATA	#IMPLIED
+     bpID	ID	#REQUIRED
+     units	CDATA	#IMPLIED
+>
+
+<!-- =================================================================
+
+      bpVals is a set of breakpoints (i.e., a set of independent
+      variable values associated with one dimension of a gridded table
+      of data). An example would be the Mach or angle-of-attack values
+      that define the coordinates of each data point in a
+      2D coefficient value table.
+    
+     ================================================================= -->
+
+<!ELEMENT bpVals (#PCDATA)>
+
+
+<!-- =================================================================
+
+      A griddedTableDef contains points arranged in an orthogonal (but
+      multi-dimensional) array, where the independent variables are
+      defined by separate breakpoint vectors.  This table definition
+      may be specified separately from the actual function
+      declaration.
+    
+     ================================================================= -->
+
+<!ELEMENT griddedTableDef (
+      description?, 
+      (provenance | provenanceRef)?, 
+      breakpointRefs, 
+      uncertainty?, 
+      dataTable
+    )
+>
+<!ATTLIST griddedTableDef
+     name	CDATA	#IMPLIED
+     gtID	ID	#REQUIRED
+     units	CDATA	#IMPLIED
+>
+
+<!-- =================================================================
+
+      An ungriddedTableDef contains points that are not in an
+      orthogonal grid pattern; thus, the independent variable
+      coordinates are specified for each dependent variable value.
+      This table definition may be specified separately from the
+      actual function declaration.
+    
+     ================================================================= -->
+
+<!ELEMENT ungriddedTableDef (
+      description?, 
+      (provenance | provenanceRef)?, 
+      uncertainty?, 
+      dataPoint+
+    )
+>
+<!ATTLIST ungriddedTableDef
+     name	CDATA	#IMPLIED
+     utID	ID	#REQUIRED
+     units	CDATA	#IMPLIED
+>
+
+<!-- =================================================================
+
+      Each function has optional description, optional provenance, and
+      either a simple input/output table values or references to more
+      complete (possible multiple) input, output, and function data
+      elements.
+    
+     ================================================================= -->
+
+<!ELEMENT function (
+      description?, 
+      (provenance | provenanceRef)?, 
+      ((
+        independentVarPts+, 
+        dependentVarPts
+      ) | (
+        independentVarRef+, 
+        dependentVarRef, 
+        functionDefn
+      ))
+    )
+>
+<!ATTLIST function
+     name	CDATA	#REQUIRED
+>
+
+<!-- =================================================================
+
+      This top-level element is the place-holder for verification data
+      of various forms for the encoded model. It will include static
+      check cases, trim shots, and dynamic check case information.
+      The provenance sub-element is now deprecated and has been moved
+      to individual staticShots; it is allowed here for backwards
+      compatibility. 
+    
+     ================================================================= -->
+
+<!ELEMENT checkData (
+      (provenance | provenanceRef)?, 
+      staticShot+
+    )
+>
+
+
+
+<!-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+<!--                         Level 2 Elements                         -->
+<!-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+
+<!-- =================================================================
+
+      author includes alternate means of identifying author using XNS
+      or normal e-mail/address. The address sub-element is to be
+      replaced with the more complete contactInfo sub-element.
+    
+     ================================================================= -->
+
+<!ELEMENT author (address* | contactInfo*)>
+<!ATTLIST author
+     name	CDATA	#REQUIRED
+     org	CDATA	#REQUIRED
+     xns	CDATA	#IMPLIED
+     email	CDATA	#IMPLIED
+>
+
+<!-- =================================================================
+
+      creationDate is simply a string with a date in it.  We
+      follow ISO 8601 and use dates like "2004-01-02" to refer to
+      January 2, 2004. 
+    
+     ================================================================= -->
+
+<!ELEMENT creationDate EMPTY>
+<!ATTLIST creationDate
+     date	CDATA	#REQUIRED
+>
+
+<!-- =================================================================
+
+      fileCreationDate is simply a string with a date in it.  We
+      follow ISO 8601 and use dates like "2004-01-02" to refer to
+      January 2, 2004. Its use is now deprecated in favor of the
+      simpler creationDate.
+    
+     ================================================================= -->
+
+<!ELEMENT fileCreationDate EMPTY>
+<!ATTLIST fileCreationDate
+     date	CDATA	#REQUIRED
+>
+
+<!-- =================================================================
+
+      This is a string describing, in some arbitrary text, the version
+      identifier for this function description.
+    
+     ================================================================= -->
+
+<!ELEMENT fileVersion (#PCDATA)>
+
+
+<!-- =================================================================
+
+      The description element is a textual description of an
+      entity. The full UNICODE character set is supported by XML but
+      may not be available in all processing applications.
+    
+     ================================================================= -->
+
+<!ELEMENT description (#PCDATA)>
+
+
+<!-- =================================================================
+
+      The presence of the isOutput element indicates that this
+      variable should be forced to be an output, even if it is used
+      internally as an input elsewhere. Otherwise, the processing
+      program may assume a signal defined with a calculation and used
+      subsequently in the model is only an internal signal.
+    
+     ================================================================= -->
+
+<!ELEMENT isOutput EMPTY>
+
+
+<!-- =================================================================
+
+      The presence of an isState element indicates that this variable
+      is one of possibly multiple state variables in a dynamic model;
+      this tells the processing entity that this is the output of an
+      integrator (for continuous models) or a discretely updated state
+      (for discrete models).
+    
+     ================================================================= -->
+
+<!ELEMENT isState EMPTY>
+
+
+<!-- =================================================================
+
+      The presence of an isStateDeriv element indicates that this
+      variable is one of possibly several state derivative variables
+      in a dynamic model; this tells the processing entity that this
+      is the output of an integrator (for continuous models only).
+    
+     ================================================================= -->
+
+<!ELEMENT isStateDeriv EMPTY>
+
+
+<!-- =================================================================
+
+      The presence of an isInput element indicates that this variable
+      is an input signal to the model.
+    
+     ================================================================= -->
+
+<!ELEMENT isInput EMPTY>
+
+
+<!-- =================================================================
+
+      The presence of an isControl element indicates that this signal
+      is a simulation control parameter used to vary the operation of
+      the model, e.g. the time step size. Such parameters should be
+      ignored when performing linear model extraction (for example)
+      and should not significantly modify the dynamic behavior of the
+      model.
+    
+     ================================================================= -->
+
+<!ELEMENT isControl EMPTY>
+
+
+<!-- =================================================================
+
+      The presence of an isDisturbance element indicates that this
+      signal is an external disturbance input to the model and can be
+      ignored when performing linear model extraction (for
+      example). Such parameters should not significantly modify the
+      nominal dynamic behavior of the model.
+    
+     ================================================================= -->
+
+<!ELEMENT isDisturbance EMPTY>
+
+
+<!-- =================================================================
+
+      The presence of an isStdAIAA element indicates that this
+      variable is one of the standard AIAA variable names
+      which should be recognizable exterior to this module
+      (e.g. AngleOfAttack_deg). This flag should assist importing tools in
+      determining when an input or output should match a
+      facility-provided signal name without requiring further
+      information.
+    
+     ================================================================= -->
+
+<!ELEMENT isStdAIAA EMPTY>
+
+
+<!-- =================================================================
+
+      The calculation element wraps around MathML 2 content markup
+      describing how the signal is calculated. The calculation may
+      include both constants and variables; other variables are
+      included by using their varID string in a MathML content
+      identifier (ci) element. The calculation element must have one
+      and only one subelement, and the subelement must be a 'math'
+      element containing 'content' markup.
+    
+     ================================================================= -->
+
+<!ELEMENT calculation (math)>
+
+
+<!-- =================================================================
+
+      This element gives identifying (citation) information to an
+      external, possibly on-line, reference document, including a
+      user-specified author, title, classification, accession number,
+      date and URL.
+    
+     ================================================================= -->
+
+<!ELEMENT reference (description?)>
+<!ATTLIST reference
+     xmlns:xlink	CDATA	#FIXED	'http://www.w3.org/1999/xlink'
+     xlink:type	(simple)	#FIXED	'simple'
+     refID	ID	#REQUIRED
+     author	CDATA	#REQUIRED
+     title	CDATA	#REQUIRED
+     classification	CDATA	#IMPLIED
+     accession	CDATA	#IMPLIED
+     date	CDATA	#REQUIRED
+     xlink:href	CDATA	#IMPLIED
+>
+
+<!-- =================================================================
+
+      A modificationRecord associates a single letter (such as
+      modification "A") with modification author(s), address, and any
+      optional external reference documents, in keeping with the AIAA
+      draft standard.
+    
+     ================================================================= -->
+
+<!ELEMENT modificationRecord (
+      author+, 
+      description?, 
+      extraDocRef*
+    )
+>
+<!ATTLIST modificationRecord
+     modID	ID	#REQUIRED
+     date	CDATA	#REQUIRED
+     refID	IDREF	#IMPLIED
+>
+
+<!-- =================================================================
+
+      A single modification event may have more than one documented
+      reference. This element can be used in place of the refID
+      attribute in a modificationRecord to record more than one
+      refIDs, pointing to the referenced document.
+    
+     ================================================================= -->
+
+<!ELEMENT extraDocRef EMPTY>
+<!ATTLIST extraDocRef
+     refID	IDREF	#REQUIRED
+>
+
+<!-- =================================================================
+
+      The provenance element describes the history or source of the
+      model data and includes author, date, and zero or more
+      references to documents and modification records.
+    
+     ================================================================= -->
+
+<!ELEMENT provenance (
+      author+, 
+      (creationDate | functionCreationDate), 
+      documentRef*, 
+      modificationRef*, 
+      description?
+    )
+>
+<!ATTLIST provenance
+     provID	ID	#IMPLIED
+>
+
+<!-- =================================================================
+ 
+      When the provenance of a set of several data is identical, the
+      first provenance element should be given a provID and referenced by
+      later provenanceRef elements.
+    
+     ================================================================= -->
+
+<!ELEMENT provenanceRef EMPTY>
+<!ATTLIST provenanceRef
+     provID	IDREF	#REQUIRED
+>
+
+<!-- =================================================================
+
+      An independentVarPts element is a simple white space- or
+      comma-separated list of breakpoints and contains a mandatory
+      varID identifier as well as optional name, units, and sign
+      convention attributes.
+
+      An optional extrapolate attribute describes how to extrapolate
+      the output value when the input value exceeds specified values
+      (default is 'neither,' meaning the value of the table is held
+      constant at the nearest defined value). An optional interpolate
+      attribute indicates how to perform the interpolation within the
+      table (supporting discrete, linear, cubic or quadratic
+      splines). There are three different discrete options: 'discrete'
+      means nearest-neighbor, with an exact mid-point value being
+      rounded in the positive direction; 'ceiling' means the function
+      takes on the value associated with the next (numerically) higher
+      independent breakpoint as soon as the original value is exceeded;
+      and 'floor' means the function holds the value associated with
+      each breakpoint until the next (numerically) higher breakpoint
+      value is reached by the independent argument. The default
+      interpolation attribute value is 'linear.'
+
+      This element is used for simple functions that do not share
+      breakpoint or table values with other functions.
+    
+     ================================================================= -->
+
+<!ELEMENT independentVarPts (#PCDATA)>
+<!ATTLIST independentVarPts
+     varID	IDREF	#REQUIRED
+     name	CDATA	#IMPLIED
+     units	CDATA	#IMPLIED
+     sign	CDATA	#IMPLIED
+     extrapolate	(neither | min | max | both) #IMPLIED
+     interpolate	(discrete | floor | ceiling | linear | quadraticSpline | cubicSpline) #IMPLIED
+>
+
+<!-- =================================================================
+
+      A dependentVarPts element is a simple comma- or
+      white space-delimited list of function values and contains a
+      mandatory varID as well as optional name, units, and sign
+      convention attributes. Data points are arranged as single
+      vector with last-specified breakpoint values changing most
+      frequently. Note that the number of dependent values must equal
+      the product of the number of independent values for this simple,
+      gridded, realization. This element is used for simple functions
+      that do not share breakpoint or table values with other
+      functions.
+    
+     ================================================================= -->
+
+<!ELEMENT dependentVarPts (#PCDATA)>
+<!ATTLIST dependentVarPts
+     varID	IDREF	#REQUIRED
+     name	CDATA	#IMPLIED
+     units	CDATA	#IMPLIED
+     sign	CDATA	#IMPLIED
+>
+
+<!-- =================================================================
+
+      An independentVarRef more fully describes the input mapping of
+      the function by pointing to a separate breakpoint definition
+      element.
+
+      An optional extrapolate attribute describes how to extrapolate
+      the output value when the input value exceeds specified values
+      (default is 'neither,' meaning the value of the table is held
+      constant at the nearest defined value). An optional interpolate
+      attribute indicates how to perform the interpolation within the
+      table (supporting discrete, linear, cubic or quadratic
+      splines). There are three different discrete options: 'discrete'
+      means nearest-neighbor, with an exact mid-point value being
+      rounded in the positive direction; 'floor' means the function
+      takes on the value associated with the next (numerically) higher
+      independent breakpoint as soon as original value is exceeded;
+      and 'ceiling' means the function holds the value associated with
+      each breakpoint until the next (numerically) higher breakpoint
+      value is reached by the independent argument. The default
+      interpolation attribute value is 'linear.'
+
+      Note also that the option min and max attributes serve to limit
+      the numeric range of the independent (function input) variable;
+      these attributes are independent of and serve as additional
+      range contraints with respect to any minValue or maxValue
+      attribute associated with the independent variable itself.
+
+      This element allows reuse of common breakpoint values for many
+      tables but with possible differences in interpolation or
+      extrapolation for each use.
+    
+     ================================================================= -->
+
+<!ELEMENT independentVarRef EMPTY>
+<!ATTLIST independentVarRef
+     varID	IDREF	#REQUIRED
+     min	CDATA	#IMPLIED
+     max	CDATA	#IMPLIED
+     extrapolate	(neither | min | max | both) #IMPLIED
+     interpolate	(discrete | floor | ceiling | linear | quadraticSpline | cubicSpline) #IMPLIED
+>
+
+<!-- =================================================================
+
+      A dependentVarRef ties the output of a function to a signal name
+      defined previously in a variable definition.
+    
+     ================================================================= -->
+
+<!ELEMENT dependentVarRef EMPTY>
+<!ATTLIST dependentVarRef
+     varID	IDREF	#REQUIRED
+>
+
+<!-- =================================================================
+
+      A functionDefn defines how function is represented in one of two
+      possible ways: gridded (implies breakpoints) or ungridded (with
+      explicit independent values for each point).
+    
+     ================================================================= -->
+
+<!ELEMENT functionDefn (griddedTableRef | griddedTableDef | griddedTable | ungriddedTableRef | ungriddedTableDef | ungriddedTable)>
+<!ATTLIST functionDefn
+     name	CDATA	#IMPLIED
+>
+
+
+<!-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+<!--                         Level 3 Elements                         -->
+<!-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+
+<!ELEMENT address (#PCDATA)>
+
+
+<!-- =================================================================
+
+      Used to provide contact information about an author. Use
+      contactInfoType to differentiate what information is being
+      conveyed and contactLocation to denote location of the address.
+    
+     ================================================================= -->
+
+<!ELEMENT contactInfo (#PCDATA)>
+<!ATTLIST contactInfo
+     contactInfoType	(address | phone | fax | email | iname | web) #IMPLIED
+     contactLocation	(professional | personal | mobile) #IMPLIED
+>
+
+<!-- =================================================================
+
+      functionCreationDate is simply a string with a date in it.  We
+      follow ISO 8601 and use dates like "2004-01-02" to refer to
+      January 2, 2004. Its use is now deprecated in favor of the 
+      simpler creationDate.
+    
+     ================================================================= -->
+
+<!ELEMENT functionCreationDate EMPTY>
+<!ATTLIST functionCreationDate
+     date	CDATA	#REQUIRED
+>
+
+<!ELEMENT documentRef EMPTY>
+<!ATTLIST documentRef
+     docID	IDREF	#IMPLIED
+     refID	IDREF	#REQUIRED
+>
+
+<!ELEMENT modificationRef EMPTY>
+<!ATTLIST modificationRef
+     modID	IDREF	#REQUIRED
+>
+
+<!ELEMENT griddedTableRef EMPTY>
+<!ATTLIST griddedTableRef
+     gtID	IDREF	#REQUIRED
+>
+
+<!ELEMENT griddedTable (
+      breakpointRefs, 
+      confidenceBound?, 
+      dataTable
+    )
+>
+<!ATTLIST griddedTable
+     name	CDATA	#IMPLIED
+>
+
+<!ELEMENT ungriddedTableRef EMPTY>
+<!ATTLIST ungriddedTableRef
+     utID	IDREF	#REQUIRED
+>
+
+<!ELEMENT ungriddedTable (
+      confidenceBound?, 
+      dataPoint+
+    )
+>
+<!ATTLIST ungriddedTable
+     name	CDATA	#IMPLIED
+>
+
+<!-- =================================================================
+
+      Contains a description of the inputs and outputs, and possibly internal values, of a DAVE-ML
+      model in a particular instant of time.
+    
+     ================================================================= -->
+
+<!ELEMENT staticShot (
+      description?, 
+      (provenance | provenanceRef)?, 
+      checkInputs?, 
+      internalValues?, 
+      checkOutputs
+    )
+>
+<!ATTLIST staticShot
+     name	CDATA	#REQUIRED
+     refID	IDREF	#IMPLIED
+>
+
+
+<!-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+<!--                         Level 4 Elements                         -->
+<!-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+
+<!-- =================================================================
+
+      The breakpointRefs elements tie the independent variable names
+      for the function to specific breakpoint values defined earlier.
+    
+     ================================================================= -->
+
+<!ELEMENT breakpointRefs (bpRef+)>
+
+
+<!-- =================================================================
+
+      The confidenceBound element is used to declare the confidence
+      interval associated with the data table. This is a place-holder
+      and will be removed in a future version of DAVE-ML.
+    
+     ================================================================= -->
+
+<!ELEMENT confidenceBound EMPTY>
+<!ATTLIST confidenceBound
+     value	CDATA	#REQUIRED
+>
+
+<!-- =================================================================
+
+      The uncertainty element is used in function and parameter
+      definitions to describe statistical variance in the possible
+      value of that function or parameter value. Only Gaussian
+      (normal) or uniform distributions of continuous random variable
+      distribution functions are supported.
+    
+     ================================================================= -->
+
+<!ELEMENT uncertainty (normalPDF | uniformPDF)>
+<!ATTLIST uncertainty
+     effect	(additive | multiplicative | percentage | absolute) #REQUIRED
+>
+
+<!-- =================================================================
+
+      The dataTable element is used by gridded tables where the indep.
+      variable values are implied by breakpoint sets. Thus, the data
+      embedded between the dataTable element tags is expected to be
+      sorted ASCII values of the gridded table, wherein the last
+      independent variable listed in the function header varies most
+      rapidly.
+
+      The table data point values are specified as comma- or
+      white space-separated values in conventional floating-point
+      notation (0.93638E-06) in a single long sequence as if the table
+      had been unraveled with the last-specified dimension changing
+      most rapidly.  Line breaks are to be ignored. Comments may be
+      embedded in the table to promote [human] readability, with
+      appropriate escaping characters.
+
+      A dataTable element can also be used in an uncertainty element
+      to provide duplicate uncertainty bound values.
+
+    
+     ================================================================= -->
+
+<!ELEMENT dataTable (#PCDATA)>
+
+
+<!-- =================================================================
+
+      The dataPoint element is used by ungridded tables to list the
+      values of independent variables that are associated with each
+      value of dependent variable. For example:
+                                                                 
+ <dataPoint>                                                     
+   0.1, -4.0, 0.2      <!- Mach, alpha, CL ->                    
+ </dataPoint>                                                    
+ <dataPoint>                                                     
+   0.1,  0.0, 0.6      <!- Mach, alpha  CL ->                    
+ </dataPoint>                                                    
+                                                                 
+      Each data point may have associated with it a modification tag
+      to document the genesis of that particular point.  No
+      requirement on ordering of independent variables is implied.
+      Since this is an ungridded table, the interpreting application is
+      required to handle what may be unsorted data.
+    
+     ================================================================= -->
+
+<!ELEMENT dataPoint (#PCDATA)>
+<!ATTLIST dataPoint
+     modID	IDREF	#IMPLIED
+>
+
+<!-- =================================================================
+Specifies the contents of the input vector for the given check case.
+     ================================================================= -->
+
+<!ELEMENT checkInputs (signal+)>
+
+
+<!-- =================================================================
+
+      Provides a set of all internal variable values to assist in debugging recalcitrant
+      implementations of DAVE-ML import tools.
+    
+     ================================================================= -->
+
+<!ELEMENT internalValues (signal+)>
+
+
+<!-- =================================================================
+
+      Specifies the contents of the output vector for the given check
+      case.
+    
+     ================================================================= -->
+
+<!ELEMENT checkOutputs (signal+)>
+
+
+
+<!-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+<!--                         Level 5 Elements                         -->
+<!-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+
+<!-- =================================================================
+
+      The bpRef element provides references to a previously-defined
+      breakpoint set so breakpoints can be defined separately from,
+      and reused by, several data tables.
+    
+     ================================================================= -->
+
+<!ELEMENT bpRef EMPTY>
+<!ATTLIST bpRef
+     bpID	IDREF	#REQUIRED
+>
+
+<!-- =================================================================
+
+      In a normally distributed random variable, a symmetrical
+      distribution of given standard deviation is assumed about the
+      nominal value (which is given elsewhere in the parent element).
+
+      The correlatesWith sub-element references other functions or
+      variables that have a linear correlation to the current
+      parameter or function. The correlation sub-element specifies the
+      correlation coefficient and references the other function or
+      variable whose random value helps determine the value of this
+      parameter.
+    
+     ================================================================= -->
+
+<!ELEMENT normalPDF (
+      bounds, 
+      correlatesWith*, 
+      correlation*
+    )
+>
+<!ATTLIST normalPDF
+     numSigmas	CDATA	#REQUIRED
+>
+
+<!-- =================================================================
+
+      In a uniformly distributed random variable, the value of the
+      parameter has equal likelihood of assuming any value within the
+      (possibly asymmetric, implied by specifying two) bounds, which
+      must bracket the nominal value (which is given elsewhere in the
+      parent element).
+    
+     ================================================================= -->
+
+<!ELEMENT uniformPDF (bounds+)>
+
+
+<!-- =================================================================
+
+      This element contains some description of the statistical limits
+      to the values the citing parameter element might take on. This
+      can be in the form of a scalar value, a private dataTable, or a
+      variableRef. In the more common instance, this element will
+      either be a scalar constant value or a simple table whose
+      dimensions must match the parent nominal function table and
+      whose independent variables are identical to the nominal
+      table. It is also possible that this limit be determined by an
+      independent variable, either previously defined or defined
+      in-line with this element. It does not make sense to have a
+      dataTable cited if this bounds element is associated with
+      anything other than an identically shaped function table.
+    
+     ================================================================= -->
+
+<!ELEMENT bounds (#PCDATA | dataTable | variableDef | variableRef)*>
+
+
+<!-- =================================================================
+
+      When present, this element indicates the parent function or
+      variable is correlated with the referenced other function or
+      variable in a linear sense.  This alerts the application that
+      the random number used to calculate this function's or variable's
+      immediate value will be used to calculate another function's or
+      variable's value.
+    
+     ================================================================= -->
+
+<!ELEMENT correlatesWith EMPTY>
+<!ATTLIST correlatesWith
+     varID	IDREF	#REQUIRED
+>
+
+<!-- =================================================================
+
+      When present, this element indicates the parent function or
+      variable is correlated with the referenced other function or
+      variable in a linear sense and gives the correlation
+      coefficient for determining this function's random value based
+      upon the correlating function(s)'s random value.
+    
+     ================================================================= -->
+
+<!ELEMENT correlation EMPTY>
+<!ATTLIST correlation
+     varID	IDREF	#REQUIRED
+     corrCoef	CDATA	#REQUIRED
+>
+
+<!-- =================================================================
+
+      This element is used to document the name, ID, value, tolerance,
+      and units of measure for check-cases. When used with checkInputs
+      or checkOutputs, the signalName sub-element must be present
+      (since check cases are viewed from "outside" the model); when
+      used in an internalValues element, the varID sub-element should
+      be used to identify the signal by its model-unique internal
+      reference. When used in a checkOutputs vector, the tol element
+      must be present. Tolerance is specified as a maximum absolute
+      difference between the expected and actual value.
+
+      The signalID sub-element is now deprecated in favor of the more
+      consistent varID.
+    
+     ================================================================= -->
+
+<!ELEMENT signal (
+      ((
+        signalName, 
+        signalUnits
+      ) | (
+        (varID | signalID)
+      )), 
+      signalValue, 
+      tol?
+    )
+>
+
+
+
+<!-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+<!--                         Level 6 Elements                         -->
+<!-- +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ -->
+
+<!-- =================================================================
+
+      Used inside a checkCase element to specify the input or output
+      variable name
+    
+     ================================================================= -->
+
+<!ELEMENT signalName (#PCDATA)>
+
+
+<!-- =================================================================
+
+      Used to specify the input or output varID. Now deprecated; reuse
+      of varID is best practice.
+    
+     ================================================================= -->
+
+<!ELEMENT signalID (#PCDATA)>
+
+
+<!-- =================================================================
+
+      Used to specify the input or output varID. Replaces earlier
+      signalID element.
+    
+     ================================================================= -->
+
+<!ELEMENT varID (#PCDATA)>
+
+
+<!-- =================================================================
+
+      Used inside a checkCase element to specify the units-of-measure
+      for an input or output variable, for verification of proper
+      implementation of a model.
+    
+     ================================================================= -->
+
+<!ELEMENT signalUnits (#PCDATA)>
+
+
+<!-- =================================================================
+
+      Used to give the current value of an internal signal or
+      input/output variable, for verification of proper implementation
+      of a model.
+    
+     ================================================================= -->
+
+<!ELEMENT signalValue (#PCDATA)>
+
+
+<!-- =================================================================
+
+      This element specifies the allowable tolerance of error in an
+      output value such that the model can be considered verified. It
+      is assumed all uncertainty is removed in performing the model
+      calculations. Tolerance is specified as a maximum absolute
+      difference between the expected and actual value.
+    
+     ================================================================= -->
+
+<!ELEMENT tol (#PCDATA)>
+
+

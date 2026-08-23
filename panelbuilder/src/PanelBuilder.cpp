@@ -570,7 +570,36 @@ std::vector<Lattice::SourcePanel> LatticeBuilder::BuildBody() const {
     const int sectors = m_Options.BodyCircumferentialPanels;
     if (sectors < MinBodySectors) return panels;
 
-    const auto& stations = body.Stations;
+    // Cosine-clustered extra stations toward the nose, when asked for. Every
+    // original station survives and the added ones are evaluated on the
+    // contract's own piecewise-linear radius law via RadiusAt, so this
+    // refines the discretization without moving the surface. See
+    // LatticeOptions::BodyNoseRefineStations.
+    std::vector<Geometry::BodyStation> refinedStations;
+    if (m_Options.BodyNoseRefineStations > 0 && body.Stations.size() >= 2) {
+        const int extra = m_Options.BodyNoseRefineStations;
+        const double xNose = body.Stations.front().x;
+        const double xTail = body.Stations.back().x;
+        const double depth = m_Options.BodyNoseRefineFraction * (xNose - xTail);
+
+        std::vector<double> xs;
+        xs.reserve(body.Stations.size() + static_cast<std::size_t>(extra));
+        for (const Geometry::BodyStation& st : body.Stations) xs.push_back(st.x);
+        for (int k = 1; k <= extra; ++k) {
+            const double s = 1.0 - std::cos(Math::Half * std::numbers::pi *
+                                            static_cast<double>(k) / static_cast<double>(extra));
+            xs.push_back(xNose - depth * s);
+        }
+        std::ranges::sort(xs, std::greater<>());
+        const auto dup =
+            std::ranges::unique(xs, [](double a, double b) { return std::fabs(a - b) < 1e-9; });
+        xs.erase(dup.begin(), dup.end());
+
+        refinedStations.reserve(xs.size());
+        for (const double x : xs) refinedStations.push_back({x, Geometry::RadiusAt(body, x)});
+    }
+    const std::vector<Geometry::BodyStation>& stations =
+        refinedStations.empty() ? body.Stations : refinedStations;
 
     // Contract frame -> solver frame.
     const auto axialPosition = [](double contractX) { return -contractX; };

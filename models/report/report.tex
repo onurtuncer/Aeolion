@@ -326,10 +326,10 @@ group by its own reference quantity and the summation of the three
 contributions---to live inside the exchanged model as MathML
 \texttt{calculation} elements. This moves the most error-prone step in
 any consumer integration from the consumer's code into territory that the
-file's own verification data can pin.
+file's own verification data can confirm.
 
 The cost of one file is coarser regeneration granularity, and it is
-avoided by construction: each sweep driver exports its own JSON, and a
+avoided by construction: each sweep exports its own JSON, and a
 separate assembler builds the XML from the cached JSONs
 (Section~\ref{sec:pipeline}). Regenerating the vane map does not rerun
 the post-stall map. Variable identifiers are namespaced
@@ -412,7 +412,7 @@ The conversion in Eq.~\eqref{eq:flip} applies to the moment reference
 an obviously wrong answer; it places the reference point an equal
 distance on the wrong side of the origin, introducing a spurious moment
 arm of twice the offset. This occurred once in this codebase: a sweep
-driver passed the contract's moment reference point into the solver
+generating program passed the contract's moment reference point into the solver
 without the flip, producing a moment-arm error of approximately
 $0.48$~m---about one body length---and inflating $C_{m\alpha}$ by an
 order of magnitude. The error was invisible to every existing test,
@@ -463,7 +463,7 @@ frame}. This is the entire normative statement. English glosses
 (``positive is trailing edge down'') are excluded from the file's
 normative text, because such a description must be re-derived in each
 frame and a re-derivation that goes wrong inverts half the controls
-silently. The numeric meaning of each sign is instead pinned by a
+silently. The numeric meaning of each sign is instead fixed by a
 generated static shot, and each control's variable definition cites the
 shot that defines it.
 
@@ -529,7 +529,7 @@ buildup plus a crossflow branch, Eq.~\eqref{eq:cd0} \\
 \end{table}
 
 The first point is that the airframe force tables are \emph{not} induced-drag
-tables. The Level-2 coupled solve accumulates the circulatory
+tables. The viscous-coupled solve accumulates the circulatory
 (Kutta--Joukowski) force and the sectional profile force into one total
 per strip, so the exported body-axis coefficients already contain the
 wing's viscous drag as the section model computes it. The attached-flow
@@ -612,7 +612,7 @@ $b/2V_\infty$ where Eq.~\eqref{eq:reduced} requires division by that
 factor---an error of $(2V_\infty/b)^2 \approx 2000$ at these
 numbers, which reported $C_{l_p} = -2\times 10^{-4}$ for a wing whose
 textbook value is $-0.45$. With the convention corrected the solver
-returns $-0.452$, and that value is now pinned both by a unit test and by
+returns $-0.452$, and that value is now confirmed both by an automated check and by
 a static shot in this file.
 
 %======================================================================
@@ -798,7 +798,7 @@ in which the third column is the common mode (roll), the first is the
 $y$-pair differential (pitch, redirecting the jet in $z$), and the second
 is the $z$-pair differential (yaw, redirecting it in $y$). The
 \emph{numeric} signs in Eq.~\eqref{eq:mixing}---which member of each pair
-receives the positive angle---are a convention, and the file pins them by
+receives the positive angle---are a convention, and the file fixes them by
 static shot rather than by argument, for the reason given in
 Section~\ref{sec:frames}.
 
@@ -887,7 +887,7 @@ so that any number in the model can be traced to a run.
 \subsection{\varid{aero*}: airframe, power-off}
 \label{sec:aerotables}
 
-Source: the Level-2 coupled solve---vortex lattice with source-panelled
+Source: the viscous-coupled solve---vortex lattice with source-panelled
 body and duct, sectional viscous feedback, and the anchored post-stall
 section model (Kirchhoff attenuation driven by a computed separation
 point, Viterna--Corrigan deep stall~\cite{viterna} with
@@ -934,16 +934,17 @@ by the assembler from the per-rad/s field \\
 \varid{aeroCYr} & $\alpha$ & $\partial C_Y/\partial \hat r$ & likewise \\
 \addlinespace
 \varid{aeroDCX} & $\alpha\times\delta_a$ & $\Delta C_X$ & aileron
-increment from baseline. \textbf{BLOCKED}, \\
-\varid{aeroDCY} & $\alpha\times\delta_a$ & $\Delta C_Y$ & Section
-\ref{sec:aileron}: the generating \\
-\varid{aeroDCZ} & $\alpha\times\delta_a$ & $\Delta C_Z$ & path cannot
-represent a hinge, \\
-\varid{aeroDCl} & $\alpha\times\delta_a$ & $\Delta C_l$ & so these would
-ship identically \\
-\varid{aeroDCm} & $\alpha\times\delta_a$ & $\Delta C_m$ & zero ---
-an aircraft with no \\
-\varid{aeroDCn} & $\alpha\times\delta_a$ & $\Delta C_n$ & roll control \\
+increment from the neutral \\
+\varid{aeroDCY} & $\alpha\times\delta_a$ & $\Delta C_Y$ & configuration at
+matched $\alpha$. \\
+\varid{aeroDCZ} & $\alpha\times\delta_a$ & $\Delta C_Z$ & Swept one-sided
+and mirrored, the \\
+\varid{aeroDCl} & $\alpha\times\delta_a$ & $\Delta C_l$ & symmetry verified
+numerically \\
+\varid{aeroDCm} & $\alpha\times\delta_a$ & $\Delta C_m$ &
+(Section~\ref{sec:aileron}); \\
+\varid{aeroDCn} & $\alpha\times\delta_a$ & $\Delta C_n$ & these attenuate
+through stall \\
 \addlinespace
 \varid{aeroCD0} & $\alpha$ & $C_{D_0}$ & body and duct parasite
 \emph{only}, never the wing (Section~\ref{sec:drag}) \\
@@ -991,19 +992,61 @@ mid-chord---a metric the model was never fitted to. $C_{L\max}$ is an
 \emph{upper bound}: bubble bursting is not modelled, so the usable
 incidence limit may be lower than the tabulated stall.
 
-\paragraph{Rate derivatives past stall.}
+\paragraph{Rate derivatives past stall: the quantity does not exist.}
 \label{sec:ratetaper}
-The derivatives are computed by finite difference on the attached solve
-and have no meaning once the flow separates. Both available
-treatments---holding the last attached value, or zeroing
-discontinuously---are wrong; the model applies a linear taper
-\begin{equation}
-C_{(\cdot)}(\alpha) \;\longrightarrow\; C_{(\cdot)}(\alpha)\cdot
-\max\!\left(0,\ \min\!\left(1,\ \frac{40\dg - \alpha}{20\dg}\right)\right),
-\end{equation}
-which is the conservative choice in the sense that it does not grant a
-simulator attached-flow damping in deep stall. This is a declared
-assumption, not a computed result.
+This began as a declared assumption---the derivatives were to be tapered
+linearly to zero over $\alpha \in [20\dg, 40\dg]$, on the reasoning that
+holding the last attached value or zeroing discontinuously were both
+worse. Measurement replaced the assumption with something firmer, and
+the taper was never right.
+
+A rate derivative is a linearization, and whether it holds is testable
+for the price of one extra pair of solves: difference the coupled solve
+at two perturbation amplitudes and compare. Doing so for roll damping
+gives a sharp verdict.
+
+\begin{table}[htbp]
+\centering
+\caption{Roll damping differenced at two roll-rate amplitudes. Either
+the two agree to a tenth of a percent, or they disagree by tens to
+hundreds---nothing sits between.}
+\label{tab:ratelinearity}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+$\alpha$ [deg] & coarse & fine & spread \\
+\midrule
+0 & $-0.545$ & $-0.545$ & 0.0\% \\
+18 & $-0.374$ & $-0.374$ & 0.0\% \\
+20 & $-0.168$ & $+0.255$ & 252\% \\
+24 & $-0.159$ & $+0.063$ & 140\% \\
+30 & $-0.086$ & $-0.115$ & 34\% \\
+35 & $-0.129$ & $-0.193$ & 49\% \\
+40 & $-0.233$ & $-0.234$ & 0.6\% \\
+90 & $-0.425$ & $-0.425$ & 0.0\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Below $18\dg$ and above $40\dg$ the derivative is well defined. Between
+$20\dg$ and $35\dg$ it is not one at all: at $\alpha = 20\dg$ the coarse
+step returns $-0.168$ and the fine step $+0.255$, so the \emph{sign} is
+set by the perturbation amplitude alone. Sections are crossing into and
+out of stall across the perturbation, making the response non-smooth at
+the scale of the difference rather than merely nonlinear.
+
+So a taper, a hold, and a directly measured number are equally
+fabrications there, because the tabulated quantity does not exist. The
+model carries the two well-defined ranges and \emph{omits} the six
+breakpoints between them: \varid{alphaRateBp} has 19 entries rather than
+25, a lookup interpolates across the gap, and the file header says why.
+That the boundary is so clean---0.1\% on one side, tens of percent on
+the other---argues the band belongs to the flow rather than to the
+tolerance chosen to detect it.
+
+An earlier pass reported a sign reversal near $\alpha = 24$--$26\dg$ as
+autorotation, from a single amplitude. It was not a property of the
+aircraft but of how hard it was pushed, and the correction is recorded
+here rather than quietly dropped.
 
 \subsection{\varid{prop*}: rotor, duct, and vanes}
 
@@ -1082,11 +1125,9 @@ the same bound.
 \subsection{\varid{coupling*}: fan-on-airframe increments}
 \label{sec:coupling}
 
-\emph{This block is specified but not yet generable.}
-
 \begin{longtable}{@{}lllp{46mm}@{}}
-\caption{Interaction tables (6). Blocked pending an upstream-induction
-model.}
+\caption{Interaction tables (6), generated by the vortex-cylinder
+semi-infinite vortex-cylinder induction model.}
 \label{tab:cpltables} \\
 \toprule
 \textbf{varID} & \textbf{Axes} & \textbf{Quantity} & \textbf{Notes} \\
@@ -1116,11 +1157,77 @@ against a worst separation station at $|2y/b| \approx 0.15$--$0.23$).
 The existing slipstream model cannot compute this: it is a
 momentum-theory wake and returns identically zero upstream of the disk by
 construction. Applied here it would report exactly zero interaction---an
-artifact indistinguishable from a physical null result. A semi-infinite
-vortex cylinder, which has a closed-form upstream field, is the
-identified prerequisite, and the interaction tables are blocked on it.
-The file's structure reserves their place so that adding them later does
-not perturb anything else.
+artifact indistinguishable from a physical null result, and the most
+dangerous kind of wrong answer because it is confidently null.
+
+\paragraph{The prerequisite already existed.} These tables were long
+recorded as blocked on an upstream-induction model. That was stale
+bookkeeping rather than a missing capability: a uniformly loaded actuator
+disk is exactly equivalent to a semi-infinite cylindrical vortex sheet,
+which has a computable field everywhere \emph{including} ahead of the
+disk and a closed form on the axis to check against, and the toolkit has
+carried that model---tested, and already used by the attachment
+sweep---for some time. Generating these tables required no new physics,
+only a generating program.
+
+One feature of the configuration matters. The fan is an \emph{annulus}
+around the tail boom, not a disk, and a uniformly loaded annulus sheds
+trailing vorticity at both edges---the outer at $+\gamma_t$, the inner at
+$-\gamma_t$. It is therefore two superposed cylinders, with the hub
+radius taken from the body's own radius law at the duct station.
+
+\paragraph{One sweep serves every speed.} Momentum theory gives
+\begin{equation}
+4\,\frac{A}{S}\left(1 + \frac{v_i}{V_\infty}\right)
+\frac{v_i}{V_\infty} = T_c ,
+\label{eq:tcsimilarity}
+\end{equation}
+so $v_i/V_\infty$ is a function of $T_c$ and the area ratio alone. The
+induced field scales with $V_\infty$ and the \emph{coefficient}
+increments therefore depend on $T_c$ only, which is what makes a
+single-speed sweep valid across the envelope. The declared
+$V_\infty \geq 10$~m/s limit is about $T_c$ degenerating as $\bar q$
+vanishes, not about the field. The generated induced velocities satisfy
+$2\rho A (V_\infty + v_i) v_i = T$ to every printed digit---the cheapest
+available check that the disk loading was posed correctly.
+
+\input{tables/coupling}
+
+\noindent
+The result splits at the stall. Below $\alpha \approx 14\dg$, where both
+the powered and power-off solves converge cleanly, the fan adds
+$2$--$4\%$ to the lift and the increment grows smoothly with incidence
+and thrust alike. That is the accelerated stream over the wing, and it is
+a solid number. From $16\dg$ the increment jumps to $7$--$9\%$, peaking
+at $\alpha = 20\dg$---immediately past the configuration's own
+$C_{L\max}$ at $18\dg$, which is precisely where a delayed separation
+ought to pay. It then decays through deep stall and \emph{reverses sign}
+by $90\dg$: with the plate broadside the fan's axial induction is
+perpendicular to the free stream, so it slightly reduces the effective
+incidence rather than energising an attached boundary layer.
+
+\paragraph{What the jump does and does not establish.} It is tempting to
+read the step at $16\dg$ as the separation-delay signature itself, and
+the defensible position is weaker. The step coincides exactly with the
+onset of limit-cycle behaviour in \emph{both} solves---residuals rise
+from $10^{-4}$ to $0.2$--$0.6$ there---so every increment past it is a
+difference of two cycle means, and the size of the step cannot be
+separated from the change in solution character.
+
+What does survive is that the increment scales cleanly and monotonically
+with $T_c$ at every post-stall attitude: at $\alpha = 20\dg$ the ratios
+between successive thrust levels are $1.49$, $1.49$ and $1.49$. Cycle-mean
+scatter does not do that. So there is a real, thrust-ordered fan effect in
+the stalled regime; attributing it specifically to delayed separation is
+consistent with the data without being established by it.
+
+The direct measurement is available, and is the right next step. The
+coupled solve already computes a separation point on every strip, so a
+solve can report the powered and power-off separation locations and
+compare them, instead of inferring the delay from a lift increment. That
+answers the question the fan-induction study actually poses---how far the
+fan delays separation---without passing through a difference of two limit
+cycles.
 
 %======================================================================
 \section{The buildup}
@@ -1243,8 +1350,8 @@ extension of this grid.
 
 \input{tables/propulsion-modes}
 
-\subsection{The aileron tables cannot be generated, and why that is worth
-a section}
+\subsection{The aileron: a silent zero, and where the flap actually
+belongs}
 \label{sec:aileron}
 
 The model's open items included a routine-sounding check: confirm that
@@ -1256,7 +1363,7 @@ curve.
 
 The same $10\dg$ antisymmetric deflection was solved three ways at every
 attitude: on the contract's native eight-row chordwise lattice, on a
-single-row lattice, and through the Level-2 coupled path that actually
+single-row lattice, and through the viscous-coupled path that actually
 generates the model's force tables.
 
 \begin{table}[htbp]
@@ -1295,7 +1402,19 @@ whatsoever---and neither the generator, the assembler, nor the
 DTD validation would have objected. Only a \texttt{checkData} shot
 comparing a deflected condition against a nonzero expectation would have
 caught it, which is an argument for generating verification data from a
-\emph{different} path than the tables themselves.
+\emph{different} path than the tables themselves. The file now carries
+exactly such a shot, \varid{aileronRollAuthorityIsReal}.
+
+\paragraph{A correction to the first reading of this measurement.} The
+coupled column above was originally obtained by differencing
+\texttt{res.Base.Croll}, which \texttt{SolveViscousCoupled} never
+populates (Section~\ref{sec:drag}'s companion defect, and the reason
+Section~\ref{sec:verification} insists on independent paths). That
+column was therefore differencing two zeros, and reported ``no control
+effect'' for a reason unrelated to the hinge. The finding survives
+because it rests on the \emph{single-row inviscid} column, which uses
+the plain lattice solve and is genuinely zero. Coefficients now go
+through a tested body-axis extractor whose conversions are verified automatically.
 
 \paragraph{The inviscid column is not a substitute.} It is a real control
 effect, but its decay---$0.00936$ at $\alpha = 6\dg$ falling to
@@ -1307,15 +1426,126 @@ simulator most of its attached-flow roll authority deep into stall:
 precisely the failure the original check was meant to prevent, arrived at
 from the opposite direction.
 
-\paragraph{What the fix has to be.} It is solver-side rather than
-driver-side. A deflected strip must carry the flap in its \emph{section}
-description---\varid{StripSection::Alpha0Deg} shifted by the
-thin-airfoil flap increment for its hinge position and deflection, and
-ideally a flap-shifted stall angle---so that the section model, onto
-which the coupling drives the lattice's circulation, knows the flap is
-down. Until then the aileron tables are declared blocked rather than
-generated, which is the same discipline applied to the interaction
-tables of Section~\ref{sec:coupling}.
+\paragraph{The fix, and why it is not a workaround.} It is solver-side,
+and it consists of not fighting the lattice. A hinge genuinely cannot be
+represented on one chordwise row; but to a strip method a deflected flap
+is not a geometric object at all, it is a \emph{camber change}. Thin
+airfoil theory says so quantitatively: a plain flap hinged at $x_h$
+shifts the section's zero-lift angle by $-\tau\delta$, with
+\begin{equation}
+\tau = 1 - \frac{\theta_h}{\pi} + \frac{\sin\theta_h}{\pi}, \qquad
+\theta_h = \arccos(1 - 2x_h).
+\label{eq:tau}
+\end{equation}
+A deflected strip therefore carries \varid{FlapChordFraction} and
+\varid{FlapDeflectionDeg}, and every section model is posed against
+\varid{EffectiveAlpha0Deg()} rather than the camber line's own
+$\alpha_0$. The lattice continues to supply the induced field; the
+section model, which is the authority on $c_l$ in the coupled solve,
+now knows the flap is down. This is the standard strip-theory treatment
+of a flapped wing, not an expedient.
+
+The change is additive---with no flap set the accessor returns
+$\alpha_0$ exactly---so every existing consumer is bit-identical, which
+\texttt{TestViscousCoupling}, \texttt{TestPostStallSection} and
+\texttt{TestRotorVaneCoupling} confirm.
+
+\paragraph{It was validated, not asserted.} The same computation was re-run
+after the fix, and the comparison it affords is the point: the
+\emph{resolved-hinge} eight-row lattice is an independent geometric
+representation of the very same flap.
+
+\begin{table}[htbp]
+\centering
+\caption{Aileron rolling-moment increment after the fix, both columns in
+FRD. The coupled solve reproduces the independent geometric
+representation where both are valid, and departs from it exactly where
+only one contains the physics.}
+\label{tab:aileronfixed}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+$\alpha$ [deg] & 8 rows, inviscid & coupled & ratio \\
+\midrule
+0 & $-0.009254$ & $-0.009384$ & 1.014 \\
+6 & $-0.009361$ & $-0.008322$ & 0.889 \\
+12 & $-0.009261$ & $-0.006620$ & 0.715 \\
+20 & $-0.008815$ & $-0.004184$ & 0.475 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+At zero incidence the two agree to $1.4\%$. The ratio then falls
+monotonically as separation develops, and by $\alpha = 30\dg$ only about
+$12\%$ of the attached-flow roll authority survives, against the
+inviscid lattice's $84\%$. That decay is precisely the physics the
+inviscid column structurally cannot contain, and it is the answer to the
+question this section opened with.
+
+\paragraph{What the generated sweep then showed.} With the fix in place
+the full $\alpha \times \delta_a$ sweep runs, and its result is worth
+more than the table entries themselves.
+
+\input{tables/aileron}
+
+\noindent
+Roll authority falls to $72\%$ of its attached value by $\alpha =
+20\dg$ and to under $10\%$ by $30\dg$. Adverse yaw moves the other way:
+$|\Delta C_n / \Delta C_l|$ climbs from $0.09$ at zero incidence to
+above unity past stall. \textbf{Beyond about $30\dg$ the aileron is
+predominantly a yaw effector}, which is the classic pre-departure
+signature and precisely the behaviour a departure-susceptible simulator
+must have. A table built from the inviscid lattice would have shown
+roll authority decaying gently and adverse yaw staying small---an
+aircraft that rolls obediently out of a stall.
+
+Two honesties about the deep-stall rows. They are limit-cycle means, so
+the daggered entries are not steady states. And the increment changes
+sign more than once past stall---positive near $40$--$45\dg$, negative
+through $50$--$80\dg$, positive again at $90\dg$---at magnitudes of a few
+thousandths against an attached value near $0.0096$.
+
+That wobble was initially suspected to be cycle-mean scatter. It is not.
+Re-running the whole sweep on an independent iteration path---damped
+relaxation of $0.02$ against $0.05$, both running to the iteration
+ceiling as cycle means---reproduces every value to within $0.1\%$, and
+the sign at every attitude. The cycle means are iteration-path
+independent here exactly as they are for the baseline map, so the sign
+changes are a determinate property of the model rather than noise.
+
+What that does \emph{not} settle is whether the aircraft behaves that
+way. Past stall the model rests on the anchored section model, whose
+$C_{L\max}$ is itself an upper bound, so a reproducible sign is a
+statement about the tabulation and not yet about the vehicle.
+
+\paragraph{The moment the lift shift leaves behind.} Equation
+\eqref{eq:tau} is thin-airfoil theory's \emph{lift} result, and taking it
+alone is not neutral. The same Glauert coefficients give the flap's
+quarter-chord moment,
+\begin{equation}
+\Delta c_{m,c/4} = -\tfrac{1}{2}\,\delta\,\sin\theta_h\,
+                    (1 - \cos\theta_h),
+\label{eq:flapcm}
+\end{equation}
+which vanishes at both limits for reasons worth stating: a flap hinged at
+the leading edge is the whole section rotating, adding incidence but no
+camber, and a flap of zero chord does nothing. In between it does not
+vanish. For the contract's $12\%$ aileron at $10\dg$ it is
+$\Delta c_m = -0.100$ against $\Delta c_l = 0.474$, so the flap's load
+acts $0.21$ chords \emph{aft} of the quarter chord---a nose-down couple
+that a lift-only flap model simply loses. It is added to the section
+model's own $c_m$ rather than replacing it, since the section knows its
+camber, the flap changes that camber, and thin-airfoil theory is linear.
+
+\paragraph{One number worth carrying away.} Equation~\eqref{eq:tau} is
+strongly concave, so the contract's $12\%$-chord aileron is worth
+$\tau = 0.432$, not $0.12$. A linear-in-chord estimate---the intuitive
+one---understates roll authority by a factor of three and a half while
+looking entirely reasonable. An automated check confirms $\tau$ at its
+two exact limits ($\tau = 1$ for a leading-edge hinge, the whole section
+rotating; $\tau = 0$ for zero flap chord), at the textbook half-chord
+and quarter-chord values, and confirms that a deflection produces a rolling
+moment at all---the assertion that would have caught the original defect
+the day it appeared.
 
 \subsection{Parasite drag, and the case against a constant}
 \label{sec:parasiteresults}
@@ -1340,6 +1570,24 @@ the configuration's $C_N(90\dg) = 1.52$ the parasite branch is a $13\%$
 addition: not dominant, but far outside the tolerance any other number
 here is quoted to. This is the measurement that converted
 \varid{aeroCD0} from a constant into a table.
+
+\paragraph{The duct's own separated drag.} The crossflow branch above is
+a slender-body result and does not describe an annular ring meeting the
+flow edge-on, so the shroud originally sat outside the incidence-dependent
+term altogether and \varid{aeroCD0} was a declared lower bound at high
+incidence---the wrong direction to be wrong in for a vehicle that
+transits there. The ring now carries a term of its own on its
+side-projected area, $2\,c_{\mathrm{duct}}(D_o - D_i) = 0.0029$~m$^2$,
+which raises $C_{D_0}(90\dg)$ from $0.195$ to $0.208$.
+
+That is deliberately a bluff-body \emph{estimate} and not a computation:
+it borrows the crossflow coefficient and the finite-length factor from
+the body rather than claiming independent knowledge of an annulus. The
+ring is small, so the term is modest---a $6\%$ rise---but the tabulation
+no longer omits an entire component from the branch that dominates at
+transition attitudes. What remains unmodelled is the interference
+between the body wake and the wing, so the estimate is still a lower
+bound, by less than before.
 
 \subsection{Vane-mode superposition: measured, and partly false}
 \label{sec:superposition}
@@ -1424,7 +1672,7 @@ case is roll in hover---the same corner where the mode sum is worst by
 $33\%$. Pitch and yaw are predicted to $0.13\%$. The model that is
 simultaneously more accurate by a factor of twenty and cheaper by a
 factor of three is the one the file adopts, and adopting it cost one
-additional sweep of the driver that already existed.
+additional sweep of the program that already existed.
 
 \subsection{Three conditions that do not converge, and what was measured
 about them}
@@ -1515,10 +1763,10 @@ in Section~\ref{sec:frames}.
 solved $C_l$ defines the sign, and \varid{aileronDeg}'s variable
 definition cites this shot.
 \item \textbf{Rate derivative.} $C_{l_p} = -0.452$, the value already
-pinned by the solver's unit tests against the textbook figure for an
+verified against the textbook figure for an
 $A\!R = 6$ wing.
 \item \textbf{Vane modes.} Pure pitch, pure yaw and pure roll commands,
-each pinning the dominant components and recording the off-axis
+each confirming the dominant components and recording the off-axis
 residuals at their solved values---these are physics, not zeros, and
 pinning them at zero would be a falsification.
 \item \textbf{Propulsor reference.} The SciTech reference case, whose
@@ -1530,7 +1778,7 @@ recorded justification for the overlap decision of
 Section~\ref{sec:aerotables}.
 \item \textbf{Summed wrench.} One fully populated condition---attitude,
 rates, aileron, vane commands, powered---evaluated through the buildup of
-Section~\ref{sec:buildup} to dimensional forces and moments, pinning
+Section~\ref{sec:buildup} to dimensional forces and moments, confirming
 normalisation, summation and reference consistency end to end.
 \end{enumerate}
 
@@ -1560,7 +1808,7 @@ models/report/make-tables.py -> models/report/tables/*.tex
 \end{lstlisting}
 
 \noindent
-Each driver exports JSON independently and the assembler consumes the
+Each generating program exports JSON independently and the assembler consumes the
 cached JSONs, so regenerating one map does not rerun the others. Rows are
 flushed as they complete, so an interrupted long sweep retains every
 finished condition. The JSON files are committed alongside the XML: the
@@ -1570,6 +1818,7 @@ this document was typed by hand.
 
 %======================================================================
 \section{Declared limits}
+\label{sec:limits}
 
 Collected here so that a consumer need not reconstruct them from the body
 of the report.
@@ -1587,21 +1836,99 @@ through transition. No in-plane force or hub moment from disk incidence.
 \item \textbf{Powered operation only.} The $\rho n^2 D^4$ group of
 Eq.~\eqref{eq:propnorm} excludes $n \to 0$; windmilling and
 low-rotor-speed descent are outside the envelope.
-\item \textbf{No interaction increments yet}
-(Section~\ref{sec:coupling}), pending an upstream-induction model. Until
-they exist, the airframe tables are power-off and the model
-underpredicts the separation delay the fan provides in transition.
-\item \textbf{No aileron tables} (Section~\ref{sec:aileron}). The
-generating path cannot represent a hinged surface, so \varid{aeroDCX}
-through \varid{aeroDCn} are declared blocked rather than shipped as
-zeros. The model presently has no roll control input.
+\item \textbf{Interaction increments past stall are differences of two
+limit-cycle means} (Section~\ref{sec:coupling}). Below $14\dg$ both
+solves converge and the increment is solid; above $16\dg$ neither does.
+The attribution to delayed separation is no longer an inference: the
+separation point is now read directly off the coupled solve at both
+power settings, and the delay is present, thrust-ordered at every
+attitude to $70\dg$, and peaks at $+0.065$ chord near $30\dg$. That
+measurement also removed a false signature --- the threefold jump in the
+increment between $14\dg$ and $16\dg$ is \emph{not} the separation delay,
+which moves by only a factor of $1.09$ across the same step; the jump
+marks the onset of limit-cycle behaviour. The interaction model is also
+uniform-loading, swirl-free, and computed at $\beta = 0$ only.
+\item \textbf{Aileron increments carry the flap as a section camber
+change} (Section~\ref{sec:aileron}), not as panel geometry. The lift
+shift is thin-airfoil theory's, and so is the accompanying section
+pitching-moment increment, which the same theory supplies and the model
+now carries. What remains unmodelled is gap leakage and the viscous decay
+of effectiveness at large deflection---both of which reduce real control
+power, so the tabulated authority is still an upper bound.
 \item \textbf{Parasite drag is a conceptual-design estimate}
 (Sections~\ref{sec:drag} and~\ref{sec:parasiteresults}), carrying the
-conventional $\pm10$--$20\%$ accuracy of a component buildup. It is
-moreover incomplete in one direction only: the duct's own separated drag
-at incidence and any body-wake/wing interference are not modelled, and
-both omissions push the same way, so \varid{aeroCD0} is a lower bound at
-high incidence.
+conventional $\pm10$--$20\%$ accuracy of a component buildup. The duct's
+separated drag at incidence is now included as a bluff-body estimate on
+the ring's side-projected area, raising $C_{D_0}(90\dg)$ from $0.195$ to
+$0.208$; what remains unmodelled is the interference between the body
+wake and the wing, so \varid{aeroCD0} is still a lower bound at high
+incidence, by less than before.
+\item \textbf{The post-stall sweeps are continuations, and the path
+is part of the condition.} Every solve above the stall is warm-started
+from the preceding incidence, so which attitudes were visited helps
+determine which limit cycle a condition settles into --- it is not merely
+the order in which the tables were filled. Measured: arriving at
+$\alpha = 20\dg$, $T_c = 0.5$ from $16\dg$ rather than $18\dg$ moves the
+span-mean separation point by $0.013$, against a fan effect of $0.018$ at
+that same condition, and at $\alpha = 26\dg$, $T_c = 1$ a coarser path
+reverses the sign of the measured delay.
+
+That check has since been done, by repeating the sweep at half the
+incidence step: $113$ of the $125$ shared conditions agree to better than
+$10^{-6}$, so the tables are grid-converged over ninety percent of their
+extent. The twelve that do not are isolated bistable conditions, all past
+the stall, each a single solve settling into a different limit cycle
+according to the attitude it was approached from --- not a drift, and
+individually identifiable. Where only the power-off solve moves, its shift
+passes through every thrust column undiminished; where both move together
+the increment very nearly cancels. Both occur, so cancellation is real but
+cannot be assumed. The affected rows carry an uncertainty of order $0.01$
+in separation location, $0.027$ at worst. This affects the \varid{aero*} and
+\varid{coupling*} post-stall rows, which are generated the same way. It
+also narrows the earlier finding that limit-cycle means are
+iteration-path independent: that holds at fixed continuation, and
+warm-start history matters considerably more than the relaxation does.
+
+\item \textbf{The tables are the ascending-$\alpha$ branch, and that is
+adequate.} Every sweep is a continuation started below the stall, so the
+tables are one branch of a system that could in principle have two.
+Sweeping the same grid downward from $90\dg$ settles what that costs.
+Below $14\dg$ the branches agree to $6.6\times10^{-4}$ in $C_Z$ ---
+attached flow is path-independent, as it must be. Only seven of
+twenty-five attitudes differ by more than $10^{-3}$ at all, and the
+largest departures are $1.65\%$ of $C_Z$ at $\alpha = 24\dg$ and $2.6\%$
+of $C_m$ at $26\dg$.
+
+This is \emph{not} a classical hysteresis loop, and the distinction
+matters for how the model is built. A two-valued system would show the
+branches parting across the whole post-stall range and rejoining at its
+ends; instead six of the seven cluster in $18$--$35\dg$, the branches
+agree at $16\dg$ and $20\dg$ \emph{inside} that band, and agree exactly
+from $40$ through $70\dg$. The signature is isolated bistable conditions
+rather than two branches --- the same one the incidence-step refinement
+produced. The tables therefore need no branch axis; the affected
+attitudes need wider uncertainty, and $1.65\%$ sits well inside the
+$\pm10$--$20\%$ already carried on the parasite buildup. One departure,
+$1.76\%$ of $C_Z$ at $\alpha = 80\dg$, falls outside the stall band and
+is recorded without an explanation.
+
+\item \textbf{Quantities evaluated at the cycle mean carry a
+nonlinearity error, and it is negligible.} Anything the solver reports
+past stall is evaluated on a final sweep at the cycle-mean circulation,
+so for a nonlinear $g$, $g(\bar\gamma) \neq \overline{g(\gamma)}$. The
+leading term is second order in the cycle width, and the solve carries
+the per-strip incidence variance needed to evaluate it: for the
+separation point it lands at $10^{-15}$ to $10^{-10}$ against values of
+order unity. The cycle is wide in circulation and very nearly stationary
+in local incidence. Stated because it is the approximation a reader would
+reasonably suspect, and it is not the one that matters --- the preceding
+limit is.
+
+\item \textbf{Rate derivatives are absent across
+$\alpha \in [20\dg, 35\dg]$} (Section~\ref{sec:ratetaper}), because
+measurement at two perturbation amplitudes shows no linear coefficient
+exists there. The breakpoint axis omits those attitudes rather than
+tapering, holding or fabricating a value.
 \item \textbf{Post-stall values are cycle means} with uncertainty bounds,
 not steady states.
 \item \textbf{$C_{L\max}$ is an upper bound}: bubble bursting is not
@@ -1610,8 +1937,6 @@ modelled.
 branch. Static hysteresis is a known feature of this regime and a static
 gridded table cannot express it; representation is deferred to a
 dedicated study.
-\item \textbf{Rate derivatives are tapered, not computed, past
-$\alpha = 20\dg$} (Section~\ref{sec:ratetaper}).
 \item \textbf{Vane mode superposition} is spot-checked, not tabulated
 pairwise.
 \end{enumerate}
@@ -1629,14 +1954,18 @@ Annex A counterpart.
 build step, so that structural conformance is checked by a tool rather
 than by reading.
 \item Generate the airframe map (\varid{aero*}) and assemble the file.
-\item Extend the parasite estimate with the duct's separated drag at
-incidence, the one contribution the slender-body form of
-Eq.~\eqref{eq:cd0} cannot supply.
-\item Build the upstream-induction model and unblock \varid{coupling*}.
-\item \textbf{Unblock the aileron tables} (Section~\ref{sec:aileron}) by
-carrying the flap into the strip's section description, so that a
-deflection survives the viscous coupling. This is a behaviour change to
-a tested solver module and wants its own branch.
+\item Model the interference between the body wake and the wing, the
+last contribution keeping \varid{aeroCD0} a lower bound at high
+incidence.
+\item Decide whether the twelve grid-sensitive conditions
+(Section~\ref{sec:limits}) should be resolved by bisecting the continuation
+around them, or declared and carried as an uncertainty. They are named, so
+either is tractable; at present they are declared.
+\item Extend the flap model with gap leakage and the viscous decay of
+effectiveness at large deflection. The section pitching-moment
+increment is now carried (Section~\ref{sec:aileron}); these two remain,
+and both reduce real control power, so tabulated authority stays an
+upper bound.
 \item Measure and record vane-mode superposition error at soft-limit
 corners.
 \item Determine the sensitivity of the propulsor tables to the vane
