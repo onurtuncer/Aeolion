@@ -288,7 +288,7 @@ loading.
 \item \emph{Trailing legs leave along the local relative wind} at
 their roots --- the tangential sweep plus the axial convection --- a
 linearized helix whose pitch is made \emph{self-consistent with the
-solved loading}: the outer driver rebuilds the lattice each pass with
+solved loading}: the outer iteration rebuilds the lattice each pass with
 the previous pass's banded induced velocity $v_i(r)$, obtained from
 the same annular momentum balance the slipstream reconstruction uses,
 so each leg convects at the axial inflow of its own radius, iterated
@@ -970,7 +970,7 @@ recovery fraction consistent with the far higher swirl of a static
 ducted fan than of a cruise propeller. The agreement is qualitative
 and is reported as such.
 
-\paragraph{Verification.} Every claim above is pinned by the automated
+\paragraph{Verification.} Every claim above is verified by the automated
 test suite: exact cruciform symmetry undeflected, counter-torque
 opposing the rotor's, the budget bound $M_x^{vane} \le Q$ at
 convergence on both closures, opposite commands pulling the wrench

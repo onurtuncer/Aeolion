@@ -624,7 +624,7 @@ constant can reproduce if the scaling law itself is wrong.
 
 \subsection{The separation march}
 
-The march of Section~\ref{sec:separation} is pinned against three
+The march of Section~\ref{sec:separation} is verified against three
 closed-form answers and one control. A flat plate must recover Blasius:
 Thwaites gives $\theta = \sqrt{0.45\,s/Re}$, the known 1\% above the exact
 $0.664\,s/\sqrt{Re_s}$, with $H = 2.61$ throughout and no separation.
@@ -663,7 +663,8 @@ reported as kinked.
 % these numbers.
 
 The method is exercised on the solver's own regression airframe: a
-VBAT-class tail-sitter described by a schema-1.8.0 geometry handoff,
+VBAT-class tail-sitter described by a versioned parametric geometry
+definition,
 carrying a rectangular wing of span $b = 1.063$~m and chord
 $0.177$~m ($A\!R = 6.0$) with \emph{zero} sweep, twist and dihedral, a
 body of revolution of length $L = 0.491$~m and maximum radius
@@ -679,7 +680,7 @@ the contract the attachment-line analysis states: one local velocity
 per spanwise station, read at the bound-vortex midpoint. The fuselage
 carries 768 source panels and the duct 160. Two discretization choices
 deserve a sentence each, because both are consumer-side choices the
-handoff deliberately leaves open. First, the body's station list is
+definition deliberately leaves open. First, the body's station list is
 resampled with cosine clustering toward the nose, keeping every
 original breakpoint so the added stations lie exactly on the
 contract's piecewise-linear radius law: at these incidences the
