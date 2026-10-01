@@ -132,8 +132,7 @@ void TestDeadAirCarriesNothing() {
     CHECK(contracted.Base.Mx < full.Base.Mx,
           "a contracted jet wets less vane span and must recover less torque");
     CHECK(contracted.Base.Mx > 0.0, "but the wetted strips must still work");
-    for (std::size_t i = 0; i < contracted.Strips.size(); ++i) {
-        const auto& strip = contracted.Strips[i];
+    for (const auto& strip : contracted.Strips) {
         const double radius = std::hypot(strip.Mid.y, strip.Mid.z);
         if (radius > 0.75 * ExitRadius)
             CHECK(strip.Force.Norm() < 1e-9,

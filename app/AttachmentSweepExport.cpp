@@ -563,7 +563,7 @@ int main(int argc, char** argv) {
             out << R"( {"alphaDeg":)" << alphaDeg << R"(,"betaDeg":)" << betaDeg << R"(,"CL":)"
                 << carry.CL << R"(,"CDi":)" << carry.CDi << R"(,"CDiTrefftz":)" << trefftz.CDi
                 << R"(,"spanEfficiency":)" << trefftz.SpanEfficiency
-                << R"(,"liftWing":)" << (carry.LiftBySurface.count("wing") ? carry.LiftBySurface.at("wing") : 0.0)
+                << R"(,"liftWing":)" << (carry.LiftBySurface.contains("wing") ? carry.LiftBySurface.at("wing") : 0.0)
                 << R"(,"liftTotal":)" << carry.L << R"(,"CY":)" << carry.CY << R"(,"Cm":)"
                 << carry.Cm << R"(,"Croll":)" << carry.Croll << R"(,"Cn":)" << carry.Cn
                 << R"(,"CLClean":)" << clean.CL << ",\n  \"derivatives\":{"

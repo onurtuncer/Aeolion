@@ -356,11 +356,11 @@ int main(int argc, char** argv) {
 
     const bool wantAll = modeFilter == "all";
     std::vector<Command> conditions;
-    if (wantAll || modeFilter == "baseline") conditions.push_back({"baseline", 0.0, 0, 0, 0});
+    if (wantAll || modeFilter == "baseline") conditions.push_back({"baseline", 0.0, 0, 0, 0, {}});
     for (const double d : ModeDeltasDeg) {
-        if (wantAll || modeFilter == "pitch") conditions.push_back({"pitch", d, d, 0, 0});
-        if (wantAll || modeFilter == "yaw") conditions.push_back({"yaw", d, 0, d, 0});
-        if (wantAll || modeFilter == "roll") conditions.push_back({"roll", d, 0, 0, d});
+        if (wantAll || modeFilter == "pitch") conditions.push_back({"pitch", d, d, 0, 0, {}});
+        if (wantAll || modeFilter == "yaw") conditions.push_back({"yaw", d, 0, d, 0, {}});
+        if (wantAll || modeFilter == "roll") conditions.push_back({"roll", d, 0, 0, d, {}});
     }
     // Simultaneous commands, for the superposition measurement: each pair
     // at HALF the soft limit so the per-vane sum -- which is what the
@@ -374,12 +374,12 @@ int main(int argc, char** argv) {
             // The single-mode references at the same magnitude. Without
             // these the pair rows have nothing to be compared against --
             // +-7.5 is not on the ModeDeltasDeg grid.
-            conditions.push_back({"pitch", s * H, s * H, 0, 0});
-            conditions.push_back({"yaw", s * H, 0, s * H, 0});
-            conditions.push_back({"roll", s * H, 0, 0, s * H});
-            conditions.push_back({"pitch+yaw", s * H, s * H, s * H, 0});
-            conditions.push_back({"pitch+roll", s * H, s * H, 0, s * H});
-            conditions.push_back({"yaw+roll", s * H, 0, s * H, s * H});
+            conditions.push_back({"pitch", s * H, s * H, 0, 0, {}});
+            conditions.push_back({"yaw", s * H, 0, s * H, 0, {}});
+            conditions.push_back({"roll", s * H, 0, 0, s * H, {}});
+            conditions.push_back({"pitch+yaw", s * H, s * H, s * H, 0, {}});
+            conditions.push_back({"pitch+roll", s * H, s * H, 0, s * H, {}});
+            conditions.push_back({"yaw+roll", s * H, 0, s * H, s * H, {}});
         }
     }
     // Single-vane sweep: the per-vane response, from which a summation

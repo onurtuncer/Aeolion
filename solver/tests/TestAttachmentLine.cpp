@@ -31,6 +31,7 @@
 #include <cmath>
 #include <iostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 using Aeolion::Geometry::AirfoilSection;
@@ -141,7 +142,7 @@ void TestZeroIncidenceSitsOnTheLeadingEdge() {
               "an uncirculated flat lattice induces nothing at alpha=0, got alpha_n=" +
                   std::to_string(station.AlphaNormalDeg));
     }
-    CHECK(found == static_cast<int>(line.Stations.size()), "every strip must resolve an attachment point");
+    CHECK(std::cmp_equal(found, line.Stations.size()), "every strip must resolve an attachment point");
 }
 
 void TestPositiveIncidenceMovesOntoTheLowerSurface() {

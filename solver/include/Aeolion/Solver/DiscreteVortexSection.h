@@ -173,7 +173,7 @@ inline void VortexVelocity(double dx, double dz, double gamma, double core2, dou
     };
 
     std::vector<Detail::FreeVortex> wake;
-    wake.reserve(2 * steps);
+    wake.reserve(2 * static_cast<std::size_t>(steps));
     int lastTev = -1, lastLev = -1; // indices into wake, for placement
     bool levActivePrev = false;     // placement continuity holds only across CONSECUTIVE sheds
     double retired = 0.0;           // circulation dropped past the cutoff
@@ -198,7 +198,7 @@ inline void VortexVelocity(double dx, double dz, double gamma, double core2, dou
         for (int j = 0; j < m; ++j) {
             double sum = sa; // freestream normal component
             for (const Detail::FreeVortex& v : wake) {
-                double u, wz;
+                double u = 0.0, wz = 0.0;
                 Detail::VortexVelocity(xs[j] - v.x, -v.z, v.gamma, core2, u, wz);
                 sum += wz;
             }
@@ -207,7 +207,7 @@ inline void VortexVelocity(double dx, double dz, double gamma, double core2, dou
     };
     const auto sampleUnit = [&](double vx, double vz, std::vector<double>& w) {
         for (int j = 0; j < m; ++j) {
-            double u, wz;
+            double u = 0.0, wz = 0.0;
             Detail::VortexVelocity(xs[j] - vx, -vz, 1.0, core2, u, wz);
             w[j] = wz;
         }
@@ -222,7 +222,7 @@ inline void VortexVelocity(double dx, double dz, double gamma, double core2, dou
         const double t = (step + 1) * dt;
 
         // --- placements -----------------------------------------------------
-        double tevX, tevZ;
+        double tevX = 0.0, tevZ = 0.0;
         if (lastTev >= 0) {
             tevX = 1.0 + DvmShedFraction * (wake[lastTev].x - 1.0);
             tevZ = DvmShedFraction * wake[lastTev].z;
@@ -255,7 +255,7 @@ inline void VortexVelocity(double dx, double dz, double gamma, double core2, dou
             const double a0 = Abase[0] + gTev * Atev[0];
             if (std::fabs(a0) > options.LespCritical) {
                 levActive = true;
-                double levX, levZ;
+                double levX = 0.0, levZ = 0.0;
                 if (levActivePrev && lastLev >= 0) {
                     levX = DvmShedFraction * wake[lastLev].x;
                     levZ = DvmShedFraction * wake[lastLev].z;
@@ -338,14 +338,14 @@ inline void VortexVelocity(double dx, double dz, double gamma, double core2, dou
             double u = ca, w = sa;
             for (std::size_t k = 0; k < wake.size(); ++k) {
                 if (k == i) continue;
-                double du, dw;
+                double du = 0.0, dw = 0.0;
                 Detail::VortexVelocity(wake[i].x - wake[k].x, wake[i].z - wake[k].z,
                                        wake[k].gamma, core2, du, dw);
                 u += du;
                 w += dw;
             }
             for (int j = 0; j < m; ++j) {
-                double du, dw;
+                double du = 0.0, dw = 0.0;
                 Detail::VortexVelocity(wake[i].x - xs[j], wake[i].z, boundGamma[j], core2, du,
                                        dw);
                 u += du;

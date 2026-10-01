@@ -6,9 +6,9 @@
 #include "Aeolion/Solver/Solver.h"
 
 #include <cmath>
-#include <cstdio>
 #include <iostream>
 #include <numbers>
+#include <print>
 #include <string>
 #include <vector>
 
@@ -195,7 +195,7 @@ void TestCoupledAirframe() {
 
         const double restored = (joined.CL - cut.CL) / (whole.CL - cut.CL);
         const double bodyEffect = (both.CL - joined.CL) / joined.CL;
-        std::printf("  %5.1f  %8.5f %8.5f  %8.5f  %11.5f  %12.1f%% %+6.1f%%\n", alphaDeg, whole.CL, cut.CL,
+        std::println("  {:5.1f}  {:8.5f} {:8.5f}  {:8.5f}  {:11.5f}  {:12.1f}% {:+6.1f}%", alphaDeg, whole.CL, cut.CL,
                     joined.CL, both.CL, 100.0 * restored, 100.0 * bodyEffect);
 
         CHECK(std::isfinite(both.CL) && std::isfinite(both.Cm), "the coupled solve must be finite");

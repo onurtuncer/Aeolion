@@ -21,12 +21,9 @@ if(NOT Python3_Interpreter_FOUND)
 endif()
 
 if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/AetherionFlightModel.dml")
-  message(STATUS "DAVE-ML: model not assembled yet; skipping TestDaveMLModel "
-                 "(run models/build-daveml.py)")
+  message(STATUS "DAVE-ML: model not assembled yet; skipping TestDaveMLModel " "(run models/build-daveml.py)")
   return()
 endif()
 
-add_test(NAME TestDaveMLModel
-         COMMAND ${Python3_EXECUTABLE}
-                 "${CMAKE_CURRENT_SOURCE_DIR}/verify-daveml.py"
-                 "${CMAKE_CURRENT_SOURCE_DIR}/AetherionFlightModel.dml")
+add_test(NAME TestDaveMLModel COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/verify-daveml.py"
+                                      "${CMAKE_CURRENT_SOURCE_DIR}/AetherionFlightModel.dml")

@@ -30,6 +30,8 @@
 
 #include <cmath>
 #include <iostream>
+#include <numbers>
+#include <print>
 #include <string>
 
 namespace S = Aeolion::Solver;
@@ -72,7 +74,7 @@ void TestMomentumTheoryOnTheAxis() {
     // v_i (1 - 1/sqrt(2)). Worth pinning explicitly: it is the number the
     // whole aft-fan argument turns on.
     const double atOneRadius = S::DiskAxisInducedVelocity(disk, -Radius);
-    const double expected = Vi * (1.0 - 1.0 / std::sqrt(2.0));
+    const double expected = Vi * (1.0 - 1.0 / std::numbers::sqrt2);
     CHECK(std::fabs(atOneRadius - expected) < 1e-12,
           "one radius upstream the induction must be v_i(1 - 1/sqrt2) = " +
               std::to_string(expected) + ", got " + std::to_string(atOneRadius));
@@ -92,7 +94,7 @@ void TestDiscretizedSheetMatchesTheAxisSolution() {
         const double s = sOverR * Radius;
         const double exact = S::DiskAxisInducedVelocity(disk, s);
         const Vec3 v = S::VortexCylinderVelocity(mesh, Vec3(s, 0.0, 0.0));
-        std::printf("  %8.2f  %9.4f  %9.4f\n", sOverR, exact, v.x);
+        std::println("  {:8.2f}  {:9.4f}  {:9.4f}", sOverR, exact, v.x);
 
         // Off-axis components must vanish by symmetry on the axis itself.
         CHECK(std::fabs(v.y) < 1e-6 * Vi && std::fabs(v.z) < 1e-6 * Vi,

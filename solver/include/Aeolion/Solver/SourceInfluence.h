@@ -41,6 +41,7 @@
 #include "Aeolion/Math/Constants.h"
 #include "Aeolion/Math/Vec3.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <numbers>
@@ -143,8 +144,7 @@ namespace Detail {
         // term is positive and a source pushes fluid outward. The small
         // factor is the one that vanishes for a field point on the edge's
         // own line, so it is the one that gets floored.
-        double small = r1 + r2 - d;
-        if (small < SourceLogArgumentFloor) small = SourceLogArgumentFloor;
+        const double small = std::max(r1 + r2 - d, SourceLogArgumentFloor);
         const double logTerm = std::log((r1 + r2 + d) / small);
 
         // Edge length in the denominator, not the edge slope, so an edge

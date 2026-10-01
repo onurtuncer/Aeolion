@@ -12,6 +12,7 @@
 #include <cmath>
 #include <iostream>
 #include <random>
+#include <utility>
 #include <vector>
 
 using namespace Aeolion;
@@ -24,7 +25,7 @@ namespace {
 
 struct Cloud {
     S::Vec3 X, Alpha;
-    double Core2;
+    double Core2 = 0.0;
 };
 
 std::vector<Cloud> MakeCloud(int count, unsigned seed) {
@@ -46,7 +47,7 @@ std::vector<Cloud> MakeCloud(int count, unsigned seed) {
 void DirectSum(const std::vector<Cloud>& cloud, const S::Vec3& at, double targetCore2,
                int exclude, S::Vec3& u, S::Vec3 grad[3]) {
     for (std::size_t k = 0; k < cloud.size(); ++k) {
-        if (static_cast<int>(k) == exclude) continue;
+        if (std::cmp_equal(k, exclude)) continue;
         S::Detail::TreeKernel(at - cloud[k].X, cloud[k].Alpha,
                               0.5 * (targetCore2 + cloud[k].Core2), u, grad, true);
     }

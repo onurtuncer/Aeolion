@@ -36,6 +36,7 @@
 #include "Aeolion/Geometry/AirfoilSection.h"
 #include "Aeolion/Math/Constants.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <numbers>
@@ -166,8 +167,7 @@ struct SectionBracket {
             bracket.High = i + 1;
             const double span = sections[i + 1].Eta - sections[i].Eta;
             bracket.Weight = (span > 0.0) ? (eta - sections[i].Eta) / span : 0.0;
-            if (bracket.Weight < 0.0) bracket.Weight = 0.0;
-            if (bracket.Weight > 1.0) bracket.Weight = 1.0;
+            bracket.Weight = std::clamp(bracket.Weight, 0.0, 1.0);
             return bracket;
         }
     }

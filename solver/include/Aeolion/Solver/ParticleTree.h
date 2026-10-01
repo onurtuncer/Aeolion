@@ -196,7 +196,7 @@ private:
             Cells.push_back(child);
         }
         for (int o = 0; o < 8; ++o) {
-            const std::size_t ci = static_cast<std::size_t>(firstChild + o);
+            const std::size_t ci = static_cast<std::size_t>(firstChild) + static_cast<std::size_t>(o);
             if (Cells[ci].End > Cells[ci].Begin) Subdivide(ci);
         }
     }
@@ -225,7 +225,7 @@ private:
             return;
         }
         for (int o = 0; o < 8; ++o)
-            EvaluateCell(static_cast<std::size_t>(cell.FirstChild + o), at, targetCore2,
+            EvaluateCell(static_cast<std::size_t>(cell.FirstChild) + static_cast<std::size_t>(o), at, targetCore2,
                          excludeOriginal, u, grad);
     }
 };

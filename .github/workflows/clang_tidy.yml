@@ -24,10 +24,10 @@ concurrency:
 jobs:
   clang-tidy:
     name: clang-tidy
-    # ubuntu-26.04 is the earliest hosted image whose default libstdc++ is
-    # GCC 15's, which is the first to ship <mdspan> -- Solver.h includes it
-    # for DenseMatrixView. 24.04 tops out at GCC 14 and cannot parse the
-    # solver at all.
+    # libstdc++ first ships <mdspan> in GCC 16 -- Solver.h includes it for
+    # DenseMatrixView. ubuntu-26.04 is the earliest hosted image whose
+    # archive carries g++-16; 24.04 tops out at GCC 14 and cannot parse the
+    # solver at all. GCC 15 does not have the header either.
     runs-on: ubuntu-26.04
 
     steps:
@@ -40,7 +40,7 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends \
-            ninja-build g++-15 liblapack-dev libblas-dev \
+            ninja-build g++-16 liblapack-dev libblas-dev \
             nlohmann-json3-dev libspdlog-dev
 
       # Direct cmake call (no preset) so the vcpkg toolchain file is not
@@ -50,7 +50,7 @@ jobs:
         run: |
           cmake -B build/clang-tidy -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_CXX_COMPILER=g++-15 \
+            -DCMAKE_CXX_COMPILER=g++-16 \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             -DAEOLION_BUILD_TESTS=ON \
             -DAEOLION_BUILD_VIEWER=OFF
@@ -58,6 +58,11 @@ jobs:
       # viewer/ is excluded for the same reason it is not configured above:
       # with no compile command recorded for its sources, clang-tidy has
       # nothing to analyse them with.
+      #
+      # -DFMT_CONSTEVAL= : the archive's fmt 10.1 builds spdlog's internal
+      # FMT_STRING("{} [{}({})]") through a consteval path clang 20 rejects
+      # inside spdlog/logger.h. Defining it empty (fmt honours a predefined
+      # value) only affects this analysis; the g++ build is untouched.
       - name: Run clang-tidy
         run: |
           RUN_CLANG_TIDY="$(command -v run-clang-tidy-20 \
@@ -67,5 +72,6 @@ jobs:
           "$RUN_CLANG_TIDY" \
             -clang-tidy-binary clang-tidy-20 \
             -p build/clang-tidy \
+            -extra-arg=-DFMT_CONSTEVAL= \
             -j "$(nproc)" \
             $(find app logger panelbuilder solver tests -name '*.cpp' | sort)

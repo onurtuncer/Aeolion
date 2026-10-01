@@ -48,6 +48,7 @@
 #include "Aeolion/Math/Vec3.h"
 #include "Aeolion/Solver/Solver.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <functional>
@@ -875,8 +876,7 @@ struct SlipstreamBands {
         }
         if (!merged) bands.push_back({r, 0.0, thrust, torque, 0.0, 0.0});
     }
-    std::sort(bands.begin(), bands.end(),
-              [](const SlipstreamBand& a, const SlipstreamBand& b) { return a.r < b.r; });
+    std::ranges::sort(bands, [](const SlipstreamBand& a, const SlipstreamBand& b) { return a.r < b.r; });
     for (std::size_t i = 0; i < bands.size(); ++i) {
         SlipstreamBand& band = bands[i];
         const double below = (i > 0) ? bands[i - 1].r : band.r;

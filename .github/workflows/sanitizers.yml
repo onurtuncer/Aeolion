@@ -23,8 +23,8 @@ concurrency:
 jobs:
   sanitize:
     name: ${{ matrix.label }}
-    # GCC 15 for <mdspan> -- see the comment in clang_tidy.yml. The
-    # gcc-asan / gcc-ubsan presets pin g++-15 explicitly rather than
+    # GCC 16 for <mdspan> -- see the comment in clang_tidy.yml. The
+    # gcc-asan / gcc-ubsan presets pin g++-16 explicitly rather than
     # relying on the image default.
     runs-on: ubuntu-26.04
     strategy:
@@ -47,12 +47,16 @@ jobs:
       # The sanitizer presets deliberately bypass vcpkg -- see the comment
       # on gcc-sanitizer-base in CMakePresets.json -- so the three real
       # dependencies (LAPACK, nlohmann_json, spdlog) come from the archive.
+      # libxml2-utils + w3c-sgml-lib are for TestDaveMLModel: DAVEfunc.dtd
+      # pulls in the MathML2 DTD by its W3C URL, and xmllint has no HTTP
+      # client, so the DTD must resolve offline through the XML catalog
+      # that w3c-sgml-lib registers.
       - name: Install dependencies
         run: |
           sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends \
-            ninja-build g++-15 liblapack-dev libblas-dev \
-            nlohmann-json3-dev libspdlog-dev libxml2-utils
+            ninja-build g++-16 liblapack-dev libblas-dev \
+            nlohmann-json3-dev libspdlog-dev libxml2-utils w3c-sgml-lib
 
       - name: Configure
         run: cmake --preset=${{ matrix.preset }}

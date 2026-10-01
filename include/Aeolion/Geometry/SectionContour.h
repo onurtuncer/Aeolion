@@ -104,8 +104,8 @@ struct SectionContour {
         return Math::Half * (1.0 - std::cos(std::numbers::pi * static_cast<double>(k) / n));
     };
 
-    contour.Psi.reserve(static_cast<std::size_t>(2 * n + 1));
-    contour.Zeta.reserve(static_cast<std::size_t>(2 * n + 1));
+    contour.Psi.reserve(2 * static_cast<std::size_t>(n) + 1);
+    contour.Zeta.reserve(2 * static_cast<std::size_t>(n) + 1);
 
     // Trailing edge -> leading edge along the LOWER surface.
     for (int k = n; k >= 0; --k) {
@@ -145,7 +145,7 @@ struct SectionContour {
     if (sections.empty()) return contour; // no section data: no thickness to speak of
 
     const Detail::SectionBracket bracket = Detail::BracketByEta(sections, eta);
-    const SectionContour low = BuildSectionContour(sections[bracket.Low], pointsPerSurface);
+    SectionContour low = BuildSectionContour(sections[bracket.Low], pointsPerSurface);
     const SectionContour high = BuildSectionContour(sections[bracket.High], pointsPerSurface);
     if (!low.Valid() || low.Count() != high.Count()) return low;
 

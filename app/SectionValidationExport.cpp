@@ -78,7 +78,7 @@ double Bernstein(int order, int i, double x) {
 // normal equations.
 std::vector<double> FitCst(double thickness, double& maxResidual) {
     const int n = CstOrder + 1;
-    std::vector<double> normal(n * n, 0.0), rhs(n, 0.0);
+    std::vector<double> normal(static_cast<std::size_t>(n) * n, 0.0), rhs(n, 0.0);
     std::vector<double> psis(FitNodes);
     for (int k = 0; k < FitNodes; ++k)
         psis[k] = 0.5 * (1.0 - std::cos(std::numbers::pi * (k + 0.5) / FitNodes));

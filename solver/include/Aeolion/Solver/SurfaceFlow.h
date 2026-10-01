@@ -636,7 +636,7 @@ inline void PhysicalJacobian(const SurfaceGrid& grid, const LocalFrame& frame, d
         // halving until the move is within a small multiple of one nominal
         // step. Away from critical points the cap never binds and the
         // integration is plain RK4.
-        double k1i, k1j, k2i, k2j, k3i, k3j, k4i, k4j;
+        double k1i = 0.0, k1j = 0.0, k2i = 0.0, k2j = 0.0, k3i = 0.0, k3j = 0.0, k4i = 0.0, k4j = 0.0;
         derivative(station, sector, k1i, k1j);
         const double scale = std::hypot(k1i, k1j);
         if (!(scale > SurfaceSpeedFloor)) { line.Exit = StreamlineExit::Stalled; break; }
