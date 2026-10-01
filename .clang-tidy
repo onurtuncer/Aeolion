@@ -1,3 +1,14 @@
+# Disabled beyond the defaults, because they fight deliberate idioms here:
+#   math-missing-parentheses   -- formulas are kept in textbook notation
+#   use-designated-initializers, use-auto, enum-size -- style only
+#   avoid-c-arrays             -- fixed-size scratch arrays in hot kernels
+#   raw-string-literal         -- escaped JSON/CSV emitters read fine
+#   security.FloatLoopCounter  -- alpha sweeps carry an explicit end tolerance
+#   avoid-endl                 -- progress lines in long sweeps flush on purpose
+#   avoid-nested-conditional-operator -- threshold ladders read as a table
+#   return-braced-init-list    -- `return Vec3(-v.x, v.y, -v.z)` names the type
+# readability-function-size still reports (AV Rules 1 and 3) but does not
+# fail the job: the large solver drivers are single-pass by design.
 ---
 Checks: >
     -*,
@@ -7,6 +18,7 @@ Checks: >
     clang-analyzer-*,
     -clang-analyzer-cplusplus*,
     -clang-analyzer-optin.core.EnumCastOutOfRange,
+    -clang-analyzer-security.FloatLoopCounter,
     bugprone-*,
     -bugprone-easily-swappable-parameters,
     -bugprone-exception-escape,
@@ -44,7 +56,17 @@ Checks: >
     -readability-use-anyofallof,
     -readability-identifier-length,
     -readability-suspicious-call-argument,
-    -readability-implicit-bool-conversion
+    -readability-implicit-bool-conversion,
+    -readability-math-missing-parentheses,
+    -modernize-use-designated-initializers,
+    -modernize-avoid-c-arrays,
+    -cppcoreguidelines-avoid-c-arrays,
+    -modernize-raw-string-literal,
+    -modernize-use-auto,
+    -performance-enum-size,
+    -performance-avoid-endl,
+    -readability-avoid-nested-conditional-operator,
+    -modernize-return-braced-init-list
 WarningsAsErrors: >
     -*,
     clang-diagnostic-*,
@@ -53,6 +75,7 @@ WarningsAsErrors: >
     clang-analyzer-*,
     -clang-analyzer-cplusplus*,
     -clang-analyzer-optin.core.EnumCastOutOfRange,
+    -clang-analyzer-security.FloatLoopCounter,
     bugprone-*,
     -bugprone-easily-swappable-parameters,
     -bugprone-exception-escape,
@@ -90,7 +113,18 @@ WarningsAsErrors: >
     -readability-use-anyofallof,
     -readability-identifier-length,
     -readability-suspicious-call-argument,
-    -readability-implicit-bool-conversion
+    -readability-implicit-bool-conversion,
+    -readability-math-missing-parentheses,
+    -modernize-use-designated-initializers,
+    -modernize-avoid-c-arrays,
+    -cppcoreguidelines-avoid-c-arrays,
+    -modernize-raw-string-literal,
+    -modernize-use-auto,
+    -performance-enum-size,
+    -performance-avoid-endl,
+    -readability-avoid-nested-conditional-operator,
+    -modernize-return-braced-init-list,
+    -readability-function-size
 HeaderFilterRegex: '.*/Aeolion/(DragEstimate|Geometry|Lattice|Logger|Math|PanelBuilder|Solver)/.*'
 FormatStyle:     none
 CheckOptions:
@@ -112,5 +146,9 @@ CheckOptions:
     # AV Rule 3: cyclomatic complexity of any function shall be 20 or less.
   - key:             readability-function-size.CyclomaticComplexityThreshold
     value:           '20'
+    # DeMorgan rewrites turn `!(lo <= x && x <= hi)` range checks into a
+    # harder-to-read disjunction; the rest of simplify-boolean-expr stays.
+  - key:             readability-simplify-boolean-expr.SimplifyDeMorgan
+    value:           'false'
 ExtraArgs:
   - '-std=c++23'

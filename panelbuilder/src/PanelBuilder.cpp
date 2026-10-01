@@ -54,14 +54,14 @@ inline constexpr double WakeDevelopmentRadii = 2.0; // axial development length 
 inline constexpr double WakeCoreWidthFraction = 0.3;    // leg core radius = this * strip width
 
 LatticeBuilder::LatticeBuilder(Geometry::HandoffContract contract, LatticeOptions options)
-    : m_Contract(std::move(contract)), m_Options(options) {
+    : m_Contract(std::move(contract)), m_Options(options), m_TrimEta(ComputeTrimEta()) {
     // Breakpoints and the spanwise march depend only on the contract and
     // the spacing choice, never on a commanded deflection, so they are
     // computed once here rather than per Build().
     // Order matters. The trim station is a spanwise breakpoint, so it has to
-    // exist before the boundary etas are laid out; the placement offset is a
-    // rigid translation applied afterwards and affects neither.
-    m_TrimEta = ComputeTrimEta();
+    // exist before the boundary etas are laid out (hence it is set in the
+    // initializer list, from m_Contract and m_Options alone); the placement
+    // offset is a rigid translation applied afterwards and affects neither.
     m_BoundaryEtas = ComputeBoundaryEtas();
     m_SemiSpan = ComputeSemiSpan();
     m_PlacementOffset = ComputePlacementOffset();
@@ -441,8 +441,7 @@ void LatticeBuilder::EmitStrip(const SpanStation& inner, const SpanStation& oute
         return hingePoint + Solver::RotateAboutAxis(point - hingePoint, hingeAxis, hingeAngle);
     };
 
-    for (std::size_t m = 0; m < rowBounds.size(); ++m) {
-        const auto [psiStart, psiEnd] = rowBounds[m];
+    for (const auto [psiStart, psiEnd] : rowBounds) {
         const double psiBound = psiStart + Math::QuarterChord * (psiEnd - psiStart);
         const double psiControl = psiStart + Math::ThreeQuarterChord * (psiEnd - psiStart);
 
@@ -959,7 +958,7 @@ std::vector<Lattice::Panel> BuildPropellerLattice(const Geometry::Propeller& pro
                 WakeContractionRatio +
                 (1.0 - WakeContractionRatio) * std::exp(-std::max(x - root.x, 0.0) / prop.Radius);
             const double r = r0 * contraction;
-            path.push_back(Math::Vec3(x, r * std::cos(phi), r * std::sin(phi)));
+            path.emplace_back(x, r * std::cos(phi), r * std::sin(phi));
         }
         return path;
     };

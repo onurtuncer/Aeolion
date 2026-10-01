@@ -43,7 +43,7 @@ void TestFarFieldLooksLikeAPointSource() {
 
     // Far enough that the panel's shape is irrelevant.
     for (double r : {20.0, 50.0, 200.0}) {
-        for (const Vec3& direction : {Vec3(0, 0, 1), Vec3(1, 0, 0), Vec3(0.577, 0.577, 0.577)}) {
+        for (const Vec3& direction : {Vec3(0, 0, 1), Vec3(1, 0, 0), Vec3(1, 1, 1)}) {
             const Vec3 unit = direction.Normalized();
             const Vec3 point = unit * r;
             const Vec3 velocity = Aeolion::Solver::SourcePanelVelocity(point, panel);
@@ -94,7 +94,7 @@ std::vector<SourcePanel> BuildSphere(double radius, int polarPanels, int azimuth
     };
 
     std::vector<SourcePanel> panels;
-    panels.reserve(static_cast<std::size_t>(polarPanels * azimuthPanels));
+    panels.reserve(static_cast<std::size_t>(polarPanels) * static_cast<std::size_t>(azimuthPanels));
 
     for (int i = 0; i < polarPanels; ++i) {
         const double theta0 = std::numbers::pi * i / polarPanels;

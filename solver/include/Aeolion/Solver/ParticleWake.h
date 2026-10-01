@@ -408,7 +408,7 @@ inline Vec3 SegmentVelocityUnit(const Vec3& at, const Vec3& p1, const Vec3& p2, 
                 Math::RadToDeg(std::atan2(Dot(vLoc, strips[i].LiftDir),
                                           Dot(vLoc, strips[i].ChordDir))) -
                 strips[i].EffectiveAlpha0Deg();
-            bool separated;
+            bool separated = false;
             if (options.SeparationPoint)
                 separated = options.SeparationPoint(strips[i].Eta, std::fabs(alphaEff)) <
                             PwLeSheddingF;
@@ -478,6 +478,7 @@ inline Vec3 SegmentVelocityUnit(const Vec3& at, const Vec3& p1, const Vec3& p2, 
         // step (both RK2 stages sample the same source state) and pinned
         // exactly equivalent at theta = 0 by its own suite.
         const std::size_t np = particles.size();
+        const auto npSigned = static_cast<long long>(np); // OpenMP wants a signed index
         const bool useTree = np > PwTreeThreshold;
         if (useTree) stepTree.Build(particles);
         std::vector<Vec3> u1(np), xm(np), um(np);
@@ -494,7 +495,7 @@ inline Vec3 SegmentVelocityUnit(const Vec3& at, const Vec3& p1, const Vec3& p2, 
 #if defined(_OPENMP)
 #pragma omp parallel for schedule(static)
 #endif
-        for (long long ips = 0; ips < static_cast<long long>(np); ++ips) {
+        for (long long ips = 0; ips < npSigned; ++ips) {
             const std::size_t ip = static_cast<std::size_t>(ips);
             Vec3 u = Vinf + filamentVelocity(particles[ip].X);
             if (useTree) {
@@ -513,7 +514,7 @@ inline Vec3 SegmentVelocityUnit(const Vec3& at, const Vec3& p1, const Vec3& p2, 
 #if defined(_OPENMP)
 #pragma omp parallel for schedule(static)
 #endif
-        for (long long ips = 0; ips < static_cast<long long>(np); ++ips) {
+        for (long long ips = 0; ips < npSigned; ++ips) {
             const std::size_t ip = static_cast<std::size_t>(ips);
             Vec3 u = Vinf + filamentVelocity(xm[ip]);
             Vec3 grad[3] = {Vec3(0, 0, 0), Vec3(0, 0, 0), Vec3(0, 0, 0)};
@@ -691,11 +692,11 @@ inline Vec3 SegmentVelocityUnit(const Vec3& at, const Vec3& p1, const Vec3& p2, 
     if (batchMeans.size() >= 2) {
         double bm = 0.0;
         for (double b : batchMeans) bm += b;
-        bm /= batchMeans.size();
+        bm /= static_cast<double>(batchMeans.size());
         double bv = 0.0;
         for (double b : batchMeans) bv += (b - bm) * (b - bm);
-        bv /= (batchMeans.size() - 1);
-        res.MeanCN_CI = 2.0 * std::sqrt(bv / batchMeans.size());
+        bv /= static_cast<double>(batchMeans.size() - 1);
+        res.MeanCN_CI = 2.0 * std::sqrt(bv / static_cast<double>(batchMeans.size()));
     }
     return res;
 }

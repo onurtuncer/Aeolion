@@ -642,7 +642,7 @@ struct FlowField {
     double S = 0.0;
     // Reference area is PLANFORM area -- the coefficient convention (see
     // Panel::Area vs Panel::PlanformArea).
-    for (auto& p : panels) S += p.PlanformArea;
+    for (const auto& p : panels) S += p.PlanformArea;
     if (ref.Area > 0.0) S = ref.Area; // caller override (e.g. wing-only area for a multi-surface aircraft)
     res.ReferenceArea = S;
     res.ReferenceChord = (ref.Chord > 0.0) ? ref.Chord : (S > 0.0 ? S / std::max(GeometryEps, Two) : UnitFallbackLength);
@@ -793,7 +793,7 @@ struct FlowField {
     for (auto& p : panels) p.Surface = "wing";
     double trail = (wp.TrailLength > 0.0) ? wp.TrailLength : 50.0 * wp.Span;
     double S = 0.0;
-    for (auto& p : panels) S += p.PlanformArea;
+    for (const auto& p : panels) S += p.PlanformArea;
     ReferenceGeometry ref;
     ref.Area = S;
     ref.Span = wp.Span;

@@ -1,0 +1,7 @@
+# Test harnesses: each file keeps a mutable `failures` counter and a
+# CHECK(cond, msg) macro whose msg is a stream fragment ("x = " << x), so
+# parenthesising it as bugprone-macro-parentheses asks would not compile.
+InheritParentConfig: true
+Checks: >
+    -cppcoreguidelines-avoid-non-const-global-variables,
+    -bugprone-macro-parentheses

@@ -415,8 +415,7 @@ int main(int argc, char** argv) {
             if (axis == Axis::Roll) fcp.p = rate;
             else if (axis == Axis::Pitch) fcp.q = rate;
             else fcp.r = rate;
-            S::ViscousCouplingOptions opts = coupling;
-            return S::SolveViscousCoupled(wing, strips, fcp, ref, trail, model, opts, sources);
+            return S::SolveViscousCoupled(wing, strips, fcp, ref, trail, model, coupling, sources);
         };
 
         double fluct = 0.0;
@@ -468,15 +467,14 @@ int main(int argc, char** argv) {
         // per attitude rather than six. The flag it produces is reported
         // for the whole lateral set, which shares the mechanism.
         const double clpCoarse = cpl.Clp;
-        double clpFine = clpCoarse;
-        {
+        const double clpFine = [&] {
             const double fineStep = stepRoll / 4.0;
             const auto rp = solveAtRate(Axis::Roll, +fineStep);
             const auto rm = solveAtRate(Axis::Roll, -fineStep);
-            clpFine = -(S::BodyAxisFromCoupled(rp, q, ref).Cl -
-                        S::BodyAxisFromCoupled(rm, q, ref).Cl) /
-                      (2.0 * fineStep * spanReduce);
-        }
+            return -(S::BodyAxisFromCoupled(rp, q, ref).Cl -
+                     S::BodyAxisFromCoupled(rm, q, ref).Cl) /
+                   (2.0 * fineStep * spanReduce);
+        }();
         const double spread =
             std::fabs(clpCoarse - clpFine) / std::max(std::fabs(clpCoarse), 1e-9);
         const bool linearizable = spread < 0.10;

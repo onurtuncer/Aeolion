@@ -148,7 +148,7 @@ void TestMeshAndAlignment() {
     const auto surfaces = MakeVaneSet();
     const auto panels = PanelBuilder::BuildDuctVanes(surfaces, 0.156, 0.0375, 0.075, {});
     const auto strips = PanelBuilder::BuildDuctVaneStrips(surfaces, 0.156, 0.075, {});
-    CHECK(panels.size() == 4u * PanelBuilder::DefaultVaneRadialPanels,
+    CHECK(panels.size() == 4 * static_cast<std::size_t>(PanelBuilder::DefaultVaneRadialPanels),
           "four vanes at one Weissinger row per radial strip");
     CHECK(strips.size() == panels.size(), "vane strips must align one-to-one with vane panels");
     for (const auto& panel : panels) {

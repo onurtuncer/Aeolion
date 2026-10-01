@@ -319,11 +319,15 @@ void TestRejectsMalformed180() {
     const auto rejects = [](const std::string& what, auto mutate) {
         nlohmann::json root = JsonAt(FixturePath("1.8.0"));
         mutate(root);
+        bool rejected = false;
         try {
             (void)Aeolion::Geometry::ParseHandoff(root);
+        } catch (const ContractError&) {
+            rejected = true;
+        }
+        if (!rejected) {
             std::cerr << "FAIL: expected rejection -- " << what << "\n";
             ++g_Failures;
-        } catch (const ContractError&) {
         }
     };
 
@@ -466,11 +470,15 @@ void TestRejectsMalformed() {
 }
 
 void TestRejectsMalformedJson() {
+    bool rejected = false;
     try {
         (void)Aeolion::Geometry::ParseHandoff(nlohmann::json::parse("[]"));
+    } catch (const ContractError&) {
+        rejected = true;
+    }
+    if (!rejected) {
         std::cerr << "FAIL: expected rejection -- a top-level array\n";
         ++g_Failures;
-    } catch (const ContractError&) {
     }
 }
 
